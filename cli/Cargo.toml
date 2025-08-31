@@ -7,13 +7,18 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-core = { path = "../core" }
-tokio.workspace = true
-serde.workspace = true
-serde_json = "1.0"
-clap.workspace = true
-tracing = "0.1"
-tracing-subscriber = "0.3"
+tokio = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+canopus-core = { workspace = true }
+ipc = { workspace = true }
+schema = { workspace = true }
 
 [[bin]]
 name = "canopus"

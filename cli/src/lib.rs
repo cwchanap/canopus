@@ -1,54 +1,53 @@
-use core::{Config, Message, Response, Result};
-use tokio::net::TcpStream;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tracing::{info, error};
+//! CLI library for the Canopus project
+
+pub mod error;
+
+pub use error::{CliError, Result};
+use schema::{Message, Response, ClientConfig};
+use ipc::IpcClient;
+use tracing::error;
 
 /// CLI client for communicating with the daemon
 pub struct Client {
-    config: Config,
+    config: ClientConfig,
+    ipc_client: IpcClient,
 }
 
 impl Client {
-    pub fn new(config: Config) -> Self {
-        Self { config }
+    pub fn new(config: ClientConfig) -> Self {
+        let ipc_client = IpcClient::new(&config.daemon_host, config.daemon_port);
+        Self { config, ipc_client }
     }
 
     /// Connect to the daemon and send a message
     pub async fn send_message(&self, message: Message) -> Result<Response> {
-        let addr = format!("{}:{}", self.config.daemon_host, self.config.daemon_port);
-        
-        info!("Connecting to daemon at {}", addr);
-        let mut stream = TcpStream::connect(&addr).await?;
-
-        // Send message
-        let message_data = serde_json::to_vec(&message)?;
-        stream.write_all(&message_data).await?;
-
-        // Read response
-        let mut buffer = [0; 1024];
-        let n = stream.read(&mut buffer).await?;
-        
-        if n == 0 {
-            return Err("No response from daemon".into());
-        }
-
-        let response: Response = serde_json::from_slice(&buffer[..n])?;
-        Ok(response)
+        self.ipc_client.send_message(&message)
+            .await
+            .map_err(CliError::IpcError)
     }
 
     /// Get daemon status
     pub async fn status(&self) -> Result<()> {
         match self.send_message(Message::Status).await? {
-            Response::Status { running, uptime } => {
+            Response::Status { running, uptime_seconds, version } => {
                 println!("Daemon Status:");
                 println!("  Running: {}", running);
-                println!("  Uptime: {} seconds", uptime);
+                println!("  Uptime: {} seconds", uptime_seconds);
+                if let Some(v) = version {
+                    println!("  Version: {}", v);
+                }
             }
-            Response::Error(err) => {
-                error!("Error getting status: {}", err);
+            Response::Error { message, code } => {
+                error!("Error getting status: {}", message);
+                if let Some(c) = code {
+                    error!("Error code: {}", c);
+                }
+                return Err(CliError::DaemonError(message));
             }
             _ => {
-                error!("Unexpected response type");
+                let err = "Unexpected response type".to_string();
+                error!("{}", err);
+                return Err(CliError::DaemonError(err));
             }
         }
         Ok(())
@@ -57,14 +56,20 @@ impl Client {
     /// Start the daemon
     pub async fn start(&self) -> Result<()> {
         match self.send_message(Message::Start).await? {
-            Response::Ok(msg) => {
-                println!("✓ {}", msg);
+            Response::Ok { message } => {
+                println!("✓ {}", message);
             }
-            Response::Error(err) => {
-                error!("Failed to start daemon: {}", err);
+            Response::Error { message, code } => {
+                error!("Failed to start daemon: {}", message);
+                if let Some(c) = code {
+                    error!("Error code: {}", c);
+                }
+                return Err(CliError::DaemonError(message));
             }
             _ => {
-                error!("Unexpected response type");
+                let err = "Unexpected response type".to_string();
+                error!("{}", err);
+                return Err(CliError::DaemonError(err));
             }
         }
         Ok(())
@@ -73,14 +78,20 @@ impl Client {
     /// Stop the daemon
     pub async fn stop(&self) -> Result<()> {
         match self.send_message(Message::Stop).await? {
-            Response::Ok(msg) => {
-                println!("✓ {}", msg);
+            Response::Ok { message } => {
+                println!("✓ {}", message);
             }
-            Response::Error(err) => {
-                error!("Failed to stop daemon: {}", err);
+            Response::Error { message, code } => {
+                error!("Failed to stop daemon: {}", message);
+                if let Some(c) = code {
+                    error!("Error code: {}", c);
+                }
+                return Err(CliError::DaemonError(message));
             }
             _ => {
-                error!("Unexpected response type");
+                let err = "Unexpected response type".to_string();
+                error!("{}", err);
+                return Err(CliError::DaemonError(err));
             }
         }
         Ok(())
@@ -89,14 +100,20 @@ impl Client {
     /// Restart the daemon
     pub async fn restart(&self) -> Result<()> {
         match self.send_message(Message::Restart).await? {
-            Response::Ok(msg) => {
-                println!("✓ {}", msg);
+            Response::Ok { message } => {
+                println!("✓ {}", message);
             }
-            Response::Error(err) => {
-                error!("Failed to restart daemon: {}", err);
+            Response::Error { message, code } => {
+                error!("Failed to restart daemon: {}", message);
+                if let Some(c) = code {
+                    error!("Error code: {}", c);
+                }
+                return Err(CliError::DaemonError(message));
             }
             _ => {
-                error!("Unexpected response type");
+                let err = "Unexpected response type".to_string();
+                error!("{}", err);
+                return Err(CliError::DaemonError(err));
             }
         }
         Ok(())
@@ -104,15 +121,21 @@ impl Client {
 
     /// Send a custom command
     pub async fn custom(&self, command: &str) -> Result<()> {
-        match self.send_message(Message::Custom(command.to_string())).await? {
-            Response::Ok(msg) => {
-                println!("✓ {}", msg);
+        match self.send_message(Message::Custom { cmd: command.to_string() }).await? {
+            Response::Ok { message } => {
+                println!("✓ {}", message);
             }
-            Response::Error(err) => {
-                error!("Command failed: {}", err);
+            Response::Error { message, code } => {
+                error!("Command failed: {}", message);
+                if let Some(c) = code {
+                    error!("Error code: {}", c);
+                }
+                return Err(CliError::DaemonError(message));
             }
             _ => {
-                error!("Unexpected response type");
+                let err = "Unexpected response type".to_string();
+                error!("{}", err);
+                return Err(CliError::DaemonError(err));
             }
         }
         Ok(())

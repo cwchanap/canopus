@@ -1,17 +1,17 @@
-use core::Config;
 use daemon::Daemon;
+use schema::DaemonConfig;
 use tracing::{info, error};
 use tracing_subscriber;
 
 #[tokio::main]
-async fn main() -> core::Result<()> {
+async fn main() -> daemon::Result<()> {
     // Initialize logging
     tracing_subscriber::fmt::init();
 
     info!("Starting Canopus Daemon");
 
     // Load configuration (in a real app, this might come from a config file)
-    let config = Config::default();
+    let config = DaemonConfig::default();
     
     // Create and start the daemon
     let daemon = Daemon::new(config);

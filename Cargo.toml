@@ -2,8 +2,11 @@
 resolver = "2"
 members = [
     "core",
-    "daemon", 
-    "cli"
+    "ipc",
+    "daemon",
+    "cli",
+    "schema",
+    "xtask",
 ]
 
 [workspace.package]
@@ -14,7 +17,33 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/yourusername/canopus"
 
 [workspace.dependencies]
-# Common dependencies that can be shared across crates
+# Internal crates - use package name for core to avoid std::core conflicts
+canopus-core = { path = "core" }
+ipc = { path = "ipc" }
+daemon = { path = "daemon" }
+cli = { path = "cli" }
+schema = { path = "schema" }
+
+# Async runtime
 tokio = { version = "1.0", features = ["full"] }
+
+# Serialization
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# CLI
 clap = { version = "4.0", features = ["derive"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Schema generation
+schemars = { version = "0.8", features = ["derive"] }
+
+# Testing
+cargo-nextest = { version = "0.9" }

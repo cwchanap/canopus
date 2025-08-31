@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use core::Config;
+use canopus_core::ClientConfig;
 use cli::Client;
 use tracing::error;
 use tracing_subscriber;
@@ -39,16 +39,16 @@ enum Commands {
 }
 
 #[tokio::main]
-async fn main() -> core::Result<()> {
+async fn main() -> canopus_core::Result<()> {
     // Initialize logging
     tracing_subscriber::fmt::init();
 
     let cli = Cli::parse();
 
-    let config = Config {
+    let config = ClientConfig {
         daemon_host: cli.host,
         daemon_port: cli.port,
-        log_level: "info".to_string(),
+        timeout_seconds: 30,
     };
 
     let client = Client::new(config);

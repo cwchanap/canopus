@@ -1,4 +1,12 @@
-use core::{Config, Message, Response, Result};
+//! Daemon library for the Canopus project
+
+pub mod simple_error;
+
+#[cfg(test)]
+mod simple_error_tests;
+
+pub use simple_error::{DaemonError, Result};
+use schema::{Message, Response, DaemonConfig};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::net::{TcpListener, TcpStream};
@@ -7,13 +15,13 @@ use tracing::{info, error, warn};
 
 /// The main daemon server
 pub struct Daemon {
-    config: Config,
+    config: DaemonConfig,
     start_time: Instant,
     running: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Daemon {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: DaemonConfig) -> Self {
         Self {
             config,
             start_time: Instant::now(),
@@ -23,8 +31,9 @@ impl Daemon {
 
     /// Start the daemon server
     pub async fn start(&self) -> Result<()> {
-        let addr = format!("{}:{}", self.config.daemon_host, self.config.daemon_port);
-        let listener = TcpListener::bind(&addr).await?;
+        let addr = format!("{}:{}", self.config.host, self.config.port);
+        let listener = TcpListener::bind(&addr).await
+            .map_err(|e| DaemonError::ServerError(format!("Failed to bind to {}: {}", addr, e)))?;
         
         self.running.store(true, std::sync::atomic::Ordering::SeqCst);
         info!("Daemon started on {}", addr);
@@ -73,29 +82,36 @@ impl Daemon {
     async fn process_message(&self, message: Message) -> Response {
         match message {
             Message::Status => {
-                let uptime = self.start_time.elapsed().as_secs();
+                let uptime_seconds = self.start_time.elapsed().as_secs();
                 let running = self.running.load(std::sync::atomic::Ordering::SeqCst);
-                Response::Status { running, uptime }
+                Response::Status { 
+                    running, 
+                    uptime_seconds,
+                    version: Some("0.1.0".to_string()),
+                }
             }
             Message::Start => {
                 if self.running.load(std::sync::atomic::Ordering::SeqCst) {
-                    Response::Error("Daemon is already running".to_string())
+                    Response::Error { 
+                        message: "Daemon is already running".to_string(),
+                        code: Some("DAEMON_ALREADY_RUNNING".to_string()),
+                    }
                 } else {
                     self.running.store(true, std::sync::atomic::Ordering::SeqCst);
-                    Response::Ok("Daemon started".to_string())
+                    Response::Ok { message: "Daemon started".to_string() }
                 }
             }
             Message::Stop => {
                 self.running.store(false, std::sync::atomic::Ordering::SeqCst);
-                Response::Ok("Daemon stopping".to_string())
+                Response::Ok { message: "Daemon stopping".to_string() }
             }
             Message::Restart => {
                 warn!("Restart requested - this is a simplified implementation");
-                Response::Ok("Restart acknowledged".to_string())
+                Response::Ok { message: "Restart acknowledged".to_string() }
             }
-            Message::Custom(cmd) => {
+            Message::Custom { cmd } => {
                 info!("Custom command received: {}", cmd);
-                Response::Ok(format!("Processed: {}", cmd))
+                Response::Ok { message: format!("Processed: {}", cmd) }
             }
         }
     }

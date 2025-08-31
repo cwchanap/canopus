@@ -1,26 +1,44 @@
 # Canopus
 
-A multi-crate Rust workspace for a daemon server and CLI management tool.
+A multi-crate Rust workspace for a daemon server and CLI management tool with comprehensive error handling and schema generation.
 
 ## Architecture
 
-This workspace consists of three crates:
+This workspace consists of six main crates:
 
 ### 📦 Core (`core/`)
-Common library containing shared types, utilities, and business logic used by both the daemon and CLI.
+Common library containing shared utilities, error handling, and business logic used across all components.
 
 **Features:**
-- Configuration management
-- Message and response types for daemon-CLI communication
-- Common error handling
-- Shared data structures
+- Centralized error handling with `CoreError` types
+- Configuration validation utilities
+- Tracing setup and management
+- Result type aliases for consistent error handling
+
+### 🔗 IPC (`ipc/`)
+Inter-process communication library for daemon-client communication.
+
+**Features:**
+- TCP-based communication protocol
+- Async message handling
+- Connection management with proper error handling
+- Serialization/deserialization of messages
+
+### 🛠️ Schema (`schema/`)
+Shared data structures and JSON schema generation.
+
+**Features:**
+- Message and response type definitions
+- Configuration structures with JSON Schema support
+- Event and state representations
+- TypeScript definition generation
 
 ### 🔧 Daemon (`daemon/`)
-A Rust daemon server that runs in the background and handles various operations.
+A Rust daemon server that runs in the background and handles client operations.
 
 **Features:**
 - TCP server for handling client connections
-- Asynchronous message processing
+- Asynchronous message processing with proper error handling
 - Status reporting and management
 - Graceful shutdown handling
 
@@ -29,9 +47,17 @@ Command-line interface tool for managing and communicating with the daemon.
 
 **Features:**
 - Subcommands for daemon management (start, stop, restart, status)
-- Custom command support
+- Custom command support with structured error reporting
 - Configurable daemon connection settings
 - User-friendly output formatting
+
+### ⚙️ XTask (`xtask/`)
+Development automation and schema generation tool.
+
+**Features:**
+- JSON schema generation from Rust types
+- TypeScript definition generation
+- Development workflow automation
 
 ## Building
 

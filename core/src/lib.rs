@@ -3,56 +3,75 @@
 //! This crate contains shared types, utilities, and business logic
 //! that can be used by both the daemon and CLI components.
 
-use serde::{Deserialize, Serialize};
+pub mod error;
+pub mod utilities;
 
-/// Configuration structure for the Canopus system
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Config {
-    pub daemon_host: String,
-    pub daemon_port: u16,
-    pub log_level: String,
-}
+#[cfg(test)]
+mod error_tests;
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            daemon_host: "127.0.0.1".to_string(),
-            daemon_port: 8080,
-            log_level: "info".to_string(),
-        }
+// Re-export schema types for convenience
+pub use schema::*;
+
+pub use error::{CoreError, Result};
+pub use utilities::*;
+
+/// Core utilities and helper functions
+pub mod utils {
+    use tracing::{info, debug};
+    
+    /// Initialize tracing for the application
+    pub fn init_tracing(level: &str) -> crate::Result<()> {
+        use tracing_subscriber::{EnvFilter, fmt};
+        
+        let filter = EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| EnvFilter::new(level));
+            
+        fmt()
+            .with_env_filter(filter)
+            .try_init()
+            .map_err(|e| crate::CoreError::InitializationError(e.to_string()))?;
+            
+        info!("Tracing initialized with level: {}", level);
+        Ok(())
     }
-}
-
-/// Common result type used throughout the application
-pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
-
-/// Message types for communication between daemon and CLI
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Message {
-    Status,
-    Start,
-    Stop,
-    Restart,
-    Custom(String),
-}
-
-/// Response types from the daemon
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Response {
-    Ok(String),
-    Error(String),
-    Status { running: bool, uptime: u64 },
+    
+    /// Validate configuration values
+    pub fn validate_config(config: &crate::DaemonConfig) -> crate::Result<()> {
+        if config.port == 0 {
+            return Err(crate::CoreError::ConfigurationError("Port cannot be 0".to_string()));
+        }
+        
+        if config.host.is_empty() {
+            return Err(crate::CoreError::ConfigurationError("Host cannot be empty".to_string()));
+        }
+        
+        if config.max_connections == 0 {
+            return Err(crate::CoreError::ConfigurationError("Max connections must be greater than 0".to_string()));
+        }
+        
+        debug!("Configuration validated successfully");
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    
     #[test]
-    fn test_config_default() {
-        let config = Config::default();
-        assert_eq!(config.daemon_host, "127.0.0.1");
-        assert_eq!(config.daemon_port, 8080);
-        assert_eq!(config.log_level, "info");
+    fn test_validate_config() {
+        let mut config = crate::DaemonConfig::default();
+        assert!(utils::validate_config(&config).is_ok());
+        
+        config.port = 0;
+        assert!(utils::validate_config(&config).is_err());
+        
+        config.port = 8080;
+        config.host = "".to_string();
+        assert!(utils::validate_config(&config).is_err());
+        
+        config.host = "localhost".to_string();
+        config.max_connections = 0;
+        assert!(utils::validate_config(&config).is_err());
     }
 }
