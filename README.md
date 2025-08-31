@@ -15,7 +15,7 @@ Common library containing shared types, utilities, and business logic used by bo
 - Common error handling
 - Shared data structures
 
-### 🔧 Daemon (`daenib/`)
+### 🔧 Daemon (`daemon/`)
 A Rust daemon server that runs in the background and handles various operations.
 
 **Features:**
@@ -43,7 +43,7 @@ cargo build
 Build specific crate:
 ```bash
 cargo build -p core
-cargo build -p daenib
+cargo build -p daemon
 cargo build -p cli
 ```
 
@@ -51,7 +51,7 @@ cargo build -p cli
 
 ### Start the daemon:
 ```bash
-cargo run --bin daenib
+cargo run --bin daemon
 ```
 
 ### Use the CLI:
@@ -97,7 +97,7 @@ canopus/
 │   ├── Cargo.toml
 │   └── src/
 │       └── lib.rs
-├── daenib/             # Daemon server
+├── daemon/             # Daemon server
 │   ├── Cargo.toml
 │   └── src/
 │       ├── lib.rs
