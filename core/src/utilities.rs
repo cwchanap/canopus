@@ -1,25 +1,30 @@
-use tracing::info;
+//! Utility functions and helper types for core functionality
+
 use serde_json;
+use tracing::info;
 
 /// Initialize tracing for the application
 pub fn init_tracing() {
-    tracing_subscriber::fmt()
-        .with_env_filter("info")
-        .init();
-    
+    tracing_subscriber::fmt().with_env_filter("info").init();
+
     info!("Tracing initialized");
 }
 
 /// Validate configuration data
 pub fn validate_config_data(data: &str) -> crate::Result<()> {
     if data.is_empty() {
-        return Err(crate::CoreError::ValidationError("Configuration data cannot be empty".to_string()));
+        return Err(crate::CoreError::ValidationError(
+            "Configuration data cannot be empty".to_string(),
+        ));
     }
-    
+
     // Try to parse as JSON to validate structure
     match serde_json::from_str::<serde_json::Value>(data) {
         Ok(_) => Ok(()),
-        Err(e) => Err(crate::CoreError::ValidationError(format!("Invalid JSON: {}", e))),
+        Err(e) => Err(crate::CoreError::ValidationError(format!(
+            "Invalid JSON: {}",
+            e
+        ))),
     }
 }
 

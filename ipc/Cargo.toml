@@ -4,13 +4,16 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
+description = "Inter-process communication utilities for the Canopus project"
+readme = "../README.md"
+keywords = ["ipc", "communication", "network", "tcp"]
+categories = ["network-programming", "api-bindings"]
 
 [dependencies]
-serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 thiserror = { workspace = true }
-anyhow = { workspace = true }
 tracing = { workspace = true }
 
 schema = { path = "../schema" }

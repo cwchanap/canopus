@@ -1,10 +1,15 @@
 //! Simple daemon error types
 
+/// Daemon-specific error types
 #[derive(Debug)]
 pub enum DaemonError {
+    /// Server startup and operation errors
     ServerError(String),
+    /// Client connection handling errors
     ConnectionError(String),
+    /// I/O operation errors
     IoError(std::io::Error),
+    /// JSON serialization/deserialization errors
     SerializationError(serde_json::Error),
 }
 
@@ -33,4 +38,5 @@ impl From<serde_json::Error> for DaemonError {
     }
 }
 
+/// Result type for daemon operations
 pub type Result<T> = std::result::Result<T, DaemonError>;

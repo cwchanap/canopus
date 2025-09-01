@@ -4,9 +4,13 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
+description = "Schema definitions and data structures for the Canopus project"
+readme = "../README.md"
+keywords = ["schema", "json", "serde", "types"]
+categories = ["data-structures", "encoding"]
 
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }
-thiserror = { workspace = true }

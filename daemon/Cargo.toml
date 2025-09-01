@@ -5,18 +5,18 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "Daemon service implementation for the Canopus project"
+readme = "../README.md"
+keywords = ["daemon", "service", "server", "system"]
+categories = ["command-line-utilities", "network-programming"]
 
 [dependencies]
 tokio = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
-canopus-core = { workspace = true }
-ipc = { workspace = true }
 schema = { workspace = true }
 
 [[bin]]

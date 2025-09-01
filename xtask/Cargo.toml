@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
+description = "Build tasks and automation utilities for the Canopus project"
+readme = "../README.md"
+keywords = ["build", "tasks", "automation", "development"]
+categories = ["development-tools"]
 
 [[bin]]
 name = "xtask"

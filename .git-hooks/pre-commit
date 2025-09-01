@@ -1,0 +1,56 @@
+#!/bin/bash
+# Pre-commit hook for Canopus project
+# Place this file at .git/hooks/pre-commit and make it executable
+
+set -e
+
+echo "Running pre-commit checks..."
+
+# Check if we're in a git repository
+if ! git rev-parse --git-dir > /dev/null 2>&1; then
+    echo "Error: Not in a git repository"
+    exit 1
+fi
+
+# Check if there are any staged files
+if git diff --cached --name-only | grep -qE '\.(rs|toml)$'; then
+    echo "Found Rust files to check..."
+    
+    # Run cargo fmt check
+    echo "🔍 Checking formatting..."
+    if ! cargo fmt --check; then
+        echo "❌ Code formatting issues found. Run 'cargo fmt' to fix them."
+        exit 1
+    fi
+    echo "✅ Formatting check passed"
+    
+    # Run clippy
+    echo "🔍 Running Clippy..."
+    if ! cargo clippy --workspace --all-targets --all-features -- -D warnings; then
+        echo "❌ Clippy found issues. Please fix them before committing."
+        exit 1
+    fi
+    echo "✅ Clippy check passed"
+    
+    # Run tests
+    echo "🔍 Running tests..."
+    if ! cargo test --workspace; then
+        echo "❌ Tests failed. Please fix them before committing."
+        exit 1
+    fi
+    echo "✅ Tests passed"
+    
+    # Check for todo/fixme comments in staged files
+    echo "🔍 Checking for TODO/FIXME comments..."
+    staged_files=$(git diff --cached --name-only --diff-filter=A)
+    if echo "$staged_files" | xargs grep -Hn "TODO\|FIXME" 2>/dev/null; then
+        echo "⚠️  Found TODO/FIXME comments in staged files. Consider addressing them."
+        # Don't fail on TODOs, just warn
+    fi
+    
+    echo "✅ All pre-commit checks passed!"
+else
+    echo "No Rust files to check in this commit."
+fi
+
+exit 0

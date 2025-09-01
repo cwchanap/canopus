@@ -5,27 +5,35 @@ use thiserror::Error;
 /// IPC-specific error types
 #[derive(Error, Debug)]
 pub enum IpcError {
+    /// Network connection establishment failures
     #[error("Connection failed: {0}")]
     ConnectionFailed(String),
-    
+
+    /// Message transmission failures
     #[error("Failed to send message: {0}")]
     SendFailed(String),
-    
+
+    /// Response reception failures
     #[error("Failed to receive response: {0}")]
     ReceiveFailed(String),
-    
+
+    /// Data serialization failures
     #[error("Serialization failed: {0}")]
     SerializationFailed(String),
-    
+
+    /// Data deserialization failures
     #[error("Deserialization failed: {0}")]
     DeserializationFailed(String),
-    
+
+    /// No response data received
     #[error("Received empty response")]
     EmptyResponse,
-    
+
+    /// Protocol-level communication errors
     #[error("Protocol error: {0}")]
     ProtocolError(String),
-    
+
+    /// Operation timeout errors
     #[error("Timeout error: {0}")]
     Timeout(String),
 }
@@ -52,19 +60,28 @@ pub type Result<T> = std::result::Result<T, IpcError>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_error_codes() {
-        assert_eq!(IpcError::ConnectionFailed("test".to_string()).code(), "IPC001");
+        assert_eq!(
+            IpcError::ConnectionFailed("test".to_string()).code(),
+            "IPC001"
+        );
         assert_eq!(IpcError::SendFailed("test".to_string()).code(), "IPC002");
         assert_eq!(IpcError::ReceiveFailed("test".to_string()).code(), "IPC003");
-        assert_eq!(IpcError::SerializationFailed("test".to_string()).code(), "IPC004");
-        assert_eq!(IpcError::DeserializationFailed("test".to_string()).code(), "IPC005");
+        assert_eq!(
+            IpcError::SerializationFailed("test".to_string()).code(),
+            "IPC004"
+        );
+        assert_eq!(
+            IpcError::DeserializationFailed("test".to_string()).code(),
+            "IPC005"
+        );
         assert_eq!(IpcError::EmptyResponse.code(), "IPC006");
         assert_eq!(IpcError::ProtocolError("test".to_string()).code(), "IPC007");
         assert_eq!(IpcError::Timeout("test".to_string()).code(), "IPC008");
     }
-    
+
     #[test]
     fn test_error_display() {
         let error = IpcError::ConnectionFailed("connection refused".to_string());

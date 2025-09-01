@@ -1,19 +1,22 @@
 //! Daemon library for the Canopus project
 
+#![allow(unused_crate_dependencies)]
+
 pub mod simple_error;
 
 #[cfg(test)]
 mod simple_error_tests;
 
+use schema::{DaemonConfig, Message, Response};
 pub use simple_error::{DaemonError, Result};
-use schema::{Message, Response, DaemonConfig};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tracing::{info, error, warn};
+use tokio::net::{TcpListener, TcpStream};
+use tracing::{error, info, warn};
 
 /// The main daemon server
+#[derive(Debug)]
 pub struct Daemon {
     config: DaemonConfig,
     start_time: Instant,
@@ -21,6 +24,7 @@ pub struct Daemon {
 }
 
 impl Daemon {
+    /// Create a new daemon instance
     pub fn new(config: DaemonConfig) -> Self {
         Self {
             config,
@@ -32,10 +36,12 @@ impl Daemon {
     /// Start the daemon server
     pub async fn start(&self) -> Result<()> {
         let addr = format!("{}:{}", self.config.host, self.config.port);
-        let listener = TcpListener::bind(&addr).await
+        let listener = TcpListener::bind(&addr)
+            .await
             .map_err(|e| DaemonError::ServerError(format!("Failed to bind to {}: {}", addr, e)))?;
-        
-        self.running.store(true, std::sync::atomic::Ordering::SeqCst);
+
+        self.running
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         info!("Daemon started on {}", addr);
 
         while self.running.load(std::sync::atomic::Ordering::SeqCst) {
@@ -61,7 +67,7 @@ impl Daemon {
     /// Handle incoming connection
     async fn handle_connection(&self, mut stream: TcpStream) -> Result<()> {
         let mut buffer = [0; 1024];
-        
+
         loop {
             let n = stream.read(&mut buffer).await?;
             if n == 0 {
@@ -71,7 +77,7 @@ impl Daemon {
             let request: Message = serde_json::from_slice(&buffer[..n])?;
             let response = self.process_message(request).await;
             let response_data = serde_json::to_vec(&response)?;
-            
+
             stream.write_all(&response_data).await?;
         }
 
@@ -84,41 +90,52 @@ impl Daemon {
             Message::Status => {
                 let uptime_seconds = self.start_time.elapsed().as_secs();
                 let running = self.running.load(std::sync::atomic::Ordering::SeqCst);
-                Response::Status { 
-                    running, 
+                Response::Status {
+                    running,
                     uptime_seconds,
                     version: Some("0.1.0".to_string()),
                 }
             }
             Message::Start => {
                 if self.running.load(std::sync::atomic::Ordering::SeqCst) {
-                    Response::Error { 
+                    Response::Error {
                         message: "Daemon is already running".to_string(),
                         code: Some("DAEMON_ALREADY_RUNNING".to_string()),
                     }
                 } else {
-                    self.running.store(true, std::sync::atomic::Ordering::SeqCst);
-                    Response::Ok { message: "Daemon started".to_string() }
+                    self.running
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                    Response::Ok {
+                        message: "Daemon started".to_string(),
+                    }
                 }
             }
             Message::Stop => {
-                self.running.store(false, std::sync::atomic::Ordering::SeqCst);
-                Response::Ok { message: "Daemon stopping".to_string() }
+                self.running
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                Response::Ok {
+                    message: "Daemon stopping".to_string(),
+                }
             }
             Message::Restart => {
                 warn!("Restart requested - this is a simplified implementation");
-                Response::Ok { message: "Restart acknowledged".to_string() }
+                Response::Ok {
+                    message: "Restart acknowledged".to_string(),
+                }
             }
             Message::Custom { cmd } => {
                 info!("Custom command received: {}", cmd);
-                Response::Ok { message: format!("Processed: {}", cmd) }
+                Response::Ok {
+                    message: format!("Processed: {}", cmd),
+                }
             }
         }
     }
 
     /// Stop the daemon
     pub fn stop(&self) {
-        self.running.store(false, std::sync::atomic::Ordering::SeqCst);
+        self.running
+            .store(false, std::sync::atomic::Ordering::SeqCst);
     }
 }
 

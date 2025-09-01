@@ -5,12 +5,14 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "Core functionality and utilities for the Canopus project"
+readme = "../README.md"
+keywords = ["core", "utilities", "system", "daemon"]
+categories = ["development-tools", "system", "api-bindings"]
 
 [dependencies]
-serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 

@@ -20,9 +20,10 @@ pub enum Message {
     /// Restart daemon
     Restart,
     /// Send custom command with payload
-    Custom { 
+    Custom {
         #[serde(rename = "command")]
-        cmd: String 
+        /// The custom command to execute
+        cmd: String,
     },
 }
 
@@ -31,18 +32,26 @@ pub enum Message {
 #[serde(rename_all = "camelCase")]
 pub enum Response {
     /// Successful operation with message
-    Ok { message: String },
+    Ok {
+        /// Success message
+        message: String,
+    },
     /// Error response with details
-    Error { 
+    Error {
+        /// Error message
         message: String,
         #[serde(skip_serializing_if = "Option::is_none")]
+        /// Optional error code
         code: Option<String>,
     },
     /// Status information
-    Status { 
-        running: bool, 
+    Status {
+        /// Whether the daemon is running
+        running: bool,
+        /// Uptime in seconds
         uptime_seconds: u64,
         #[serde(skip_serializing_if = "Option::is_none")]
+        /// Optional version string
         version: Option<String>,
     },
 }
@@ -73,7 +82,7 @@ impl Default for DaemonConfig {
     }
 }
 
-fn default_max_connections() -> usize {
+const fn default_max_connections() -> usize {
     100
 }
 
@@ -100,7 +109,7 @@ impl Default for ClientConfig {
     }
 }
 
-fn default_timeout() -> u64 {
+const fn default_timeout() -> u64 {
     30
 }
 
@@ -109,29 +118,39 @@ fn default_timeout() -> u64 {
 #[serde(rename_all = "camelCase")]
 pub enum Event {
     /// Daemon started
-    DaemonStarted { 
-        timestamp: String, 
-        version: String 
+    DaemonStarted {
+        /// Event timestamp
+        timestamp: String,
+        /// Daemon version
+        version: String,
     },
     /// Daemon stopped
-    DaemonStopped { 
-        timestamp: String 
+    DaemonStopped {
+        /// Event timestamp
+        timestamp: String,
     },
     /// Client connected
-    ClientConnected { 
-        timestamp: String, 
-        client_id: String 
+    ClientConnected {
+        /// Event timestamp
+        timestamp: String,
+        /// Client identifier
+        client_id: String,
     },
     /// Client disconnected
-    ClientDisconnected { 
-        timestamp: String, 
-        client_id: String 
+    ClientDisconnected {
+        /// Event timestamp
+        timestamp: String,
+        /// Client identifier
+        client_id: String,
     },
     /// Custom event
-    Custom { 
-        event_type: String, 
-        timestamp: String, 
-        data: serde_json::Value 
+    Custom {
+        /// Event type identifier
+        event_type: String,
+        /// Event timestamp
+        timestamp: String,
+        /// Event data payload
+        data: serde_json::Value,
     },
 }
 
@@ -155,39 +174,46 @@ pub struct SystemState {
 mod tests {
     use super::*;
     use schemars::schema_for;
-    
+
     #[test]
     fn test_message_serialization() {
-        let msg = Message::Custom { cmd: "test".to_string() };
+        let msg = Message::Custom {
+            cmd: "test".to_string(),
+        };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("test"));
     }
-    
+
     #[test]
     fn test_response_serialization() {
-        let resp = Response::Ok { message: "success".to_string() };
+        let resp = Response::Ok {
+            message: "success".to_string(),
+        };
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("success"));
     }
-    
+
     #[test]
     fn test_schema_generation() {
-        // Just check that schemas can be generated without panicking
-        let _message_schema = schema_for!(Message);
-        let _response_schema = schema_for!(Response);
-        let _daemon_config_schema = schema_for!(DaemonConfig);
-        let _client_config_schema = schema_for!(ClientConfig);
-        
-        // Test passes if we get here without panicking
-        assert!(true);
+        // Test that schemas can be generated successfully
+        let message_schema = schema_for!(Message);
+        let response_schema = schema_for!(Response);
+        let daemon_config_schema = schema_for!(DaemonConfig);
+        let client_config_schema = schema_for!(ClientConfig);
+
+        // Verify schemas have the expected structure
+        assert!(message_schema.schema.metadata.is_some());
+        assert!(response_schema.schema.metadata.is_some());
+        assert!(daemon_config_schema.schema.metadata.is_some());
+        assert!(client_config_schema.schema.metadata.is_some());
     }
-    
+
     #[test]
     fn test_default_configs() {
         let daemon_config = DaemonConfig::default();
         assert_eq!(daemon_config.host, "127.0.0.1");
         assert_eq!(daemon_config.port, 8080);
-        
+
         let client_config = ClientConfig::default();
         assert_eq!(client_config.daemon_host, "127.0.0.1");
         assert_eq!(client_config.daemon_port, 8080);

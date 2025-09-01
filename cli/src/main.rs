@@ -1,8 +1,13 @@
-use clap::{Parser, Subcommand};
+//! Canopus CLI binary
+//!
+//! Command-line interface for interacting with the Canopus daemon.
+
+#![allow(unused_crate_dependencies)]
+
 use canopus_core::ClientConfig;
+use clap::{Parser, Subcommand};
 use cli::Client;
 use tracing::error;
-use tracing_subscriber;
 
 #[derive(Parser)]
 #[command(name = "canopus")]

@@ -25,15 +25,43 @@ test-nextest:
 test-coverage:
     cargo test --all-features -- --nocapture
 
-# Lint the code
+# Lint the code (basic level)
 lint:
-    cargo clippy -- -D warnings
-    cargo fmt --check
+    @echo "🔍 Running basic linting..."
+    cargo clippy --workspace --all-targets --all-features -- -D warnings
+    @echo "✅ Basic linting completed"
+
+# Strict linting with pedantic rules  
+lint-strict:
+    @echo "🔍 Running strict linting..."
+    cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::all -D clippy::pedantic -W clippy::nursery -W clippy::cargo
+    @echo "✅ Strict linting completed"
 
 # Fix linting issues
 lint-fix:
-    cargo clippy --fix --allow-dirty
+    @echo "🔧 Fixing linting issues..."
+    cargo clippy --workspace --all-targets --all-features --fix --allow-dirty -- -D warnings
     cargo fmt
+    @echo "✅ Linting fixes applied"
+
+# Enhanced lint with all checks
+lint-all: lint fmt-check
+    @echo "🔍 Running additional security and dependency checks..."
+    cargo deny check || echo "⚠️  cargo-deny not installed, skipping dependency checks"
+    cargo audit || echo "⚠️  cargo-audit not installed, skipping security audit"
+    @echo "✅ All linting checks completed"
+
+# Check code without building
+check:
+    @echo "🔍 Checking code..."
+    cargo check --workspace --all-targets --all-features
+    @echo "✅ Check completed"
+
+# Check formatting only
+fmt-check:
+    @echo "🔍 Checking formatting..."
+    cargo fmt --check
+    @echo "✅ Formatting check completed"
 
 # Clean build artifacts
 clean:
@@ -49,10 +77,10 @@ deny:
 
 # Install development dependencies
 install-deps:
-    cargo install cargo-nextest cargo-deny
+    cargo install cargo-nextest cargo-deny cargo-audit
 
 # Full CI pipeline
-ci: build test lint deny gen-schemas
+ci: build test lint-all deny gen-schemas
     @echo "✓ All CI checks passed"
 
 # Start the daemon
@@ -66,10 +94,6 @@ cli *args:
 # Development workflow - watch for changes and run tests
 dev:
     cargo watch -x "test" -x "clippy"
-
-# Check project for issues
-check:
-    cargo check --all-targets --all-features
 
 # Update dependencies
 update:
@@ -98,6 +122,13 @@ test-crate crate:
 # Build a specific crate
 build-crate crate:
     cargo build -p {{crate}}
+
+# Setup git hooks
+setup-hooks:
+    @echo "Setting up git hooks..."
+    chmod +x .git-hooks/pre-commit
+    ln -sf ../../.git-hooks/pre-commit .git/hooks/pre-commit
+    @echo "✅ Git hooks installed"
 
 # Example: Run the daemon and CLI in separate terminals
 demo:

@@ -1,19 +1,24 @@
 //! CLI library for the Canopus project
 
+#![allow(unused_crate_dependencies)]
+
 pub mod error;
 
 pub use error::{CliError, Result};
-use schema::{Message, Response, ClientConfig};
 use ipc::IpcClient;
+use schema::{ClientConfig, Message, Response};
 use tracing::error;
 
 /// CLI client for communicating with the daemon
+#[derive(Debug)]
 pub struct Client {
+    #[allow(dead_code)]
     config: ClientConfig,
     ipc_client: IpcClient,
 }
 
 impl Client {
+    /// Create a new CLI client
     pub fn new(config: ClientConfig) -> Self {
         let ipc_client = IpcClient::new(&config.daemon_host, config.daemon_port);
         Self { config, ipc_client }
@@ -21,7 +26,8 @@ impl Client {
 
     /// Connect to the daemon and send a message
     pub async fn send_message(&self, message: Message) -> Result<Response> {
-        self.ipc_client.send_message(&message)
+        self.ipc_client
+            .send_message(&message)
             .await
             .map_err(CliError::IpcError)
     }
@@ -29,7 +35,11 @@ impl Client {
     /// Get daemon status
     pub async fn status(&self) -> Result<()> {
         match self.send_message(Message::Status).await? {
-            Response::Status { running, uptime_seconds, version } => {
+            Response::Status {
+                running,
+                uptime_seconds,
+                version,
+            } => {
                 println!("Daemon Status:");
                 println!("  Running: {}", running);
                 println!("  Uptime: {} seconds", uptime_seconds);
@@ -121,7 +131,12 @@ impl Client {
 
     /// Send a custom command
     pub async fn custom(&self, command: &str) -> Result<()> {
-        match self.send_message(Message::Custom { cmd: command.to_string() }).await? {
+        match self
+            .send_message(Message::Custom {
+                cmd: command.to_string(),
+            })
+            .await?
+        {
             Response::Ok { message } => {
                 println!("✓ {}", message);
             }
