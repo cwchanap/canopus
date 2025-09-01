@@ -29,6 +29,17 @@ pub enum CoreError {
     #[error("Serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
 
+    /// Port allocation errors
+    #[error("Port {0} is already in use")]
+    PortInUse(u16),
+
+    /// No available port found after trying multiple options
+    #[error("No available port found after trying {tried} ports")]
+    NoAvailablePort { 
+        /// Number of ports that were tried
+        tried: usize 
+    },
+
     /// Generic or unspecified errors
     #[error("Generic error: {0}")]
     Other(String),
@@ -44,6 +55,8 @@ impl CoreError {
             CoreError::ServiceError(_) => "CORE004",
             CoreError::IoError(_) => "CORE005",
             CoreError::SerializationError(_) => "CORE006",
+            CoreError::PortInUse(_) => "CORE007",
+            CoreError::NoAvailablePort { .. } => "CORE008",
             CoreError::Other(_) => "CORE999",
         }
     }

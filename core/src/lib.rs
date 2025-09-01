@@ -4,6 +4,8 @@
 //! that can be used by both the daemon and CLI components.
 
 pub mod error;
+pub mod port;
+pub mod proxy_api;
 pub mod utilities;
 
 #[cfg(test)]
@@ -13,6 +15,8 @@ mod error_tests;
 pub use schema::*;
 
 pub use error::{CoreError, Result};
+pub use port::{PortAllocator, PortGuard};
+pub use proxy_api::{CallLog, NullProxy, ProxyApi};
 pub use utilities::*;
 
 /// Core utilities and helper functions
