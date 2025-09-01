@@ -4,7 +4,7 @@
 
 Canopus is a **multi-crate Rust workspace** implementing a daemon-client architecture with comprehensive error handling and schema generation:
 
-- **`core/`**: Shared utilities, error types (`CoreError`), and configuration validation
+- **`core/`**: Shared utilities, error types (`CoreError`), configuration validation, and **Unix process management**
 - **`schema/`**: JSON Schema-enabled data structures (`Message`, `Response`, `DaemonConfig`, etc.)
 - **`ipc/`**: TCP-based async communication between daemon and CLI
 - **`daemon/`**: Background server handling client connections via TCP
@@ -24,10 +24,18 @@ Canopus is a **multi-crate Rust workspace** implementing a daemon-client archite
 - **Async pattern**: Use `tokio::spawn` for handling multiple connections concurrently
 - **Buffer size**: Fixed 1024-4096 byte buffers for TCP communication
 
+### Unix Process Management (NEW - Phase 2)
+- **Safe process spawning**: All processes created in isolated process groups via `setsid()`
+- **Reliable cleanup**: Process group signaling ensures no orphaned processes
+- **Graceful termination**: SIGTERM → SIGKILL escalation with configurable timeouts
+- **Error handling**: Robust handling of race conditions and edge cases (ESRCH, EPERM)
+- **Module**: `core::process::unix` with `spawn()`, `signal_term_group()`, `signal_kill_group()`
+
 ### Workspace Dependencies
 - **Internal crates**: Reference as `canopus-core = { path = "core" }` (note: `core` renamed to avoid std conflicts)
 - **Shared deps**: Defined in root `Cargo.toml` under `[workspace.dependencies]`
 - **Lint configuration**: Extensive workspace-level lints in root `Cargo.toml` with `forbid` on `unsafe_code`
+- **Platform-specific**: Unix process deps (`nix`, `libc`) gated behind `cfg(unix)`
 
 ## Essential Development Workflows
 
@@ -75,6 +83,13 @@ just audit           # Security vulnerability scanning
 - Include `code()` method returning static error codes
 - Implement `From<std::io::Error>` and `From<serde_json::Error>` where appropriate
 
+### Unsafe Code Handling (Process Management)
+- **Workspace default**: `unsafe_code = "forbid"` at workspace level
+- **Module-level override**: Use `#![allow(unsafe_code)]` only for process management modules
+- **Safety documentation**: All unsafe blocks must include safety comments and justification
+- **Lint enforcement**: Use `#[deny(unsafe_op_in_unsafe_fn)]` to ensure safety within unsafe functions
+- **Minimal scope**: Limit unsafe code to essential system calls (`setsid()`, etc.)
+
 ### Async Handlers
 - Clone `Arc`-wrapped state for `tokio::spawn` tasks
 - Use `AtomicBool` for shutdown signaling
@@ -97,12 +112,28 @@ just audit           # Security vulnerability scanning
 - Uses `AtomicBool` for thread-safe shutdown coordination
 - CLI commands can trigger daemon shutdown via `Message::Stop`
 
+## Current Project Status (Phase 2 - Process Control)
+
+### ✅ **Completed - T2.1: Unix Process Adapter**
+- **Module**: `core::process::unix` with comprehensive process group management
+- **API**: `ChildProcess`, `spawn()`, `signal_term_group()`, `signal_kill_group()`, `terminate_with_timeout()`
+- **Safety**: Uses `unsafe { libc::setsid() }` for process group creation (properly documented)
+- **Testing**: 49 total tests (38 unit + 11 integration + 4 doc tests)
+- **Error codes**: CORE009 (ProcessSpawn), CORE010 (ProcessSignal), CORE011 (ProcessWait)
+
+### 🚧 **Next Steps - T2.2: Windows Process Adapter**
+- Goal: Job Object-based lifecycle management for Windows
+- Implementation: `core::process::windows` using `KILL_ON_JOB_CLOSE` flag
+- Pattern: Follow Unix implementation structure with Windows-specific APIs
+
 ## Testing Conventions
 
 - **Unit tests**: In same file as implementation (`#[cfg(test)] mod tests`)
-- **Integration tests**: Separate files (e.g., `error_tests.rs`)
+- **Integration tests**: Separate files (e.g., `error_tests.rs`, `core/tests/process_unix.rs`)
+- **Platform-specific**: Use `#[cfg(unix)]` and `#[cfg(windows)]` for OS-specific tests
 - **Async tests**: Use `#[tokio::test]` for async test functions
 - **Schema validation**: Test both serialization and schema generation in `schema/`
+- **Process tests**: Comprehensive signal handling, race conditions, and cleanup verification
 
 ## Critical Files to Understand
 

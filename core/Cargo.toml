@@ -34,3 +34,7 @@ wait-timeout = "0.2"
 name = "canopus_core"
 path = "src/lib.rs"
 
+[[bin]]
+name = "supervisor_demo"
+path = "../supervisor_demo.rs"
+

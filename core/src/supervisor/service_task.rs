@@ -3,12 +3,12 @@
 //! This module contains the [`ServiceSupervisor`] which implements the core
 //! state machine logic for managing a single service's lifecycle.
 
-use super::{ControlMsg, InternalState, ManagedProcess, ProcessAdapter};
+use super::{ControlMsg, InternalState, ManagedProcess, ProcessAdapter, RestartPolicyEngine, RestartAction};
 use crate::Result;
 use schema::{ServiceEvent, ServiceExit, ServiceSpec, ServiceState};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch};
-use tokio::time::{timeout, Duration};
+use tokio::time::{timeout, Duration, sleep};
 use tracing::{debug, error, info, warn};
 
 /// Service supervisor task managing the lifecycle of a single service
@@ -25,6 +25,10 @@ pub struct ServiceSupervisor {
     state_tx: watch::Sender<ServiceState>,
     /// Currently managed process (if any)
     current_process: Option<Box<dyn ManagedProcess>>,
+    /// Restart policy engine for determining restart actions
+    restart_policy_engine: RestartPolicyEngine,
+    /// Restart timer (when restart is scheduled)
+    restart_timer: Option<tokio::time::Instant>,
 }
 
 impl ServiceSupervisor {
@@ -35,6 +39,11 @@ impl ServiceSupervisor {
         event_tx: broadcast::Sender<ServiceEvent>,
         state_tx: watch::Sender<ServiceState>,
     ) -> Self {
+        let restart_policy_engine = RestartPolicyEngine::new(
+            spec.restart_policy,
+            spec.backoff_config
+        );
+        
         Self {
             spec,
             state: InternalState::Idle,
@@ -42,6 +51,8 @@ impl ServiceSupervisor {
             event_tx,
             state_tx,
             current_process: None,
+            restart_policy_engine,
+            restart_timer: None,
         }
     }
 
@@ -76,6 +87,28 @@ impl ServiceSupervisor {
                         Err(e) => {
                             error!("Error waiting for process exit: {}", e);
                             self.transition_to(InternalState::Idle, Some("Process wait error".to_string())).await?;
+                        }
+                    }
+                }
+                
+                // Handle restart timer expiry
+                _ = sleep(Duration::from_millis(100)), if self.restart_timer.is_some() => {
+                    if let Some(restart_time) = self.restart_timer {
+                        if tokio::time::Instant::now() >= restart_time {
+                            debug!("Restart timer expired for service '{}'", self.spec.id);
+                            self.restart_timer = None;
+                            
+                            // Check if we should still restart (service might have been stopped)
+                            if matches!(self.state, InternalState::Idle) {
+                                info!("Starting automatic restart for service '{}'", self.spec.id);
+                                if let Err(e) = self.start_service().await {
+                                    error!("Failed to restart service '{}': {}", self.spec.id, e);
+                                    // If restart fails, stay in Idle state
+                                    self.transition_to(InternalState::Idle, Some("Restart failed".to_string())).await?;
+                                }
+                            } else {
+                                debug!("Service state changed during restart delay, canceling restart");
+                            }
                         }
                     }
                 }
@@ -147,6 +180,12 @@ impl ServiceSupervisor {
 
     /// Stop the service
     async fn stop_service(&mut self) -> Result<()> {
+        // Cancel any pending restart timers
+        if self.restart_timer.is_some() {
+            debug!("Canceling pending restart timer for service '{}'", self.spec.id);
+            self.restart_timer = None;
+        }
+        
         match self.state {
             InternalState::Idle => {
                 debug!("Service '{}' already stopped", self.spec.id);
@@ -269,12 +308,39 @@ impl ServiceSupervisor {
     async fn handle_process_exit(&mut self, exit_info: ServiceExit) -> Result<()> {
         debug!("Process {} exited for service '{}'", exit_info.pid, self.spec.id);
 
-        self.emit_process_exit_event(exit_info).await;
+        self.emit_process_exit_event(exit_info.clone()).await;
         self.current_process = None;
 
-        // For now, just transition to Idle
-        // In T3.3, we'll implement restart policy logic here
-        self.transition_to(InternalState::Idle, Some("Process exited".to_string())).await?;
+        // Apply restart policy to determine next action
+        let restart_action = self.restart_policy_engine.should_restart(&exit_info);
+        
+        match restart_action {
+            RestartAction::Stop => {
+                info!("Restart policy determined service should not restart, transitioning to Idle");
+                self.transition_to(InternalState::Idle, Some("Service stopped - restart policy".to_string())).await?;
+            }
+            RestartAction::Restart { delay } => {
+                info!("Restart policy determined service should restart after {:?}", delay);
+                
+                // Transition to Idle first
+                self.transition_to(InternalState::Idle, Some("Process exited".to_string())).await?;
+                
+                // Schedule restart using non-blocking timer
+                if delay.is_zero() {
+                    // Immediate restart
+                    info!("Starting immediate restart for service '{}'", self.spec.id);
+                    if let Err(e) = self.start_service().await {
+                        error!("Failed to restart service '{}': {}", self.spec.id, e);
+                        self.transition_to(InternalState::Idle, Some("Restart failed".to_string())).await?;
+                    }
+                } else {
+                    // Schedule restart after delay
+                    let restart_time = tokio::time::Instant::now() + delay;
+                    debug!("Scheduling restart for service '{}' at {:?}", self.spec.id, restart_time);
+                    self.restart_timer = Some(restart_time);
+                }
+            }
+        }
 
         Ok(())
     }

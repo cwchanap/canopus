@@ -152,10 +152,10 @@ impl Default for MockInstruction {
 }
 
 impl MockProcessAdapter {
-    /// Create a new mock adapter with default behavior (quick successful exit)
+    /// Create a new mock adapter with no pre-configured instructions
     pub fn new() -> Self {
         Self {
-            instructions: Arc::new(tokio::sync::Mutex::new(vec![MockInstruction::default()])),
+            instructions: Arc::new(tokio::sync::Mutex::new(vec![])),
         }
     }
 

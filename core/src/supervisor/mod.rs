@@ -27,9 +27,14 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tracing::{error, info};
 
 pub mod adapters;
+pub mod restart_policy;
 pub mod service_task;
 
+#[cfg(test)]
+pub mod integration_tests;
+
 pub use adapters::*;
+pub use restart_policy::*;
 pub use service_task::*;
 
 /// Control messages for supervisor operations
@@ -188,7 +193,7 @@ pub fn spawn_supervisor(config: SupervisorConfig) -> SupervisorHandle {
 }
 
 #[cfg(test)]
-mod tests {
+mod unit_tests {
     use super::*;
     use crate::supervisor::adapters::MockProcessAdapter;
     use schema::RestartPolicy;
