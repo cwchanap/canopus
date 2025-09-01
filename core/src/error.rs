@@ -35,10 +35,22 @@ pub enum CoreError {
 
     /// No available port found after trying multiple options
     #[error("No available port found after trying {tried} ports")]
-    NoAvailablePort { 
+    NoAvailablePort {
         /// Number of ports that were tried
-        tried: usize 
+        tried: usize,
     },
+
+    /// Process spawning errors
+    #[error("Process spawn error: {0}")]
+    ProcessSpawn(String),
+
+    /// Process signaling errors
+    #[error("Process signal error: {0}")]
+    ProcessSignal(String),
+
+    /// Process waiting/status errors
+    #[error("Process wait error: {0}")]
+    ProcessWait(String),
 
     /// Generic or unspecified errors
     #[error("Generic error: {0}")]
@@ -57,6 +69,9 @@ impl CoreError {
             CoreError::SerializationError(_) => "CORE006",
             CoreError::PortInUse(_) => "CORE007",
             CoreError::NoAvailablePort { .. } => "CORE008",
+            CoreError::ProcessSpawn(_) => "CORE009",
+            CoreError::ProcessSignal(_) => "CORE010",
+            CoreError::ProcessWait(_) => "CORE011",
             CoreError::Other(_) => "CORE999",
         }
     }

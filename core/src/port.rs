@@ -42,7 +42,7 @@ static RESERVATIONS: Lazy<DashMap<u16, ReservationMeta>> = Lazy::new(DashMap::ne
 static THREAD_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// A guard that holds a port reservation and the underlying TCP listener
-/// 
+///
 /// The port is automatically released when this guard is dropped.
 #[derive(Debug)]
 pub struct PortGuard {
@@ -91,7 +91,7 @@ impl PortAllocator {
     }
 
     /// Reserve a port, optionally trying a preferred port first
-    /// 
+    ///
     /// If a preferred port is provided and available, it will be used.
     /// Otherwise, falls back to a deterministic sequence of ports within the configured range.
     pub fn reserve(&self, preferred: Option<u16>) -> Result<PortGuard> {
@@ -106,7 +106,10 @@ impl PortAllocator {
                     return Ok(guard);
                 }
                 Err(CoreError::PortInUse(_)) => {
-                    debug!("Preferred port {} is already in use, falling back to sequence", port);
+                    debug!(
+                        "Preferred port {} is already in use, falling back to sequence",
+                        port
+                    );
                 }
                 Err(e) => return Err(e),
             }
@@ -122,7 +125,10 @@ impl PortAllocator {
 
             match self.try_reserve_port_internal(port) {
                 Ok(guard) => {
-                    debug!("Successfully reserved port {} after {} attempts", port, attempts);
+                    debug!(
+                        "Successfully reserved port {} after {} attempts",
+                        port, attempts
+                    );
                     return Ok(guard);
                 }
                 Err(CoreError::PortInUse(_)) => {
@@ -140,7 +146,7 @@ impl PortAllocator {
     pub fn try_reserve_port(&self, port: u16) -> Result<PortGuard> {
         self.try_reserve_port_internal(port)
     }
-    
+
     /// Try to reserve a specific port (internal implementation)
     fn try_reserve_port_internal(&self, port: u16) -> Result<PortGuard> {
         // Check if already reserved in-process
@@ -186,19 +192,18 @@ impl PortAllocator {
         let seed = self.calculate_deterministic_seed();
         let range_size = self.range_end - self.range_start;
         let start_offset = (seed % u64::from(range_size)) as u16;
-        
-        (0..range_size)
-            .map(move |i| {
-                let offset = (start_offset + i) % range_size;
-                self.range_start + offset
-            })
+
+        (0..range_size).map(move |i| {
+            let offset = (start_offset + i) % range_size;
+            self.range_start + offset
+        })
     }
 
     /// Calculate a deterministic seed based on process and thread information
     fn calculate_deterministic_seed(&self) -> u64 {
         let pid = u64::from(process::id());
         let thread_id = get_thread_id();
-        
+
         // Use a simple hash combining process ID and thread ID
         // This ensures different processes and threads get different sequences
         // but the same process/thread combination always gets the same sequence
@@ -215,7 +220,7 @@ fn get_thread_id() -> u64 {
 }
 
 /// Explicitly release a reserved port
-/// 
+///
 /// This is called automatically when a PortGuard is dropped, but can be called manually if needed.
 pub fn release_port(port: u16) {
     if let Some(_meta) = RESERVATIONS.remove(&port) {
@@ -224,15 +229,18 @@ pub fn release_port(port: u16) {
 }
 
 /// Get information about currently reserved ports
-/// 
+///
 /// This is primarily useful for debugging and testing.
 #[cfg(test)]
 pub fn get_reservations() -> Vec<(u16, ReservationMeta)> {
-    RESERVATIONS.iter().map(|entry| (*entry.key(), *entry.value())).collect()
+    RESERVATIONS
+        .iter()
+        .map(|entry| (*entry.key(), *entry.value()))
+        .collect()
 }
 
 /// Clear all reservations
-/// 
+///
 /// This is primarily useful for testing to ensure clean state between tests.
 #[cfg(test)]
 pub fn clear_reservations() {
@@ -258,11 +266,11 @@ mod tests {
     fn test_preferred_port_success() {
         clear_reservations();
         let allocator = PortAllocator::new();
-        
+
         // Try to reserve a port in a high range that's likely to be free
         let preferred_port = 45123;
         let guard = allocator.reserve(Some(preferred_port));
-        
+
         match guard {
             Ok(g) => {
                 assert_eq!(g.port(), preferred_port);
@@ -281,16 +289,16 @@ mod tests {
     fn test_port_collision() {
         clear_reservations();
         let allocator = PortAllocator::new();
-        
+
         // Try to reserve a port in a high range that's likely to be free
         let preferred_port = 45124;
         let guard1 = allocator.reserve(Some(preferred_port));
-        
+
         match guard1 {
             Ok(_guard1) => {
                 // Verify it's properly reserved in our table
                 assert!(RESERVATIONS.contains_key(&preferred_port));
-                
+
                 // Try to directly reserve the same port using try_reserve_port
                 // This tests our internal collision detection
                 let collision_result = allocator.try_reserve_port(preferred_port);
@@ -305,8 +313,8 @@ mod tests {
                         panic!("Unexpected error type: {}", e);
                     }
                 }
-                
-                // Also test that regular reserve() with the same preferred port 
+
+                // Also test that regular reserve() with the same preferred port
                 // falls back correctly (should succeed with different port)
                 let guard2 = allocator.reserve(Some(preferred_port));
                 match guard2 {
@@ -322,7 +330,10 @@ mod tests {
             }
             Err(CoreError::PortInUse(_)) => {
                 // Port was already in use by the system - skip the test
-                println!("Port {} was already in use by the system, skipping collision test", preferred_port);
+                println!(
+                    "Port {} was already in use by the system, skipping collision test",
+                    preferred_port
+                );
             }
             Err(e) => panic!("Unexpected error during first reservation: {}", e),
         }
@@ -332,10 +343,10 @@ mod tests {
     fn test_port_release_on_drop() {
         clear_reservations();
         let allocator = PortAllocator::new();
-        
+
         let preferred_port = 45125;
         let reservations_before = get_reservations().len();
-        
+
         {
             let _guard = allocator.reserve(Some(preferred_port));
             // Port should be reserved
@@ -343,7 +354,7 @@ mod tests {
                 assert!(RESERVATIONS.contains_key(&preferred_port));
             }
         } // guard drops here
-        
+
         // Port should be released
         assert!(!RESERVATIONS.contains_key(&preferred_port));
         let reservations_after = get_reservations().len();
@@ -353,14 +364,14 @@ mod tests {
     #[test]
     fn test_deterministic_sequence() {
         let allocator = PortAllocator::with_range(45000, 45010);
-        
+
         // Generate sequence twice and verify they're identical
         let seq1: Vec<u16> = allocator.generate_port_sequence().take(10).collect();
         let seq2: Vec<u16> = allocator.generate_port_sequence().take(10).collect();
-        
+
         assert_eq!(seq1, seq2);
         assert!(!seq1.is_empty());
-        
+
         // All ports should be within range
         for port in seq1 {
             assert!((45000..45010).contains(&port));
@@ -371,10 +382,10 @@ mod tests {
     fn test_fallback_to_sequence() {
         clear_reservations();
         let allocator = PortAllocator::with_range(45200, 45210);
-        
+
         // Reserve without preferred port, should use sequence
         let guard = allocator.reserve(None);
-        
+
         match guard {
             Ok(g) => {
                 let port = g.port();
@@ -394,11 +405,11 @@ mod tests {
         clear_reservations();
         let allocator = PortAllocator::new();
         let preferred_port = 45126;
-        
+
         if let Ok(guard) = allocator.reserve(Some(preferred_port)) {
             let port = guard.port();
             assert!(RESERVATIONS.contains_key(&port));
-            
+
             // Explicitly release (this will be called again on drop, which should be fine)
             release_port(port);
             assert!(!RESERVATIONS.contains_key(&port));
@@ -410,7 +421,7 @@ mod tests {
         clear_reservations();
         let allocator = PortAllocator::new();
         let preferred_port = 45127;
-        
+
         if let Ok(guard) = allocator.reserve(Some(preferred_port)) {
             let addr = guard.addr().expect("Should be able to get address");
             assert_eq!(addr.port(), preferred_port);

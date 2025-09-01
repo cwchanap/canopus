@@ -5,6 +5,8 @@
 
 pub mod error;
 pub mod port;
+#[cfg(unix)]
+pub mod process;
 pub mod proxy_api;
 pub mod utilities;
 
