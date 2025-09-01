@@ -8,6 +8,7 @@ pub mod port;
 #[cfg(unix)]
 pub mod process;
 pub mod proxy_api;
+pub mod supervisor;
 pub mod utilities;
 
 #[cfg(test)]
