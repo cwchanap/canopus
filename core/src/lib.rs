@@ -4,6 +4,7 @@
 //! that can be used by both the daemon and CLI components.
 
 pub mod error;
+pub mod health;
 pub mod port;
 #[cfg(unix)]
 pub mod process;
