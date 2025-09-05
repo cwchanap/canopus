@@ -5,9 +5,11 @@
 
 use super::{ControlMsg, InternalState, ManagedProcess, ProcessAdapter, RestartPolicyEngine, RestartAction, HealthStatus, HealthCheckStatus, ReadinessCheckStatus};
 use crate::{health, Result};
+use crate::logging::{LogEntry, LogRing};
 use schema::{ServiceEvent, ServiceExit, ServiceSpec, ServiceState};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
+use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::time::{timeout, sleep, Instant, interval, MissedTickBehavior};
 use tracing::{debug, error, info, warn};
@@ -26,6 +28,12 @@ pub struct ServiceSupervisor {
     state_tx: watch::Sender<ServiceState>,
     /// Currently managed process (if any)
     current_process: Option<Box<dyn ManagedProcess>>,
+    /// Bounded in-memory ring buffer of recent log entries
+    log_ring: Arc<tokio::sync::Mutex<LogRing>>,
+    /// Async reader task for stdout
+    stdout_task: Option<tokio::task::JoinHandle<()>>,
+    /// Async reader task for stderr
+    stderr_task: Option<tokio::task::JoinHandle<()>>,
     /// Restart policy engine for determining restart actions
     restart_policy_engine: RestartPolicyEngine,
     /// Restart timer (when restart is scheduled)
@@ -49,6 +57,68 @@ pub struct ServiceSupervisor {
 }
 
 impl ServiceSupervisor {
+    /// Spawn a background task to read lines from the given async reader,
+    /// push them into the log ring, and emit LogOutput events.
+    fn spawn_log_reader(
+        &self,
+        reader: std::pin::Pin<Box<dyn AsyncRead + Send + Unpin>>,
+        stream: schema::LogStream,
+    ) -> tokio::task::JoinHandle<()> {
+        let service_id = self.spec.id.clone();
+        let event_tx = self.event_tx.clone();
+        let ring = self.log_ring.clone();
+
+        tokio::spawn(async move {
+            // Convert Pin<Box<..>> to Box<..> since it's Unpin
+            let reader = std::pin::Pin::into_inner(reader);
+            let mut lines = BufReader::new(reader).lines();
+
+            loop {
+                match lines.next_line().await {
+                    Ok(Some(line)) => {
+                        let timestamp = schema::ServiceEvent::current_timestamp();
+                        let content = line; // already without trailing newline
+
+                        // Push into ring buffer
+                        {
+                            let mut guard = ring.lock().await;
+                            guard.push(LogEntry {
+                                seq: 0, // assigned by ring
+                                stream,
+                                content: content.clone(),
+                                timestamp: timestamp.clone(),
+                            });
+                        }
+
+                        // Emit event (best-effort)
+                        let _ = event_tx.send(schema::ServiceEvent::LogOutput {
+                            service_id: service_id.clone(),
+                            stream,
+                            content,
+                            timestamp,
+                        });
+                    }
+                    Ok(None) => {
+                        // EOF
+                        break;
+                    }
+                    Err(e) => {
+                        // Emit a warning and stop this reader
+                        let _ = event_tx.send(schema::ServiceEvent::Warning {
+                            service_id: service_id.clone(),
+                            message: format!("Error reading log stream {:?}: {}", stream, e),
+                            timestamp: schema::ServiceEvent::current_timestamp(),
+                            code: Some("LOG_READ_ERROR".to_string()),
+                        });
+                        break;
+                    }
+                }
+            }
+        })
+    }
+}
+
+impl ServiceSupervisor {
     /// Create a new service supervisor
     pub fn new(
         spec: ServiceSpec,
@@ -68,6 +138,10 @@ impl ServiceSupervisor {
             event_tx,
             state_tx,
             current_process: None,
+            // Default log ring capacity; could be made configurable later
+            log_ring: Arc::new(tokio::sync::Mutex::new(LogRing::new(1024))),
+            stdout_task: None,
+            stderr_task: None,
             restart_policy_engine,
             restart_timer: None,
             readiness_check_timer: None,
@@ -115,28 +189,6 @@ impl ServiceSupervisor {
                         Err(e) => {
                             error!("Error waiting for process exit: {}", e);
                             self.transition_to(InternalState::Idle, Some("Process wait error".to_string())).await?;
-                        }
-                    }
-                }
-                
-                // Handle restart timer expiry
-                _ = sleep(Duration::from_millis(100)), if self.restart_timer.is_some() => {
-                    if let Some(restart_time) = self.restart_timer {
-                        if tokio::time::Instant::now() >= restart_time {
-                            debug!("Restart timer expired for service '{}'", self.spec.id);
-                            self.restart_timer = None;
-                            
-                            // Check if we should still restart (service might have been stopped)
-                            if matches!(self.state, InternalState::Idle) {
-                                info!("Starting automatic restart for service '{}'", self.spec.id);
-                                if let Err(e) = self.start_service().await {
-                                    error!("Failed to restart service '{}': {}", self.spec.id, e);
-                                    // If restart fails, stay in Idle state
-                                    self.transition_to(InternalState::Idle, Some("Restart failed".to_string())).await?;
-                                }
-                            } else {
-                                debug!("Service state changed during restart delay, canceling restart");
-                            }
                         }
                     }
                 }
@@ -301,7 +353,7 @@ impl ServiceSupervisor {
     async fn spawn_process(&mut self) -> Result<()> {
         debug!("Spawning process for service '{}'", self.spec.id);
 
-        let process = self.process_adapter.spawn(&self.spec).await?;
+        let mut process = self.process_adapter.spawn(&self.spec).await?;
         let pid = process.pid();
 
         self.emit_event(ServiceEvent::ProcessStarted {
@@ -312,7 +364,21 @@ impl ServiceSupervisor {
             args: self.spec.args.clone(),
         }).await;
 
+        // Take stdout/stderr before storing the process
+        let stdout = process.take_stdout();
+        let stderr = process.take_stderr();
+
         self.current_process = Some(process);
+
+        // Spawn async log reader tasks
+        if let Some(reader) = stdout {
+            let handle = self.spawn_log_reader(reader, schema::LogStream::Stdout);
+            self.stdout_task = Some(handle);
+        }
+        if let Some(reader) = stderr {
+            let handle = self.spawn_log_reader(reader, schema::LogStream::Stderr);
+            self.stderr_task = Some(handle);
+        }
         Ok(())
     }
 
@@ -320,6 +386,10 @@ impl ServiceSupervisor {
     async fn stop_process(&mut self) -> Result<()> {
         if let Some(mut process) = self.current_process.take() {
             debug!("Stopping process {} for service '{}'", process.pid(), self.spec.id);
+
+            // Stop log reader tasks first
+            if let Some(handle) = self.stdout_task.take() { handle.abort(); }
+            if let Some(handle) = self.stderr_task.take() { handle.abort(); }
 
             // Try graceful termination first
             if let Err(e) = process.terminate().await {
@@ -370,6 +440,9 @@ impl ServiceSupervisor {
 
         self.emit_process_exit_event(exit_info.clone()).await;
         self.current_process = None;
+        // Ensure log reader tasks are stopped
+        if let Some(handle) = self.stdout_task.take() { handle.abort(); }
+        if let Some(handle) = self.stderr_task.take() { handle.abort(); }
 
         // Apply restart policy to determine next action
         let restart_action = self.restart_policy_engine.should_restart(&exit_info);
@@ -561,6 +634,26 @@ impl ServiceSupervisor {
         let now = Instant::now();
         debug!("Handling timers for service '{}' in state {:?}", self.spec.id, self.state);
         
+        // Handle scheduled restart timer (processed on periodic ticks to avoid starvation)
+        if let Some(restart_time) = self.restart_timer {
+            if now >= restart_time {
+                debug!("Restart timer expired for service '{}'", self.spec.id);
+                self.restart_timer = None;
+
+                // Check if we should still restart (service might have been stopped)
+                if matches!(self.state, InternalState::Idle) {
+                    info!("Starting automatic restart for service '{}'", self.spec.id);
+                    if let Err(e) = self.start_service().await {
+                        error!("Failed to restart service '{}': {}", self.spec.id, e);
+                        // If restart fails, stay in Idle state
+                        self.transition_to(InternalState::Idle, Some("Restart failed".to_string())).await?;
+                    }
+                } else {
+                    debug!("Service state changed during restart delay, canceling restart");
+                }
+            }
+        }
+
         // Handle startup timeout
         if let Some(timeout_time) = self.startup_timeout_timer {
             if now >= timeout_time {

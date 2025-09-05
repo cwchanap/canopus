@@ -8,6 +8,7 @@ pub mod health;
 pub mod port;
 #[cfg(unix)]
 pub mod process;
+pub mod logging;
 pub mod proxy_api;
 pub mod supervisor;
 pub mod utilities;

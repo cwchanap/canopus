@@ -11,13 +11,15 @@ keywords = ["core", "utilities", "system", "daemon"]
 categories = ["development-tools", "system", "api-bindings"]
 
 [dependencies]
+serde = { workspace = true, features = ["derive"] }
+schemars = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 dashmap = "5.5"
 once_cell = "1.19"
-tokio = { workspace = true, features = ["net", "time"] }
+tokio = { workspace = true, features = ["net", "time", "process", "io-util"] }
 async-trait = "0.1"
 hyper = { version = "0.14", features = ["client", "server", "http1", "tcp"] }
 

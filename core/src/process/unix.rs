@@ -27,7 +27,8 @@ use crate::{CoreError, Result};
 use nix::sys::signal::{killpg, Signal};
 use nix::unistd::Pid;
 use std::os::unix::process::CommandExt;
-use std::process::{Child, Command};
+use std::process::Stdio;
+use tokio::process::{Child, Command};
 use tracing::{debug, error, warn};
 
 /// A child process managed with Unix process groups
@@ -54,9 +55,9 @@ impl ChildProcess {
         self.pid.as_raw() as u32
     }
 
-    /// Wait for the process to exit and return its exit status
-    pub fn wait(&mut self) -> Result<std::process::ExitStatus> {
-        self.child.wait().map_err(|e| {
+    /// Wait for the process to exit and return its exit status (async)
+    pub async fn wait(&mut self) -> Result<std::process::ExitStatus> {
+        self.child.wait().await.map_err(|e| {
             CoreError::ProcessWait(format!("Failed to wait for process {}: {}", self.pid, e))
         })
     }
@@ -108,6 +109,9 @@ pub fn spawn(cmd: &str, args: &[&str]) -> Result<ChildProcess> {
 
     let mut command = Command::new(cmd);
     command.args(args);
+    // Pipe stdout/stderr so we can capture logs asynchronously
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
 
     // Use before_exec to call setsid() in the child process
     // Safety: setsid() is async-signal-safe and appropriate for use in before_exec
@@ -128,10 +132,26 @@ pub fn spawn(cmd: &str, args: &[&str]) -> Result<ChildProcess> {
         CoreError::ProcessSpawn(format!("Failed to spawn '{}': {}", cmd, e))
     })?;
 
-    let pid = Pid::from_raw(child.id() as i32);
+    // tokio::process::Child::id() may return Option on some platforms
+    let raw_pid = child.id().ok_or_else(|| {
+        CoreError::ProcessSpawn("Spawned child did not have a PID".to_string())
+    })?;
+    let pid = Pid::from_raw(raw_pid as i32);
     debug!("Successfully spawned process {} in new process group", pid);
 
     Ok(ChildProcess { pid, child })
+}
+
+impl ChildProcess {
+    /// Take the stdout handle for async reading, if available
+    pub fn take_stdout(&mut self) -> Option<tokio::process::ChildStdout> {
+        self.child.stdout.take()
+    }
+
+    /// Take the stderr handle for async reading, if available
+    pub fn take_stderr(&mut self) -> Option<tokio::process::ChildStderr> {
+        self.child.stderr.take()
+    }
 }
 
 /// Send SIGTERM to the process group for graceful termination
@@ -326,22 +346,22 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
-    #[test]
-    fn test_spawn_simple_command() {
+    #[tokio::test]
+    async fn test_spawn_simple_command() {
         let child = spawn("echo", &["hello", "world"]).expect("Failed to spawn echo");
         assert!(child.pid() > 0);
         assert_eq!(child.pid(), child.pgid()); // Process should be its own group leader
     }
 
-    #[test]
-    fn test_spawn_and_wait() {
+    #[tokio::test]
+    async fn test_spawn_and_wait() {
         let mut child = spawn("true", &[]).expect("Failed to spawn true");
-        let status = child.wait().expect("Failed to wait for process");
+        let status = child.wait().await.expect("Failed to wait for process");
         assert!(status.success());
     }
 
-    #[test]
-    fn test_spawn_nonexistent_command() {
+    #[tokio::test]
+    async fn test_spawn_nonexistent_command() {
         let result = spawn("nonexistent_command_12345", &[]);
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -350,8 +370,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_signal_term_nonexistent_process() {
+    #[tokio::test]
+    async fn test_signal_term_nonexistent_process() {
         // Create a fake ChildProcess with a PID that doesn't exist
         let fake_child = ChildProcess {
             pid: Pid::from_raw(99999),
@@ -363,8 +383,8 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[test]
-    fn test_signal_kill_nonexistent_process() {
+    #[tokio::test]
+    async fn test_signal_kill_nonexistent_process() {
         // Create a fake ChildProcess with a PID that doesn't exist
         let fake_child = ChildProcess {
             pid: Pid::from_raw(99999),
@@ -376,8 +396,8 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[test]
-    fn test_terminate_with_timeout_quick_exit() {
+    #[tokio::test]
+    async fn test_terminate_with_timeout_quick_exit() {
         // Use a process that sleeps briefly - it may exit naturally or be terminated
         let mut child = spawn("sleep", &["0.1"]).expect("Failed to spawn sleep");
         let status = terminate_with_timeout(&mut child, Duration::from_secs(1))
@@ -387,8 +407,8 @@ mod tests {
         assert!(status.code().is_some() || !status.success());
     }
 
-    #[test]
-    fn test_terminate_with_timeout_needs_kill() {
+    #[tokio::test]
+    async fn test_terminate_with_timeout_needs_kill() {
         // Use a longer sleep to test the timeout -> SIGKILL path
         let mut child = spawn("sleep", &["10"]).expect("Failed to spawn sleep");
         let status = terminate_with_timeout(&mut child, Duration::from_millis(100))

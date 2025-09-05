@@ -7,7 +7,9 @@
 use crate::Result;
 use async_trait::async_trait;
 use schema::{ServiceExit, ServiceSpec};
+use std::pin::Pin;
 use std::sync::Arc;
+use tokio::io::AsyncRead;
 use tracing::debug;
 
 /// Trait for managing processes in a platform-agnostic way
@@ -34,6 +36,15 @@ pub trait ManagedProcess: Send + Sync {
 
     /// Check if the process is still alive
     fn is_alive(&self) -> bool;
+
+    /// Take a readable handle to the child's stdout for async consumption.
+    /// This can be used to spawn tasks that read logs line-by-line.
+    /// Returns None if stdout was not piped or already taken.
+    fn take_stdout(&mut self) -> Option<Pin<Box<dyn AsyncRead + Send + Unpin>>>;
+
+    /// Take a readable handle to the child's stderr for async consumption.
+    /// Returns None if stderr was not piped or already taken.
+    fn take_stderr(&mut self) -> Option<Pin<Box<dyn AsyncRead + Send + Unpin>>>;
 }
 
 /// Unix process adapter using the existing process management
@@ -76,7 +87,7 @@ impl ManagedProcess for UnixManagedProcess {
     }
 
     async fn wait(&mut self) -> Result<ServiceExit> {
-        let exit_status = self.child.wait()?;
+        let exit_status = self.child.wait().await?;
         
         let (exit_code, signal) = if let Some(code) = exit_status.code() {
             (Some(code), None)
@@ -117,6 +128,18 @@ impl ManagedProcess for UnixManagedProcess {
         // This is a simple heuristic - in a real implementation we might
         // want to use a more sophisticated approach
         true // For now, assume it's alive until we explicitly wait
+    }
+
+    fn take_stdout(&mut self) -> Option<Pin<Box<dyn AsyncRead + Send + Unpin>>> {
+        self.child
+            .take_stdout()
+            .map(|s| Box::pin(s) as Pin<Box<dyn AsyncRead + Send + Unpin>>)
+    }
+
+    fn take_stderr(&mut self) -> Option<Pin<Box<dyn AsyncRead + Send + Unpin>>> {
+        self.child
+            .take_stderr()
+            .map(|s| Box::pin(s) as Pin<Box<dyn AsyncRead + Send + Unpin>>)
     }
 }
 
@@ -317,6 +340,16 @@ impl ManagedProcess for MockManagedProcess {
 
     fn is_alive(&self) -> bool {
         !self.should_exit()
+    }
+
+    fn take_stdout(&mut self) -> Option<Pin<Box<dyn AsyncRead + Send + Unpin>>> {
+        // For now, mock process does not produce stdout. This can be enhanced to
+        // return a synthetic AsyncRead for testing log capture.
+        None
+    }
+
+    fn take_stderr(&mut self) -> Option<Pin<Box<dyn AsyncRead + Send + Unpin>>> {
+        None
     }
 }
 
