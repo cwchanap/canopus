@@ -5,3 +5,6 @@ mod restart_policy_tests;
 
 #[path = "supervisor_restart_tests.rs"]
 mod supervisor_restart_tests;
+
+#[path = "health_integration_tests.rs"]
+mod health_integration_tests;

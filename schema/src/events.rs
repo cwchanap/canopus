@@ -179,6 +179,28 @@ pub enum ServiceEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         code: Option<String>,
     },
+
+    /// Startup timeout has expired
+    StartupTimeout {
+        /// Service identifier
+        service_id: String,
+        /// Event timestamp in RFC3339 format
+        timestamp: String,
+        /// Configured startup timeout in seconds
+        timeout_secs: u64,
+    },
+
+    /// Service has become unhealthy due to failed health checks
+    ServiceUnhealthy {
+        /// Service identifier
+        service_id: String,
+        /// Event timestamp in RFC3339 format
+        timestamp: String,
+        /// Reason for being unhealthy
+        reason: String,
+        /// Number of consecutive failures that triggered this event
+        consecutive_failures: u32,
+    },
 }
 
 /// Log stream identifier
@@ -224,6 +246,8 @@ impl ServiceEvent {
             ServiceEvent::LogOutput { service_id, .. } => service_id,
             ServiceEvent::Warning { service_id, .. } => service_id,
             ServiceEvent::Error { service_id, .. } => service_id,
+            ServiceEvent::StartupTimeout { service_id, .. } => service_id,
+            ServiceEvent::ServiceUnhealthy { service_id, .. } => service_id,
         }
     }
 
@@ -243,6 +267,8 @@ impl ServiceEvent {
             ServiceEvent::LogOutput { timestamp, .. } => timestamp,
             ServiceEvent::Warning { timestamp, .. } => timestamp,
             ServiceEvent::Error { timestamp, .. } => timestamp,
+            ServiceEvent::StartupTimeout { timestamp, .. } => timestamp,
+            ServiceEvent::ServiceUnhealthy { timestamp, .. } => timestamp,
         }
     }
 
@@ -280,6 +306,8 @@ impl ServiceEvent {
             ServiceEvent::LogOutput { .. } => EventSeverity::Debug,
             ServiceEvent::Warning { .. } => EventSeverity::Warning,
             ServiceEvent::Error { .. } => EventSeverity::Error,
+            ServiceEvent::StartupTimeout { .. } => EventSeverity::Warning,
+            ServiceEvent::ServiceUnhealthy { .. } => EventSeverity::Critical,
         }
     }
 
@@ -486,6 +514,8 @@ impl EventFilter {
                 ServiceEvent::LogOutput { .. } => "logOutput",
                 ServiceEvent::Warning { .. } => "warning",
                 ServiceEvent::Error { .. } => "error",
+                ServiceEvent::StartupTimeout { .. } => "startupTimeout",
+                ServiceEvent::ServiceUnhealthy { .. } => "serviceUnhealthy",
             };
             
             if !self.event_types.contains(&event_type.to_string()) {

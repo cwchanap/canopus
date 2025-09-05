@@ -3,12 +3,13 @@
 //! This module contains the [`ServiceSupervisor`] which implements the core
 //! state machine logic for managing a single service's lifecycle.
 
-use super::{ControlMsg, InternalState, ManagedProcess, ProcessAdapter, RestartPolicyEngine, RestartAction};
-use crate::Result;
+use super::{ControlMsg, InternalState, ManagedProcess, ProcessAdapter, RestartPolicyEngine, RestartAction, HealthStatus, HealthCheckStatus, ReadinessCheckStatus};
+use crate::{health, Result};
 use schema::{ServiceEvent, ServiceExit, ServiceSpec, ServiceState};
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 use tokio::sync::{broadcast, mpsc, watch};
-use tokio::time::{timeout, Duration, sleep};
+use tokio::time::{timeout, sleep, Instant, interval, MissedTickBehavior};
 use tracing::{debug, error, info, warn};
 
 /// Service supervisor task managing the lifecycle of a single service
@@ -29,6 +30,22 @@ pub struct ServiceSupervisor {
     restart_policy_engine: RestartPolicyEngine,
     /// Restart timer (when restart is scheduled)
     restart_timer: Option<tokio::time::Instant>,
+    /// Next readiness check time
+    readiness_check_timer: Option<tokio::time::Instant>,
+    /// Next health check time (for liveness checks)
+    health_check_timer: Option<tokio::time::Instant>,
+    /// Startup timeout timer
+    startup_timeout_timer: Option<tokio::time::Instant>,
+    /// Consecutive readiness check successes
+    readiness_success_count: u32,
+    /// Consecutive health check failures
+    health_failure_count: u32,
+    /// Consecutive health check successes
+    health_success_count: u32,
+    /// Last health check result
+    last_health_check: Option<HealthCheckStatus>,
+    /// Last readiness check result
+    last_readiness_check: Option<ReadinessCheckStatus>,
 }
 
 impl ServiceSupervisor {
@@ -53,12 +70,23 @@ impl ServiceSupervisor {
             current_process: None,
             restart_policy_engine,
             restart_timer: None,
+            readiness_check_timer: None,
+            health_check_timer: None,
+            startup_timeout_timer: None,
+            readiness_success_count: 0,
+            health_failure_count: 0,
+            health_success_count: 0,
+            last_health_check: None,
+            last_readiness_check: None,
         }
     }
 
     /// Run the supervisor task loop
     pub async fn run(&mut self, mut control_rx: mpsc::UnboundedReceiver<ControlMsg>) -> Result<()> {
         info!("Starting supervisor for service '{}'", self.spec.id);
+        // Periodic tick to ensure timers are checked regularly regardless of other events
+        let mut tick = interval(Duration::from_millis(50));
+        tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
         loop {
             tokio::select! {
@@ -112,15 +140,15 @@ impl ServiceSupervisor {
                         }
                     }
                 }
+
+                // Periodic tick to ensure timers are handled even without other events
+                _ = tick.tick() => {
+                    // No-op: fall through to handle_timers below
+                }
             }
 
-            // Check if we need to perform readiness check after other operations
-            if matches!(self.state, InternalState::Starting) {
-                // Perform readiness check
-                self.check_readiness().await;
-                // Transition to Ready after readiness check
-                self.transition_to(InternalState::Ready, Some("Service is ready".to_string())).await?;
-            }
+            // Handle timers and periodic checks
+            self.handle_timers().await?;
         }
 
         // Cleanup: stop any running process
@@ -153,6 +181,26 @@ impl ServiceSupervisor {
                 }
                 return Err(crate::CoreError::ServiceError("Shutdown requested".to_string()));
             }
+            ControlMsg::GetHealthStatus { response } => {
+                let health_status = self.get_health_status_snapshot();
+                let _ = response.send(health_status);
+            }
+            ControlMsg::TriggerHealthCheck { response } => {
+                if self.spec.health_check.is_some() {
+                    let result = self.perform_on_demand_health_check().await;
+                    let _ = response.send(result);
+                } else {
+                    let _ = response.send(Err(crate::CoreError::ServiceError("No health check configured".to_string())));
+                }
+            }
+            ControlMsg::TriggerReadinessCheck { response } => {
+                if self.spec.readiness_check.is_some() {
+                    let result = self.perform_on_demand_readiness_check().await;
+                    let _ = response.send(result);
+                } else {
+                    let _ = response.send(Err(crate::CoreError::ServiceError("No readiness check configured".to_string())));
+                }
+            }
         }
         Ok(())
     }
@@ -166,6 +214,18 @@ impl ServiceSupervisor {
                 
                 if self.spec.readiness_check.is_some() || self.spec.health_check.is_some() {
                     self.transition_to(InternalState::Starting, Some("Waiting for readiness".to_string())).await?;
+                    
+                    // Set startup timeout if configured
+                    if self.spec.startup_timeout_secs > 0 {
+                        self.startup_timeout_timer = Some(Instant::now() + Duration::from_secs(self.spec.startup_timeout_secs));
+                    }
+                    
+                    // Initialize readiness check timer if configured
+                    if let Some(ref readiness_check) = self.spec.readiness_check {
+                        let delay = readiness_check.initial_delay();
+                        self.readiness_check_timer = Some(Instant::now() + delay);
+                        debug!("Initialized readiness check timer for service '{}' with delay {:?}", self.spec.id, delay);
+                    }
                 } else {
                     // No health/readiness checks - go straight to Ready
                     self.transition_to(InternalState::Ready, Some("Service started successfully".to_string())).await?;
@@ -346,17 +406,67 @@ impl ServiceSupervisor {
     }
 
     /// Perform readiness check
-    async fn check_readiness(&self) {
-        // For now, simulate readiness check by waiting a bit
-        // In a full implementation, this would perform actual health/readiness checks
+    async fn perform_readiness_check(&mut self) {
         if let Some(ref readiness_check) = self.spec.readiness_check {
-            tokio::time::sleep(readiness_check.initial_delay()).await;
+            debug!("Performing readiness check for service '{}'", self.spec.id);
             
-            // Simulate the check passing immediately for testing
-            // Real implementation would perform TCP/HTTP/Exec checks here
+            let start_time = Instant::now();
+            let result = health::run_probe(&schema::HealthCheck {
+                check_type: readiness_check.check_type.clone(),
+                interval_secs: readiness_check.interval_secs,
+                timeout_secs: readiness_check.timeout_secs,
+                failure_threshold: 1, // Readiness checks don't use failure threshold
+                success_threshold: readiness_check.success_threshold,
+            }).await;
+            let duration_ms = start_time.elapsed().as_millis() as u64;
+            
+            let success = result.is_ok();
+            let error = result.err().map(|e| e.to_string());
+            
+            // Store the last readiness check result
+            self.last_readiness_check = Some(ReadinessCheckStatus {
+                success,
+                timestamp: SystemTime::now(),
+                duration: start_time.elapsed(),
+                error: error.clone(),
+            });
+            
+            // Emit readiness check result event
+            self.emit_event(ServiceEvent::ReadinessCheckResult {
+                service_id: self.spec.id.clone(),
+                success,
+                timestamp: ServiceEvent::current_timestamp(),
+                error: error.clone(),
+                duration_ms,
+            }).await;
+            
+            if success {
+                self.readiness_success_count += 1;
+                debug!("Readiness check passed ({}/{})", self.readiness_success_count, readiness_check.success_threshold);
+                
+                if self.readiness_success_count >= readiness_check.success_threshold {
+                    info!("Service '{}' is ready after {} successful readiness checks", self.spec.id, self.readiness_success_count);
+                    // Reset counter for next time
+                    self.readiness_success_count = 0;
+                    // Transition to Ready state
+                    if let Err(e) = self.transition_to(InternalState::Ready, Some("Readiness check passed".to_string())).await {
+                        error!("Failed to transition to Ready state: {}", e);
+                    }
+                } else {
+                    // Need more successes - schedule next check
+                    self.readiness_check_timer = Some(Instant::now() + readiness_check.interval());
+                    return; // Don't transition to Ready yet
+                }
+            } else {
+                warn!("Readiness check failed for service '{}': {:?}", self.spec.id, error);
+                self.readiness_success_count = 0; // Reset on failure
+                // Schedule next check
+                self.readiness_check_timer = Some(Instant::now() + readiness_check.interval());
+                return; // Don't transition to Ready
+            }
         } else {
             // No readiness check configured - become ready immediately
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            debug!("No readiness check configured for service '{}', marking as ready", self.spec.id);
         }
     }
 
@@ -444,6 +554,282 @@ impl ServiceSupervisor {
         // In a more sophisticated implementation, we might only restart for
         // certain types of changes (e.g., command/args but not health check config)
         true
+    }
+    
+    /// Handle all timers (readiness, health, startup timeout)
+    async fn handle_timers(&mut self) -> Result<()> {
+        let now = Instant::now();
+        debug!("Handling timers for service '{}' in state {:?}", self.spec.id, self.state);
+        
+        // Handle startup timeout
+        if let Some(timeout_time) = self.startup_timeout_timer {
+            if now >= timeout_time {
+                if matches!(self.state, InternalState::Starting) {
+                    warn!("Startup timeout expired for service '{}'", self.spec.id);
+                    self.startup_timeout_timer = None;
+                    
+                    // Emit timeout event
+                    self.emit_event(ServiceEvent::StartupTimeout {
+                        service_id: self.spec.id.clone(),
+                        timestamp: ServiceEvent::current_timestamp(),
+                        timeout_secs: self.spec.startup_timeout_secs,
+                    }).await;
+                    
+                    // Handle the timeout according to policy (restart or fail)
+                    // For now, we'll restart the service
+                    self.restart_service().await?;
+                } else {
+                    // No longer in Starting state, clear the timer
+                    self.startup_timeout_timer = None;
+                }
+            }
+        }
+        
+        // Handle readiness checks
+        if matches!(self.state, InternalState::Starting) {
+            debug!("Service '{}' is in Starting state, checking readiness timer", self.spec.id);
+            if let Some(check_time) = self.readiness_check_timer {
+                debug!("Readiness check timer is set for {:?}, now is {:?}", check_time, now);
+                if now >= check_time {
+                    debug!("Time to perform readiness check for service '{}'", self.spec.id);
+                    // Reset the timer
+                    self.readiness_check_timer = None;
+                    
+                    // Perform readiness check
+                    self.perform_readiness_check().await;
+                }
+            } else if self.spec.readiness_check.is_some() {
+                debug!("No readiness check timer set, scheduling initial check");
+                // Schedule initial readiness check after initial delay
+                if let Some(ref readiness_check) = self.spec.readiness_check {
+                    let delay = readiness_check.initial_delay();
+                    self.readiness_check_timer = Some(now + delay);
+                    debug!("Scheduled initial readiness check for service '{}' in {:?}", self.spec.id, delay);
+                }
+            } else {
+                debug!("No readiness check configured for service '{}'", self.spec.id);
+                // No readiness check configured, transition to Ready
+                self.transition_to(InternalState::Ready, Some("Service is ready (no readiness check)".to_string())).await?;
+            }
+        }
+        
+        // Handle health checks (for ready services)
+        if matches!(self.state, InternalState::Ready) {
+            if let Some(check_time) = self.health_check_timer {
+                if now >= check_time {
+                    // Reset the timer
+                    self.health_check_timer = None;
+                    
+                    // Perform health check
+                    self.perform_health_check().await;
+                }
+            } else if self.spec.health_check.is_some() {
+                // Schedule initial health check
+                if let Some(ref health_check) = self.spec.health_check {
+                    // Health checks start immediately (no initial delay like readiness checks)
+                    self.health_check_timer = Some(now + health_check.interval());
+                    debug!(
+                        "Scheduled initial health check for service '{}' in {:?}",
+                        self.spec.id,
+                        health_check.interval()
+                    );
+                }
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Get a snapshot of the current health status
+    fn get_health_status_snapshot(&self) -> HealthStatus {
+        let now = Instant::now();
+        
+        HealthStatus {
+            state: self.state.into(),
+            health_check_enabled: self.spec.health_check.is_some(),
+            readiness_check_enabled: self.spec.readiness_check.is_some(),
+            consecutive_health_failures: self.health_failure_count,
+            consecutive_readiness_successes: self.readiness_success_count,
+            next_readiness_check_in: self.readiness_check_timer.map(|t| t.saturating_duration_since(now)),
+            next_health_check_in: self.health_check_timer.map(|t| t.saturating_duration_since(now)),
+            startup_timeout_in: self.startup_timeout_timer.map(|t| t.saturating_duration_since(now)),
+            last_health_check: self.last_health_check.clone(),
+            last_readiness_check: self.last_readiness_check.clone(),
+        }
+    }
+
+    /// Perform an on-demand health check (for debugging)
+    async fn perform_on_demand_health_check(&mut self) -> Result<bool> {
+        if let Some(ref health_check) = self.spec.health_check {
+            debug!("Performing on-demand health check for service '{}'", self.spec.id);
+            
+            let start_time = Instant::now();
+            let result = health::run_probe(&schema::HealthCheck {
+                check_type: health_check.check_type.clone(),
+                interval_secs: health_check.interval_secs,
+                timeout_secs: health_check.timeout_secs,
+                failure_threshold: health_check.failure_threshold,
+                success_threshold: health_check.success_threshold,
+            }).await;
+            
+            let success = result.is_ok();
+            let error = result.err().map(|e| e.to_string());
+            let duration = start_time.elapsed();
+            
+            // Store the last health check result
+            self.last_health_check = Some(HealthCheckStatus {
+                success,
+                timestamp: SystemTime::now(),
+                duration,
+                error: error.clone(),
+            });
+            
+            // Emit health check result event
+            self.emit_event(ServiceEvent::HealthCheckResult {
+                service_id: self.spec.id.clone(),
+                success,
+                timestamp: ServiceEvent::current_timestamp(),
+                error: error.clone(),
+                duration_ms: duration.as_millis() as u64,
+            }).await;
+            
+            Ok(success)
+        } else {
+            Err(crate::CoreError::ServiceError("No health check configured".to_string()))
+        }
+    }
+
+    /// Perform an on-demand readiness check (for debugging)
+    async fn perform_on_demand_readiness_check(&mut self) -> Result<bool> {
+        if let Some(ref readiness_check) = self.spec.readiness_check {
+            debug!("Performing on-demand readiness check for service '{}'", self.spec.id);
+            
+            let start_time = Instant::now();
+            let result = health::run_probe(&schema::HealthCheck {
+                check_type: readiness_check.check_type.clone(),
+                interval_secs: readiness_check.interval_secs,
+                timeout_secs: readiness_check.timeout_secs,
+                failure_threshold: 1, // Readiness checks don't use failure threshold
+                success_threshold: readiness_check.success_threshold,
+            }).await;
+            
+            let success = result.is_ok();
+            let error = result.err().map(|e| e.to_string());
+            let duration = start_time.elapsed();
+            
+            // Store the last readiness check result
+            self.last_readiness_check = Some(ReadinessCheckStatus {
+                success,
+                timestamp: SystemTime::now(),
+                duration,
+                error: error.clone(),
+            });
+            
+            // Emit readiness check result event
+            self.emit_event(ServiceEvent::ReadinessCheckResult {
+                service_id: self.spec.id.clone(),
+                success,
+                timestamp: ServiceEvent::current_timestamp(),
+                error: error.clone(),
+                duration_ms: duration.as_millis() as u64,
+            }).await;
+            
+            Ok(success)
+        } else {
+            Err(crate::CoreError::ServiceError("No readiness check configured".to_string()))
+        }
+    }
+
+    /// Perform a health check for liveness
+    async fn perform_health_check(&mut self) {
+        if let Some(ref health_check) = self.spec.health_check {
+            debug!("Performing health check for service '{}'", self.spec.id);
+            
+            let start_time = Instant::now();
+            let result = health::run_probe(&schema::HealthCheck {
+                check_type: health_check.check_type.clone(),
+                interval_secs: health_check.interval_secs,
+                timeout_secs: health_check.timeout_secs,
+                failure_threshold: health_check.failure_threshold,
+                success_threshold: health_check.success_threshold,
+            }).await;
+            let duration_ms = start_time.elapsed().as_millis() as u64;
+            
+            let success = result.is_ok();
+            let error = result.err().map(|e| e.to_string());
+            
+            // Store the last health check result
+            self.last_health_check = Some(HealthCheckStatus {
+                success,
+                timestamp: SystemTime::now(),
+                duration: start_time.elapsed(),
+                error: error.clone(),
+            });
+            
+            // Emit health check result event
+            self.emit_event(ServiceEvent::HealthCheckResult {
+                service_id: self.spec.id.clone(),
+                success,
+                timestamp: ServiceEvent::current_timestamp(),
+                error: error.clone(),
+                duration_ms,
+            }).await;
+            
+            if success {
+                // Reset failure counter on success
+                if self.health_failure_count > 0 {
+                    debug!("Health check passed, resetting failure count");
+                    self.health_failure_count = 0;
+                }
+                
+                // Increment success counter
+                self.health_success_count += 1;
+                if self.health_success_count >= health_check.success_threshold {
+                    // Reset counter after reaching threshold
+                    self.health_success_count = 0;
+                }
+            } else {
+                // Increment failure counter
+                self.health_failure_count += 1;
+                warn!("Health check failed for service '{}' ({}/{}): {:?}", 
+                      self.spec.id, self.health_failure_count, health_check.failure_threshold, error);
+                
+                // Reset success counter on failure
+                self.health_success_count = 0;
+                
+                // Check if we've hit the failure threshold
+                if self.health_failure_count >= health_check.failure_threshold {
+                    error!("Service '{}' health check failed {} times (threshold: {}), restarting", 
+                           self.spec.id, self.health_failure_count, health_check.failure_threshold);
+                    
+                    // Emit unhealthy event
+                    self.emit_event(ServiceEvent::ServiceUnhealthy {
+                        service_id: self.spec.id.clone(),
+                        timestamp: ServiceEvent::current_timestamp(),
+                        reason: error.unwrap_or_else(|| "Health check failed".to_string()),
+                        consecutive_failures: self.health_failure_count,
+                    }).await;
+                    
+                    // Reset the failure counter
+                    self.health_failure_count = 0;
+                    
+                    // Restart the service due to health check failures
+                    if let Err(e) = self.restart_service().await {
+                        error!("Failed to restart unhealthy service '{}': {}", self.spec.id, e);
+                    }
+                    
+                    return; // Skip scheduling next check as we're restarting
+                }
+            }
+            
+            // Schedule next health check
+            self.health_check_timer = Some(Instant::now() + health_check.interval());
+            debug!(
+                "Scheduled next health check for service '{}' in {:?}",
+                self.spec.id,
+                health_check.interval()
+            );
+        }
     }
 }
 

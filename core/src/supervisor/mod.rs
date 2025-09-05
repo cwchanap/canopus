@@ -23,7 +23,8 @@
 use crate::Result;
 use schema::{ServiceEvent, ServiceSpec, ServiceState};
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, watch};
+use std::time::{Duration, SystemTime};
+use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tracing::{error, info};
 
 pub mod adapters;
@@ -38,7 +39,7 @@ pub use restart_policy::*;
 pub use service_task::*;
 
 /// Control messages for supervisor operations
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum ControlMsg {
     /// Start the service
     Start,
@@ -50,6 +51,21 @@ pub enum ControlMsg {
     UpdateSpec(ServiceSpec),
     /// Shutdown the supervisor (stop service and terminate task)
     Shutdown,
+    /// Get health status information
+    GetHealthStatus {
+        /// Response channel for health status
+        response: oneshot::Sender<HealthStatus>,
+    },
+    /// Trigger an on-demand health check (for debugging)
+    TriggerHealthCheck {
+        /// Response channel for health check result
+        response: oneshot::Sender<Result<bool>>,
+    },
+    /// Trigger an on-demand readiness check (for debugging)
+    TriggerReadinessCheck {
+        /// Response channel for readiness check result
+        response: oneshot::Sender<Result<bool>>,
+    },
 }
 
 /// Current internal state of the supervisor
@@ -77,6 +93,57 @@ impl From<InternalState> for ServiceState {
             InternalState::Stopping => ServiceState::Stopping,
         }
     }
+}
+
+/// Health status information for external monitoring
+#[derive(Debug, Clone, PartialEq)]
+pub struct HealthStatus {
+    /// Current service state
+    pub state: ServiceState,
+    /// Whether health checks are configured
+    pub health_check_enabled: bool,
+    /// Whether readiness checks are configured
+    pub readiness_check_enabled: bool,
+    /// Number of consecutive health check failures
+    pub consecutive_health_failures: u32,
+    /// Number of consecutive readiness check successes
+    pub consecutive_readiness_successes: u32,
+    /// Time until next scheduled readiness check (if any)
+    pub next_readiness_check_in: Option<Duration>,
+    /// Time until next scheduled health check (if any)
+    pub next_health_check_in: Option<Duration>,
+    /// Time until startup timeout (if service is starting)
+    pub startup_timeout_in: Option<Duration>,
+    /// Last health check result timestamp
+    pub last_health_check: Option<HealthCheckStatus>,
+    /// Last readiness check result timestamp
+    pub last_readiness_check: Option<ReadinessCheckStatus>,
+}
+
+/// Health check result with timing information
+#[derive(Debug, Clone, PartialEq)]
+pub struct HealthCheckStatus {
+    /// Whether the check succeeded
+    pub success: bool,
+    /// When the check was performed
+    pub timestamp: SystemTime,
+    /// How long the check took
+    pub duration: Duration,
+    /// Error message if the check failed
+    pub error: Option<String>,
+}
+
+/// Readiness check result with timing information
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReadinessCheckStatus {
+    /// Whether the check succeeded
+    pub success: bool,
+    /// When the check was performed
+    pub timestamp: SystemTime,
+    /// How long the check took
+    pub duration: Duration,
+    /// Error message if the check failed
+    pub error: Option<String>,
 }
 
 /// Handle for controlling a supervisor instance
@@ -132,6 +199,82 @@ impl SupervisorHandle {
     /// Subscribe to state changes
     pub fn subscribe_to_state(&self) -> watch::Receiver<ServiceState> {
         self.state_rx.clone()
+    }
+
+    /// Get current health status information
+    ///
+    /// This provides detailed information about the service's health state,
+    /// including timers, check results, and failure counts.
+    pub async fn get_health_status(&self) -> Result<HealthStatus> {
+        let (response_tx, response_rx) = oneshot::channel();
+        
+        self.send(ControlMsg::GetHealthStatus {
+            response: response_tx,
+        })?;
+        
+        response_rx.await
+            .map_err(|_| crate::CoreError::ServiceError("Failed to get health status response".to_string()))
+    }
+
+    /// Trigger an on-demand health check for debugging
+    ///
+    /// This immediately performs a health check if one is configured,
+    /// useful for testing and debugging health check configurations.
+    pub async fn trigger_health_check(&self) -> Result<bool> {
+        let (response_tx, response_rx) = oneshot::channel();
+        
+        self.send(ControlMsg::TriggerHealthCheck {
+            response: response_tx,
+        })?;
+        
+        match response_rx.await {
+            Ok(Ok(success)) => Ok(success),
+            Ok(Err(e)) => Err(e),
+            Err(_) => Err(crate::CoreError::ServiceError("Failed to get health check response".to_string())),
+        }
+    }
+
+    /// Trigger an on-demand readiness check for debugging
+    ///
+    /// This immediately performs a readiness check if one is configured,
+    /// useful for testing and debugging readiness check configurations.
+    pub async fn trigger_readiness_check(&self) -> Result<bool> {
+        let (response_tx, response_rx) = oneshot::channel();
+        
+        self.send(ControlMsg::TriggerReadinessCheck {
+            response: response_tx,
+        })?;
+        
+        match response_rx.await {
+            Ok(Ok(success)) => Ok(success),
+            Ok(Err(e)) => Err(e),
+            Err(_) => Err(crate::CoreError::ServiceError("Failed to get readiness check response".to_string())),
+        }
+    }
+
+    /// Check if the service is healthy based on current state and health checks
+    ///
+    /// Returns true if:
+    /// - Service is in Ready state, OR
+    /// - Service has no health checks configured and is running
+    pub async fn is_healthy(&self) -> Result<bool> {
+        let status = self.get_health_status().await?;
+        
+        match status.state {
+            ServiceState::Ready => Ok(true),
+            ServiceState::Starting | ServiceState::Spawning => {
+                // If no health checks are configured, consider running services healthy
+                Ok(!status.health_check_enabled && !status.readiness_check_enabled)
+            }
+            _ => Ok(false),
+        }
+    }
+
+    /// Check if the service is ready to handle requests
+    ///
+    /// This is a convenience method that checks the current state.
+    pub fn is_ready(&self) -> bool {
+        self.current_state().is_ready()
     }
 }
 
