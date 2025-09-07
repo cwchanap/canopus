@@ -18,6 +18,8 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 schema = { workspace = true }
+ipc = { workspace = true, features = ["supervisor"] }
+canopus-core = { workspace = true }
 
 [[bin]]
 name = "daemon"

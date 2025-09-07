@@ -7,6 +7,8 @@
 use canopus_core::ClientConfig;
 use clap::{Parser, Subcommand};
 use cli::Client;
+use ipc::uds_client::JsonRpcClient;
+use schema::ServiceEvent;
 use tracing::error;
 
 #[derive(Parser)]
@@ -41,6 +43,35 @@ enum Commands {
         /// The custom command to send
         command: String,
     },
+    /// Local UDS control plane
+    Local {
+        #[command(subcommand)]
+        cmd: LocalCmd,
+        /// UDS socket path
+        #[arg(long, default_value = "/tmp/canopus.sock")]
+        socket: String,
+        /// Optional bearer token
+        #[arg(long)]
+        token: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum LocalCmd {
+    /// Get daemon version via UDS
+    Version,
+    /// List services
+    List,
+    /// Start a service
+    Start { service_id: String },
+    /// Stop a service
+    Stop { service_id: String },
+    /// Restart a service
+    Restart { service_id: String },
+    /// Health check a service
+    Health { service_id: String },
+    /// Tail service logs (prints events)
+    TailLogs { service_id: String },
 }
 
 #[tokio::main]
@@ -64,6 +95,42 @@ async fn main() -> canopus_core::Result<()> {
         Commands::Stop => client.stop().await,
         Commands::Restart => client.restart().await,
         Commands::Custom { command } => client.custom(command).await,
+        Commands::Local { cmd, socket, token } => {
+            let uds = JsonRpcClient::new(socket, token.clone());
+            match cmd {
+                LocalCmd::Version => {
+                    let v = uds.version().await.map_err(anyhow_to_core)?;
+                    println!("Version: {}", v);
+                    Ok(())
+                }
+                LocalCmd::List => {
+                    let services = uds.list().await.map_err(anyhow_to_core)?;
+                    if services.is_empty() {
+                        println!("No services");
+                    } else {
+                        for s in services {
+                            println!("{}\t{}\t{:?}", s.id, s.name, s.state);
+                        }
+                    }
+                    Ok(())
+                }
+                LocalCmd::Start { service_id } => uds.start(service_id).await.map_err(anyhow_to_core),
+                LocalCmd::Stop { service_id } => uds.stop(service_id).await.map_err(anyhow_to_core),
+                LocalCmd::Restart { service_id } => uds.restart(service_id).await.map_err(anyhow_to_core),
+                LocalCmd::Health { service_id } => {
+                    let healthy = uds.health_check(service_id).await.map_err(anyhow_to_core)?;
+                    println!("{}: {}", service_id, if healthy {"healthy"} else {"unhealthy"});
+                    Ok(())
+                }
+                LocalCmd::TailLogs { service_id } => {
+                    let mut rx = uds.tail_logs(service_id, None).await.map_err(anyhow_to_core)?;
+                    while let Some(evt) = rx.recv().await {
+                        print_event(&evt);
+                    }
+                    Ok(())
+                }
+            }
+        }
     };
 
     if let Err(e) = result {
@@ -72,4 +139,19 @@ async fn main() -> canopus_core::Result<()> {
     }
 
     Ok(())
+}
+
+fn anyhow_to_core(e: ipc::IpcError) -> canopus_core::CoreError {
+    canopus_core::CoreError::ServiceError(e.to_string())
+}
+
+fn print_event(evt: &ServiceEvent) {
+    match evt {
+        ServiceEvent::LogOutput { service_id, stream, content, timestamp } => {
+            println!("{} [{}] {}: {}", timestamp, match stream { schema::LogStream::Stdout => "STDOUT", schema::LogStream::Stderr => "STDERR" }, service_id, content);
+        }
+        other => {
+            println!("EVENT: {:?}", other);
+        }
+    }
 }

@@ -16,10 +16,9 @@ clap = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-
-canopus-core = { workspace = true }
 ipc = { workspace = true }
 schema = { workspace = true }
+canopus-core = { workspace = true }
 
 [[bin]]
 name = "canopus"

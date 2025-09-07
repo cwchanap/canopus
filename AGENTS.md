@@ -1,1 +1,1 @@
-copilot-instructions.md
+CLAUDE.md

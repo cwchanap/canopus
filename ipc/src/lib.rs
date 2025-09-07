@@ -3,6 +3,8 @@
 //! This crate handles communication between the daemon and CLI components.
 
 pub mod error;
+pub mod server;
+pub mod uds_client;
 
 #[cfg(test)]
 mod error_tests;
