@@ -12,6 +12,7 @@ pub mod logging;
 pub mod proxy_api;
 pub mod supervisor;
 pub mod utilities;
+pub mod config;
 
 #[cfg(test)]
 mod error_tests;

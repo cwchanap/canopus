@@ -3,6 +3,7 @@
 #![allow(unused_crate_dependencies)]
 
 pub mod simple_error;
+pub mod bootstrap;
 
 #[cfg(test)]
 mod simple_error_tests;

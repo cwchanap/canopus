@@ -16,6 +16,7 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
 
 schema = { workspace = true }
 ipc = { workspace = true, features = ["supervisor"] }
@@ -24,3 +25,6 @@ canopus-core = { workspace = true }
 [[bin]]
 name = "daemon"
 path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = "3"

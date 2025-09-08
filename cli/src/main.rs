@@ -90,11 +90,11 @@ async fn main() -> canopus_core::Result<()> {
     let client = Client::new(config);
 
     let result = match &cli.command {
-        Commands::Status => client.status().await,
-        Commands::Start => client.start().await,
-        Commands::Stop => client.stop().await,
-        Commands::Restart => client.restart().await,
-        Commands::Custom { command } => client.custom(command).await,
+        Commands::Status => client.status().await.map_err(cli_to_core),
+        Commands::Start => client.start().await.map_err(cli_to_core),
+        Commands::Stop => client.stop().await.map_err(cli_to_core),
+        Commands::Restart => client.restart().await.map_err(cli_to_core),
+        Commands::Custom { command } => client.custom(command).await.map_err(cli_to_core),
         Commands::Local { cmd, socket, token } => {
             let uds = JsonRpcClient::new(socket, token.clone());
             match cmd {
@@ -142,6 +142,10 @@ async fn main() -> canopus_core::Result<()> {
 }
 
 fn anyhow_to_core(e: ipc::IpcError) -> canopus_core::CoreError {
+    canopus_core::CoreError::ServiceError(e.to_string())
+}
+
+fn cli_to_core(e: cli::CliError) -> canopus_core::CoreError {
     canopus_core::CoreError::ServiceError(e.to_string())
 }
 
