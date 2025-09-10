@@ -15,6 +15,7 @@ use tokio::time::{timeout, sleep, Instant, interval, MissedTickBehavior};
 use tracing::{debug, error, info, warn};
 
 /// Service supervisor task managing the lifecycle of a single service
+#[allow(missing_debug_implementations)]
 pub struct ServiceSupervisor {
     /// Service specification
     spec: ServiceSpec,
@@ -37,13 +38,13 @@ pub struct ServiceSupervisor {
     /// Restart policy engine for determining restart actions
     restart_policy_engine: RestartPolicyEngine,
     /// Restart timer (when restart is scheduled)
-    restart_timer: Option<tokio::time::Instant>,
+    restart_timer: Option<Instant>,
     /// Next readiness check time
-    readiness_check_timer: Option<tokio::time::Instant>,
+    readiness_check_timer: Option<Instant>,
     /// Next health check time (for liveness checks)
-    health_check_timer: Option<tokio::time::Instant>,
+    health_check_timer: Option<Instant>,
     /// Startup timeout timer
-    startup_timeout_timer: Option<tokio::time::Instant>,
+    startup_timeout_timer: Option<Instant>,
     /// Consecutive readiness check successes
     readiness_success_count: u32,
     /// Consecutive health check failures
@@ -76,7 +77,7 @@ impl ServiceSupervisor {
             loop {
                 match lines.next_line().await {
                     Ok(Some(line)) => {
-                        let timestamp = schema::ServiceEvent::current_timestamp();
+                        let timestamp = ServiceEvent::current_timestamp();
                         let content = line; // already without trailing newline
 
                         // Push into ring buffer
@@ -91,7 +92,7 @@ impl ServiceSupervisor {
                         }
 
                         // Emit event (best-effort)
-                        let _ = event_tx.send(schema::ServiceEvent::LogOutput {
+                        let _ = event_tx.send(ServiceEvent::LogOutput {
                             service_id: service_id.clone(),
                             stream,
                             content,
@@ -104,10 +105,10 @@ impl ServiceSupervisor {
                     }
                     Err(e) => {
                         // Emit a warning and stop this reader
-                        let _ = event_tx.send(schema::ServiceEvent::Warning {
+                        let _ = event_tx.send(ServiceEvent::Warning {
                             service_id: service_id.clone(),
                             message: format!("Error reading log stream {:?}: {}", stream, e),
-                            timestamp: schema::ServiceEvent::current_timestamp(),
+                            timestamp: ServiceEvent::current_timestamp(),
                             code: Some("LOG_READ_ERROR".to_string()),
                         });
                         break;
@@ -314,13 +315,14 @@ impl ServiceSupervisor {
     }
 
     /// Restart the service
+    #[allow(clippy::while_immutable_condition)]
     async fn restart_service(&mut self) -> Result<()> {
         info!("Restarting service '{}'", self.spec.id);
         if !matches!(self.state, InternalState::Idle) {
             self.stop_service().await?;
             // Wait for the process to actually exit
             while !matches!(self.state, InternalState::Idle) {
-                tokio::time::sleep(Duration::from_millis(50)).await;
+                sleep(Duration::from_millis(50)).await;
             }
         }
         self.start_service().await
@@ -468,7 +470,7 @@ impl ServiceSupervisor {
                     }
                 } else {
                     // Schedule restart after delay
-                    let restart_time = tokio::time::Instant::now() + delay;
+                    let restart_time = Instant::now() + delay;
                     debug!("Scheduling restart for service '{}' at {:?}", self.spec.id, restart_time);
                     self.restart_timer = Some(restart_time);
                 }
@@ -527,15 +529,13 @@ impl ServiceSupervisor {
                     }
                 } else {
                     // Need more successes - schedule next check
-                    self.readiness_check_timer = Some(Instant::now() + readiness_check.interval());
-                    return; // Don't transition to Ready yet
+                    self.readiness_check_timer = Some(Instant::now() + readiness_check.interval()); // Don't transition to Ready yet
                 }
             } else {
                 warn!("Readiness check failed for service '{}': {:?}", self.spec.id, error);
                 self.readiness_success_count = 0; // Reset on failure
                 // Schedule next check
-                self.readiness_check_timer = Some(Instant::now() + readiness_check.interval());
-                return; // Don't transition to Ready
+                self.readiness_check_timer = Some(Instant::now() + readiness_check.interval()); // Don't transition to Ready
             }
         } else {
             // No readiness check configured - become ready immediately
@@ -995,13 +995,13 @@ use crate::supervisor::adapters::MockProcessAdapter;
         }
 
         // Give time for process to complete and emit more events
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        sleep(Duration::from_millis(200)).await;
 
         // Test shutdown
         control_tx.send(ControlMsg::Shutdown).unwrap();
         
         // Give time for shutdown
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(100)).await;
     }
 
     #[tokio::test]
@@ -1016,7 +1016,7 @@ use crate::supervisor::adapters::MockProcessAdapter;
 
         // Start service
         control_tx.send(ControlMsg::Start).unwrap();
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(100)).await;
 
         // Stop service
         control_tx.send(ControlMsg::Stop).unwrap();
@@ -1041,7 +1041,7 @@ use crate::supervisor::adapters::MockProcessAdapter;
         }
 
         control_tx.send(ControlMsg::Shutdown).unwrap();
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(100)).await;
     }
 
     #[tokio::test]
@@ -1056,13 +1056,13 @@ use crate::supervisor::adapters::MockProcessAdapter;
 
         // Start service
         control_tx.send(ControlMsg::Start).unwrap();
-        tokio::time::sleep(Duration::from_millis(150)).await;
+        sleep(Duration::from_millis(150)).await;
 
         // Restart service
         control_tx.send(ControlMsg::Restart).unwrap();
         
         // Give time for restart sequence
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        sleep(Duration::from_millis(200)).await;
 
         // Should see multiple state changes
         let mut events = Vec::new();
@@ -1074,7 +1074,7 @@ use crate::supervisor::adapters::MockProcessAdapter;
         assert!(!events.is_empty());
 
         control_tx.send(ControlMsg::Shutdown).unwrap();
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(100)).await;
     }
 
     #[tokio::test]
@@ -1103,6 +1103,6 @@ use crate::supervisor::adapters::MockProcessAdapter;
         }
 
         control_tx.send(ControlMsg::Shutdown).unwrap();
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(100)).await;
     }
 }

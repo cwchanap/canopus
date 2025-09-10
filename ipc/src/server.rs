@@ -99,6 +99,7 @@ impl Default for IpcServerConfig {
 }
 
 /// IPC server entry
+#[allow(missing_debug_implementations)]
 pub struct IpcServer {
     config: IpcServerConfig,
     router: Arc<dyn ControlPlane>,
@@ -247,6 +248,7 @@ async fn route_method(
     let params = req.params.unwrap_or(Value::Null);
     let method = req.method.as_str();
 
+    #[allow(unused_macros)]
     macro_rules! bad_params {
         ($msg:expr) => {
             return Ok(Some(JsonRpcResponse::err(id, -32602, $msg, None)));
@@ -347,6 +349,7 @@ async fn write_notification_locked(
 
 /// Abstract control plane that the IPC server delegates to
 #[async_trait::async_trait]
+#[allow(missing_docs)]
 pub trait ControlPlane: Send + Sync {
     async fn list(&self) -> Result<Vec<ServiceSummary>>;
     async fn start(&self, service_id: &str) -> Result<()>;
@@ -359,6 +362,7 @@ pub trait ControlPlane: Send + Sync {
 }
 
 /// Minimal summary for listing services
+#[allow(missing_docs)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceSummary {
     pub id: String,
@@ -398,15 +402,17 @@ impl ControlPlane for NoopControlPlane {
 }
 
 #[cfg(feature = "supervisor")]
+#[allow(missing_docs)]
 pub mod supervisor_adapter {
     use super::{ControlPlane, Result, ServiceSummary};
     use async_trait::async_trait;
     use canopus_core::supervisor::SupervisorHandle;
-    use schema::{ServiceEvent, ServiceState};
+    use schema::ServiceEvent;
     use std::collections::HashMap;
     use tokio::sync::{broadcast, mpsc};
 
     /// Control plane adapter backed by a set of SupervisorHandles and a shared event bus
+    #[derive(Debug)]
     pub struct SupervisorControlPlane {
         handles: HashMap<String, SupervisorHandle>,
         event_tx: broadcast::Sender<ServiceEvent>,
@@ -539,7 +545,7 @@ mod tests {
             let mut buf = [0u8; 4096];
             let n = stream.read(&mut buf).await.unwrap();
             assert!(n > 0);
-            let v: serde_json::Value = serde_json::from_slice(&buf[..n]).unwrap();
+            let v: Value = serde_json::from_slice(&buf[..n]).unwrap();
             assert!(v.get("error").is_some());
         }
     }

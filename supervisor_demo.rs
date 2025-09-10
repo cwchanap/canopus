@@ -1,8 +1,9 @@
-#!/usr/bin/env cargo run --bin supervisor_demo
-
 //! Simple demonstration of the supervisor functionality
 //! 
 //! This shows the basic usage of the supervisor system we've just implemented.
+
+#![allow(unused_crate_dependencies)]
+#![allow(unused_imports)]
 
 use canopus_core::supervisor::{spawn_supervisor, SupervisorConfig, MockProcessAdapter};
 use canopus_core::Result;
@@ -10,7 +11,7 @@ use schema::{ServiceSpec, RestartPolicy};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::time::{timeout, Duration};
-use tracing::{info, error};
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {

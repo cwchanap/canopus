@@ -19,7 +19,7 @@ use hyper::service::{make_service_fn, service_fn};
 use std::sync::atomic::{AtomicU32, AtomicBool, Ordering};
 
 /// Simple HTTP server for testing health checks
-pub struct TestHttpServer {
+pub(crate) struct TestHttpServer {
     port: u16,
     shutdown_tx: Option<oneshot::Sender<()>>,
     /// Controls whether health endpoint responds with 200 or 500
@@ -34,7 +34,7 @@ pub struct TestHttpServer {
 
 impl TestHttpServer {
     /// Start a new test HTTP server on an available port
-    pub async fn start() -> Self {
+    pub(crate) async fn start() -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         
@@ -129,32 +129,32 @@ impl TestHttpServer {
     }
     
     /// Get the port the server is listening on
-    pub fn port(&self) -> u16 {
+    pub(crate) fn port(&self) -> u16 {
         self.port
     }
     
     /// Set whether the health endpoint should return healthy (200) or unhealthy (500)
-    pub fn set_healthy(&self, healthy: bool) {
+    pub(crate) fn set_healthy(&self, healthy: bool) {
         self.healthy.store(healthy, Ordering::SeqCst);
     }
     
     /// Get the number of times the health endpoint was called
-    pub fn health_call_count(&self) -> u32 {
+    pub(crate) fn health_call_count(&self) -> u32 {
         self.health_calls.load(Ordering::SeqCst)
     }
     
     /// Set whether the readiness endpoint should return ready (200) or not ready (503)
-    pub fn set_ready(&self, ready: bool) {
+    pub(crate) fn set_ready(&self, ready: bool) {
         self.ready.store(ready, Ordering::SeqCst);
     }
     
     /// Get the number of times the readiness endpoint was called
-    pub fn readiness_call_count(&self) -> u32 {
+    pub(crate) fn readiness_call_count(&self) -> u32 {
         self.readiness_calls.load(Ordering::SeqCst)
     }
     
     /// Shutdown the server
-    pub fn shutdown(mut self) {
+    pub(crate) fn shutdown(mut self) {
         if let Some(shutdown_tx) = self.shutdown_tx.take() {
             let _ = shutdown_tx.send(());
         }
@@ -215,6 +215,7 @@ fn create_http_server_spec(
     }
 }
 
+#[allow(dead_code)]
 async fn collect_events_with_filter<F>(
     mut event_rx: broadcast::Receiver<ServiceEvent>, 
     timeout_duration: Duration,

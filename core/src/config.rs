@@ -7,7 +7,7 @@
 use crate::{CoreError, Result};
 use schema::*;
 use serde::Deserialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 

@@ -129,21 +129,16 @@ impl ServiceState {
 }
 
 /// Restart policy determining when a service should be restarted
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum RestartPolicy {
     /// Always restart the service when it exits
+    #[default]
     Always,
     /// Only restart the service if it exits with a non-zero code
     OnFailure,
     /// Never automatically restart the service
     Never,
-}
-
-impl Default for RestartPolicy {
-    fn default() -> Self {
-        RestartPolicy::Always
-    }
 }
 
 /// Configuration for exponential backoff restart delays
@@ -546,7 +541,7 @@ mod tests {
     fn test_health_check_type_exec() {
         let exec_check = HealthCheckType::Exec {
             command: "curl".to_string(),
-            args: vec!["-f", "http://localhost:8080/health"].iter().map(|s| s.to_string()).collect(),
+            args: vec!["-f".to_string(), "http://localhost:8080/health".to_string()],
         };
         
         match exec_check {

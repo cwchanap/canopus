@@ -6,13 +6,16 @@
 
 use schema::{BackoffConfig, RestartPolicy, ServiceExit};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tracing::{debug, warn};
+use tracing::debug;
 
 /// Action to take when a service exits
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RestartAction {
     /// Restart the service after the specified delay
-    Restart { delay: Duration },
+    Restart { 
+        /// Backoff delay before restart
+        delay: Duration 
+    },
     /// Do not restart the service
     Stop,
 }
@@ -76,6 +79,7 @@ impl FailureTracker {
 }
 
 /// Restart policy engine that determines restart actions and calculates backoff delays
+#[allow(missing_debug_implementations)]
 pub struct RestartPolicyEngine {
     policy: RestartPolicy,
     backoff_config: BackoffConfig,
@@ -401,10 +405,9 @@ mod tests {
 
         // All delays should be different due to jitter
         // And should be within reasonable bounds (base_delay ± jitter)
-        let base_delay_ms = 2000; // 2 seconds
         for &delay_ms in &delays {
             // With 50% jitter, delay should be between 1s and 3s
-            assert!(delay_ms >= 1000 && delay_ms <= 3000, "Delay {} outside expected range", delay_ms);
+            assert!((1000..=3000).contains(&delay_ms), "Delay {} outside expected range", delay_ms);
         }
 
         // Check that we actually have variation (not all the same)

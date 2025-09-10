@@ -26,6 +26,7 @@
 use crate::{CoreError, Result};
 use nix::sys::signal::{killpg, Signal};
 use nix::unistd::Pid;
+#[allow(unused_imports)]
 use std::os::unix::process::CommandExt;
 use std::process::Stdio;
 use tokio::process::{Child, Command};

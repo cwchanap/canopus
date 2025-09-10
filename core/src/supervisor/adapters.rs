@@ -49,10 +49,12 @@ pub trait ManagedProcess: Send + Sync {
 
 /// Unix process adapter using the existing process management
 #[cfg(unix)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct UnixProcessAdapter;
 
 #[cfg(unix)]
 impl UnixProcessAdapter {
+    /// Create a new Unix process adapter
     pub fn new() -> Self {
         Self
     }
@@ -133,25 +135,31 @@ impl ManagedProcess for UnixManagedProcess {
     fn take_stdout(&mut self) -> Option<Pin<Box<dyn AsyncRead + Send + Unpin>>> {
         self.child
             .take_stdout()
-            .map(|s| Box::pin(s) as Pin<Box<dyn AsyncRead + Send + Unpin>>)
+            .map(|s| {
+                let r: Pin<Box<dyn AsyncRead + Send + Unpin>> = Box::pin(s);
+                r
+            })
     }
 
     fn take_stderr(&mut self) -> Option<Pin<Box<dyn AsyncRead + Send + Unpin>>> {
         self.child
             .take_stderr()
-            .map(|s| Box::pin(s) as Pin<Box<dyn AsyncRead + Send + Unpin>>)
+            .map(|s| {
+                let r: Pin<Box<dyn AsyncRead + Send + Unpin>> = Box::pin(s);
+                r
+            })
     }
 }
 
 /// Mock process adapter for testing
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct MockProcessAdapter {
     /// Instructions for mock processes
     instructions: Arc<tokio::sync::Mutex<Vec<MockInstruction>>>,
 }
 
 /// Instructions for mock process behavior
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct MockInstruction {
     /// How long to wait before the process "exits"
     pub exit_delay: std::time::Duration,
@@ -359,7 +367,7 @@ mod rand {
     
     static SEED: AtomicU32 = AtomicU32::new(1);
     
-    pub fn random<T>() -> T
+    pub(crate) fn random<T>() -> T
     where
         T: From<u32>,
     {

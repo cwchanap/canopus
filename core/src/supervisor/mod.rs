@@ -40,6 +40,7 @@ pub use service_task::*;
 
 /// Control messages for supervisor operations
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum ControlMsg {
     /// Start the service
     Start,
@@ -279,6 +280,7 @@ impl SupervisorHandle {
 }
 
 /// Configuration for spawning a supervisor
+#[allow(missing_debug_implementations)]
 pub struct SupervisorConfig {
     /// Service specification
     pub spec: ServiceSpec,

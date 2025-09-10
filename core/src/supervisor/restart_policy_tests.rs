@@ -3,9 +3,9 @@
 //! This module contains table-driven tests that verify restart policy behavior
 //! across different scenarios, exit codes, and backoff configurations.
 
-use crate::supervisor::restart_policy::{RestartPolicyEngine, RestartAction, FailureTracker};
+use crate::supervisor::restart_policy::{RestartPolicyEngine, RestartAction};
 use schema::{RestartPolicy, BackoffConfig, ServiceExit};
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 /// Test case for restart policy evaluation
 struct RestartPolicyTestCase {
@@ -280,7 +280,7 @@ mod tests {
         );
 
         // Create exits at specific timestamps to test windowing
-        let base_time = SystemTime::now();
+        let _base_time = SystemTime::now();
         
         // First failure at time 0
         let exit1 = ServiceExit {

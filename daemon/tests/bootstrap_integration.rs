@@ -1,4 +1,13 @@
 use std::fs;
+// Silence unused crate dependency lints for workspace-wide dev deps
+use canopus_core as _;
+use clap as _;
+use ipc as _;
+use schema as _;
+use serde_json as _;
+use thiserror as _;
+use tracing as _;
+use tracing_subscriber as _;
 
 #[tokio::test]
 async fn bootstrap_start_stop() {
@@ -21,4 +30,3 @@ async fn bootstrap_start_stop() {
     // Trigger shutdown
     handle.shutdown().await;
 }
-

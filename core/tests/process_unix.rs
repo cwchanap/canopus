@@ -7,6 +7,8 @@
 
 #![cfg(unix)]
 #![allow(unsafe_code)] // Required for libc calls in tests
+#![allow(unused_crate_dependencies)]
+#![allow(clippy::let_underscore_future)]
 
 use canopus_core::process::unix::{spawn, signal_kill_group, signal_term_group, terminate_with_timeout};
 use std::time::Duration;

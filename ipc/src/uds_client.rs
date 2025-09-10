@@ -14,12 +14,14 @@ use tokio::sync::{mpsc, Mutex};
 
 use crate::server::ServiceSummary;
 
+#[allow(missing_docs)]
 #[derive(Debug, Clone)]
 pub struct JsonRpcClient {
     socket_path: PathBuf,
     token: Option<String>,
 }
 
+#[allow(missing_docs)]
 impl JsonRpcClient {
     pub fn new(socket_path: impl Into<PathBuf>, token: Option<String>) -> Self {
         Self { socket_path: socket_path.into(), token }
@@ -106,20 +108,15 @@ impl JsonRpcClient {
         // Channel for events
         let (tx, rx) = mpsc::channel(100);
         tokio::spawn(async move {
-            loop {
-                match read_value(&mut reader).await {
-                    Ok(v) => {
-                        if let Some(method) = v.get("method").and_then(|m| m.as_str()) {
-                            if method == "canopus.tailLogs.update" {
-                                if let Some(params) = v.get("params") {
-                                    if let Ok(evt) = serde_json::from_value::<schema::ServiceEvent>(params.clone()) {
-                                        let _ = tx.send(evt).await;
-                                    }
-                                }
+            while let Ok(v) = read_value(&mut reader).await {
+                if let Some(method) = v.get("method").and_then(|m| m.as_str()) {
+                    if method == "canopus.tailLogs.update" {
+                        if let Some(params) = v.get("params") {
+                            if let Ok(evt) = serde_json::from_value::<schema::ServiceEvent>(params.clone()) {
+                                let _ = tx.send(evt).await;
                             }
                         }
                     }
-                    Err(_) => break,
                 }
             }
         });
