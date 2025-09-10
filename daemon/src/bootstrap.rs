@@ -6,6 +6,7 @@
 
 use canopus_core::config::load_services_from_toml_path;
 use canopus_core::proxy_api::NullProxy;
+use canopus_core::proxy::NullProxyAdapter as ProxyAdapterNull;
 use canopus_core::supervisor::{spawn_supervisor, SupervisorConfig, UnixProcessAdapter};
 use canopus_core::persistence::{default_snapshot_path, write_snapshot_atomic, RegistrySnapshot, ServiceSnapshot};
 use schema::ServiceSpec;
@@ -96,6 +97,7 @@ pub async fn bootstrap(config_path: Option<PathBuf>) -> Result<BootstrapHandle> 
             spec: spec.clone(),
             process_adapter: adapter.clone(),
             event_tx: event_tx.clone(),
+            proxy_adapter: Arc::new(ProxyAdapterNull::new(proxy.clone())),
         };
         let handle = spawn_supervisor(cfg);
         // Recovery workflow: auto-start only services with Always policy

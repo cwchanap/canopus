@@ -126,6 +126,12 @@ pub enum ServiceEvent {
         service_id: String,
         /// Route that was attached (e.g., "/api/v1")
         route: String,
+        /// Normalized host component if host-based routing was used
+        #[serde(skip_serializing_if = "Option::is_none")]
+        route_host: Option<String>,
+        /// Normalized path component if path-based routing was used
+        #[serde(skip_serializing_if = "Option::is_none")]
+        route_path: Option<String>,
         /// Backend address where requests are routed
         backend_address: String,
         /// Event timestamp in RFC3339 format
@@ -138,6 +144,12 @@ pub enum ServiceEvent {
         service_id: String,
         /// Route that was detached
         route: String,
+        /// Normalized host component if host-based routing was used
+        #[serde(skip_serializing_if = "Option::is_none")]
+        route_host: Option<String>,
+        /// Normalized path component if path-based routing was used
+        #[serde(skip_serializing_if = "Option::is_none")]
+        route_path: Option<String>,
         /// Event timestamp in RFC3339 format
         timestamp: String,
     },

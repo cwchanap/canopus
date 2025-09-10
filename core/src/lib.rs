@@ -11,6 +11,7 @@ pub mod process;
 pub mod logging;
 pub mod proxy_api;
 pub mod supervisor;
+pub mod proxy;
 pub mod utilities;
 pub mod config;
 pub mod persistence;

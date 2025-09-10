@@ -192,6 +192,7 @@ mod tests {
                     args: vec!["hello".into()],
                     environment: Default::default(),
                     working_directory: None,
+                    route: None,
                     restart_policy: schema::RestartPolicy::Always,
                     backoff_config: Default::default(),
                     health_check: None,

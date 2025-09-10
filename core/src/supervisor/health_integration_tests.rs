@@ -4,6 +4,7 @@
 //! readiness checks, startup timeouts, and related state transitions.
 
 use crate::supervisor::{spawn_supervisor, SupervisorConfig};
+use crate::proxy::NoopProxyAdapter;
 use crate::supervisor::adapters::{MockProcessAdapter, MockInstruction};
 use schema::{
     ServiceSpec, ServiceEvent, ServiceState, RestartPolicy, BackoffConfig, 
@@ -206,6 +207,7 @@ fn create_http_server_spec(
         args: vec!["3600".to_string()], // Sleep for a long time
         environment: Default::default(),
         working_directory: None,
+        route: None,
         restart_policy: RestartPolicy::Always,
         backoff_config: BackoffConfig::default(),
         health_check,
@@ -298,6 +300,7 @@ mod tests {
             spec,
             process_adapter,
             event_tx,
+            proxy_adapter: Arc::new(NoopProxyAdapter::default()),
         };
         
         let handle = spawn_supervisor(config);
@@ -367,6 +370,7 @@ mod tests {
             spec,
             process_adapter,
             event_tx,
+            proxy_adapter: Arc::new(NoopProxyAdapter::default()),
         };
         
         let handle = spawn_supervisor(config);
@@ -431,6 +435,7 @@ mod tests {
             spec,
             process_adapter,
             event_tx,
+            proxy_adapter: Arc::new(NoopProxyAdapter::default()),
         };
         
         let handle = spawn_supervisor(config);
@@ -487,6 +492,7 @@ mod tests {
             spec,
             process_adapter,
             event_tx,
+            proxy_adapter: Arc::new(NoopProxyAdapter::default()),
         };
         
         let handle = spawn_supervisor(config);
@@ -545,6 +551,7 @@ mod tests {
             spec,
             process_adapter,
             event_tx,
+            proxy_adapter: Arc::new(NoopProxyAdapter::default()),
         };
         
         let handle = spawn_supervisor(config);
@@ -589,6 +596,7 @@ mod tests {
             spec,
             process_adapter,
             event_tx,
+            proxy_adapter: Arc::new(NoopProxyAdapter::default()),
         };
         
         let handle = spawn_supervisor(config);
@@ -645,6 +653,7 @@ mod tests {
             args: vec!["10".to_string()],
             environment: Default::default(),
             working_directory: None,
+            route: None,
             restart_policy: RestartPolicy::Never,
             backoff_config: BackoffConfig::default(),
             health_check: None,
@@ -673,6 +682,7 @@ mod tests {
             spec,
             process_adapter,
             event_tx,
+            proxy_adapter: Arc::new(NoopProxyAdapter::default()),
         };
         
         let handle = spawn_supervisor(config);

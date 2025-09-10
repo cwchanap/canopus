@@ -21,6 +21,7 @@
 //! - [`ServiceSupervisor`]: Per-service task managing state transitions
 
 use crate::Result;
+use crate::proxy::ProxyAdapter;
 use schema::{ServiceEvent, ServiceSpec, ServiceState};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -288,6 +289,8 @@ pub struct SupervisorConfig {
     pub process_adapter: Arc<dyn ProcessAdapter>,
     /// Event broadcaster for emitting service events
     pub event_tx: broadcast::Sender<ServiceEvent>,
+    /// Proxy adapter for reverse proxy coupling
+    pub proxy_adapter: Arc<dyn ProxyAdapter>,
 }
 
 /// Spawn a supervisor for the given service specification
@@ -308,6 +311,7 @@ pub fn spawn_supervisor(config: SupervisorConfig) -> SupervisorHandle {
         spec,
         process_adapter,
         event_tx,
+        proxy_adapter,
     } = config;
 
     let (control_tx, control_rx) = mpsc::unbounded_channel();
@@ -321,7 +325,7 @@ pub fn spawn_supervisor(config: SupervisorConfig) -> SupervisorHandle {
     // Spawn the supervisor task
     let service_id = spec.id.clone();
     tokio::spawn(async move {
-        let mut supervisor = ServiceSupervisor::new(spec, process_adapter, event_tx, state_tx);
+        let mut supervisor = ServiceSupervisor::new(spec, process_adapter, proxy_adapter, event_tx, state_tx);
 
         if let Err(e) = supervisor.run(control_rx).await {
             error!("Supervisor task for service '{}' failed: {}", service_id, e);
@@ -341,6 +345,7 @@ pub fn spawn_supervisor(config: SupervisorConfig) -> SupervisorHandle {
 mod unit_tests {
     use super::*;
     use crate::supervisor::adapters::MockProcessAdapter;
+    use crate::proxy::NoopProxyAdapter;
     use schema::RestartPolicy;
     use std::time::Duration;
     use tokio::time::timeout;
@@ -353,6 +358,7 @@ mod unit_tests {
             args: vec!["hello".to_string()],
             environment: Default::default(),
             working_directory: None,
+            route: None,
             restart_policy: RestartPolicy::Never,
             backoff_config: Default::default(),
             health_check: None,
@@ -372,6 +378,7 @@ mod unit_tests {
             spec,
             process_adapter,
             event_tx,
+            proxy_adapter: Arc::new(NoopProxyAdapter::default()),
         };
 
         let handle = spawn_supervisor(config);
@@ -413,6 +420,7 @@ mod unit_tests {
             spec,
             process_adapter,
             event_tx,
+            proxy_adapter: Arc::new(NoopProxyAdapter::default()),
         };
 
         let handle = spawn_supervisor(config);
@@ -441,6 +449,7 @@ mod unit_tests {
             spec,
             process_adapter,
             event_tx,
+            proxy_adapter: Arc::new(NoopProxyAdapter::default()),
         };
 
         let handle = spawn_supervisor(config);

@@ -4,6 +4,7 @@
 //! and backoff logic when processes exit.
 
 use crate::supervisor::{spawn_supervisor, SupervisorConfig, MockProcessAdapter, MockInstruction};
+use crate::proxy::NoopProxyAdapter;
 use schema::{RestartPolicy, BackoffConfig, ServiceSpec, ServiceEvent, ServiceState};
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,6 +20,7 @@ fn create_test_spec(restart_policy: RestartPolicy, backoff_config: BackoffConfig
         args: vec!["test".to_string()],
         environment: Default::default(),
         working_directory: None,
+        route: None,
         restart_policy,
         backoff_config,
         health_check: None,
@@ -74,6 +76,7 @@ mod tests {
             spec,
             process_adapter,
             event_tx,
+            proxy_adapter: std::sync::Arc::new(NoopProxyAdapter::default()),
         };
 
         let handle = spawn_supervisor(config);
@@ -136,6 +139,7 @@ mod tests {
             spec,
             process_adapter,
             event_tx,
+            proxy_adapter: std::sync::Arc::new(NoopProxyAdapter::default()),
         };
 
         let handle = spawn_supervisor(config);
@@ -195,6 +199,7 @@ mod tests {
             spec,
             process_adapter,
             event_tx,
+            proxy_adapter: std::sync::Arc::new(NoopProxyAdapter::default()),
         };
 
         let handle = spawn_supervisor(config);
@@ -252,6 +257,7 @@ mod tests {
             spec,
             process_adapter,
             event_tx,
+            proxy_adapter: std::sync::Arc::new(NoopProxyAdapter::default()),
         };
 
         let handle = spawn_supervisor(config);
@@ -316,6 +322,7 @@ mod tests {
             spec,
             process_adapter,
             event_tx,
+            proxy_adapter: std::sync::Arc::new(NoopProxyAdapter::default()),
         };
 
         let handle = spawn_supervisor(config);
@@ -373,6 +380,7 @@ mod tests {
             spec,
             process_adapter,
             event_tx,
+            proxy_adapter: std::sync::Arc::new(NoopProxyAdapter::default()),
         };
 
         let handle = spawn_supervisor(config);

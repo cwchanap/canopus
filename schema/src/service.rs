@@ -49,6 +49,14 @@ pub struct ServiceSpec {
     /// Working directory for the process
     #[serde(skip_serializing_if = "Option::is_none")]
     pub working_directory: Option<String>,
+
+    /// Optional external route/host to expose when service becomes ready
+    ///
+    /// When set, the supervisor will attach this route/host to the reverse
+    /// proxy on the first readiness success, and detach it on stop/crash/
+    /// unhealthy transitions. If not set, the `id` is used as the default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub route: Option<String>,
     
     /// Restart policy for this service
     #[serde(default)]

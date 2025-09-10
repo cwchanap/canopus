@@ -36,6 +36,7 @@ mod tests {
             args: vec!["hello".to_string(), "world".to_string()],
             environment: env,
             working_directory: Some("/tmp".to_string()),
+            route: Some("test.example.com".to_string()),
             restart_policy: RestartPolicy::OnFailure,
             backoff_config: BackoffConfig {
                 base_delay_secs: 2,
@@ -78,6 +79,7 @@ mod tests {
             args: vec![],
             environment: HashMap::new(),
             working_directory: None,
+            route: None,
             restart_policy: RestartPolicy::default(),
             backoff_config: BackoffConfig::default(),
             health_check: None,

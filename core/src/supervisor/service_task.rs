@@ -4,6 +4,7 @@
 //! state machine logic for managing a single service's lifecycle.
 
 use super::{ControlMsg, InternalState, ManagedProcess, ProcessAdapter, RestartPolicyEngine, RestartAction, HealthStatus, HealthCheckStatus, ReadinessCheckStatus};
+use crate::proxy::ProxyAdapter;
 use crate::{health, Result};
 use crate::logging::{LogEntry, LogRing};
 use schema::{ServiceEvent, ServiceExit, ServiceSpec, ServiceState};
@@ -55,6 +56,10 @@ pub struct ServiceSupervisor {
     last_health_check: Option<HealthCheckStatus>,
     /// Last readiness check result
     last_readiness_check: Option<ReadinessCheckStatus>,
+    /// Reverse proxy adapter
+    proxy_adapter: Arc<dyn ProxyAdapter>,
+    /// Whether this service is currently attached to the proxy
+    proxy_attached: bool,
 }
 
 impl ServiceSupervisor {
@@ -124,6 +129,7 @@ impl ServiceSupervisor {
     pub fn new(
         spec: ServiceSpec,
         process_adapter: Arc<dyn ProcessAdapter>,
+        proxy_adapter: Arc<dyn ProxyAdapter>,
         event_tx: broadcast::Sender<ServiceEvent>,
         state_tx: watch::Sender<ServiceState>,
     ) -> Self {
@@ -153,6 +159,8 @@ impl ServiceSupervisor {
             health_success_count: 0,
             last_health_check: None,
             last_readiness_check: None,
+            proxy_adapter,
+            proxy_attached: false,
         }
     }
 
@@ -293,6 +301,8 @@ impl ServiceSupervisor {
 
     /// Stop the service
     async fn stop_service(&mut self) -> Result<()> {
+        // Detach from proxy on explicit stop (idempotent)
+        self.detach_from_proxy_if_attached().await;
         // Cancel any pending restart timers
         if self.restart_timer.is_some() {
             debug!("Canceling pending restart timer for service '{}'", self.spec.id);
@@ -440,6 +450,9 @@ impl ServiceSupervisor {
     async fn handle_process_exit(&mut self, exit_info: ServiceExit) -> Result<()> {
         debug!("Process {} exited for service '{}'", exit_info.pid, self.spec.id);
 
+        // On crash/exit, ensure we are detached from proxy (idempotent)
+        self.detach_from_proxy_if_attached().await;
+
         self.emit_process_exit_event(exit_info.clone()).await;
         self.current_process = None;
         // Ensure log reader tasks are stopped
@@ -523,6 +536,14 @@ impl ServiceSupervisor {
                     info!("Service '{}' is ready after {} successful readiness checks", self.spec.id, self.readiness_success_count);
                     // Reset counter for next time
                     self.readiness_success_count = 0;
+                    // Determine port for proxy attach before announcing Ready
+                    let attach_port = match &readiness_check.check_type {
+                        schema::HealthCheckType::Tcp { port } => Some(*port),
+                        schema::HealthCheckType::Http { port, .. } => Some(*port),
+                        _ => None,
+                    };
+                    // Attach to proxy before announcing Ready (gate exposure on readiness)
+                    if let Some(port) = attach_port { self.attach_to_proxy_with_port(port).await; }
                     // Transition to Ready state
                     if let Err(e) = self.transition_to(InternalState::Ready, Some("Readiness check passed".to_string())).await {
                         error!("Failed to transition to Ready state: {}", e);
@@ -903,6 +924,9 @@ impl ServiceSupervisor {
                         consecutive_failures: self.health_failure_count,
                     }).await;
                     
+                    // Ensure detachment before restart (idempotent)
+                    self.detach_from_proxy_if_attached().await;
+                    
                     // Reset the failure counter
                     self.health_failure_count = 0;
                     
@@ -924,6 +948,49 @@ impl ServiceSupervisor {
             );
         }
     }
+
+    /// Attempt to attach to reverse proxy using readiness configuration
+    async fn attach_to_proxy_with_port(&mut self, port: u16) {
+        if self.proxy_attached { return; }
+        let route = self.spec.route.clone().unwrap_or_else(|| self.spec.id.clone());
+        if let Err(e) = self.proxy_adapter.attach(&route, port).await {
+            warn!("Failed to attach '{}' to proxy on port {}: {}", route, port, e);
+        } else {
+            debug!("Attached '{}' to proxy on port {}", route, port);
+            self.proxy_attached = true;
+            // Emit route attached event for observability
+            let is_path = route.starts_with('/');
+            self.emit_event(ServiceEvent::RouteAttached {
+                service_id: self.spec.id.clone(),
+                route: route.clone(),
+                route_host: if is_path { None } else { Some(route.clone()) },
+                route_path: if is_path { Some(route.clone()) } else { None },
+                backend_address: format!("127.0.0.1:{}", port),
+                timestamp: ServiceEvent::current_timestamp(),
+            }).await;
+        }
+    }
+
+    /// Detach from reverse proxy if currently attached (idempotent)
+    async fn detach_from_proxy_if_attached(&mut self) {
+        if !self.proxy_attached { return; }
+        let route = self.spec.route.clone().unwrap_or_else(|| self.spec.id.clone());
+        if let Err(e) = self.proxy_adapter.detach(&route).await {
+            warn!("Failed to detach '{}' from proxy: {}", route, e);
+        } else {
+            debug!("Detached '{}' from proxy", route);
+            self.proxy_attached = false;
+            // Emit route detached event for observability
+            let is_path = route.starts_with('/');
+            self.emit_event(ServiceEvent::RouteDetached {
+                service_id: self.spec.id.clone(),
+                route: route.clone(),
+                route_host: if is_path { None } else { Some(route.clone()) },
+                route_path: if is_path { Some(route) } else { None },
+                timestamp: ServiceEvent::current_timestamp(),
+            }).await;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -942,6 +1009,7 @@ use crate::supervisor::adapters::MockProcessAdapter;
             args: vec!["hello".to_string()],
             environment: Default::default(),
             working_directory: None,
+            route: None,
             restart_policy: RestartPolicy::Never,
             backoff_config: Default::default(),
             health_check: None,
@@ -957,7 +1025,13 @@ use crate::supervisor::adapters::MockProcessAdapter;
         let (event_tx, event_rx) = broadcast::channel(100);
         let (state_tx, _state_rx) = watch::channel(ServiceState::Idle);
 
-        let supervisor = ServiceSupervisor::new(spec, process_adapter, event_tx, state_tx);
+        let supervisor = ServiceSupervisor::new(
+            spec,
+            process_adapter,
+            Arc::new(crate::proxy::NoopProxyAdapter::default()),
+            event_tx,
+            state_tx,
+        );
         let (control_tx, control_rx) = mpsc::unbounded_channel();
 
         (supervisor, control_tx, event_rx, control_rx)

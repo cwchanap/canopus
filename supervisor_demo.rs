@@ -6,6 +6,7 @@
 #![allow(unused_imports)]
 
 use canopus_core::supervisor::{spawn_supervisor, SupervisorConfig, MockProcessAdapter};
+use canopus_core::proxy::NoopProxyAdapter;
 use canopus_core::Result;
 use schema::{ServiceSpec, RestartPolicy};
 use std::sync::Arc;
@@ -28,6 +29,7 @@ async fn main() -> Result<()> {
         args: vec!["Hello from supervisor!".to_string()],
         environment: Default::default(),
         working_directory: None,
+        route: None,
         restart_policy: RestartPolicy::Never,
         backoff_config: Default::default(),
         health_check: None,
@@ -44,6 +46,7 @@ async fn main() -> Result<()> {
         spec,
         process_adapter: Arc::new(MockProcessAdapter::new()),
         event_tx,
+        proxy_adapter: Arc::new(NoopProxyAdapter::default()),
     };
 
     // Spawn the supervisor
