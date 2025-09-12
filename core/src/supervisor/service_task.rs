@@ -539,7 +539,6 @@ impl ServiceSupervisor {
                     // Determine port for proxy attach before announcing Ready
                     let attach_port = match &readiness_check.check_type {
                         schema::HealthCheckType::Tcp { port } => Some(*port),
-                        schema::HealthCheckType::Http { port, .. } => Some(*port),
                         _ => None,
                     };
                     // Attach to proxy before announcing Ready (gate exposure on readiness)

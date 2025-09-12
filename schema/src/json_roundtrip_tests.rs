@@ -46,11 +46,7 @@ mod tests {
                 failure_window_secs: 600,
             },
             health_check: Some(HealthCheck {
-                check_type: HealthCheckType::Http {
-                    port: 8080,
-                    path: "/health".to_string(),
-                    success_codes: vec![200, 202],
-                },
+                check_type: HealthCheckType::Tcp { port: 8080 },
                 interval_secs: 10,
                 timeout_secs: 3,
                 failure_threshold: 2,
@@ -141,16 +137,6 @@ mod tests {
     fn test_health_check_types_json_roundtrip() {
         let check_types = [
             HealthCheckType::Tcp { port: 8080 },
-            HealthCheckType::Http {
-                port: 8080,
-                path: "/health".to_string(),
-                success_codes: vec![200],
-            },
-            HealthCheckType::Http {
-                port: 9090,
-                path: "/api/health".to_string(),
-                success_codes: vec![200, 204, 302],
-            },
             HealthCheckType::Exec {
                 command: "curl".to_string(),
                 args: vec!["-f".to_string(), "http://localhost:8080/health".to_string()],
@@ -172,17 +158,7 @@ mod tests {
                 failure_threshold: 3,
                 success_threshold: 1,
             },
-            HealthCheck {
-                check_type: HealthCheckType::Http {
-                    port: 8080,
-                    path: "/status".to_string(),
-                    success_codes: vec![200, 204],
-                },
-                interval_secs: 15,
-                timeout_secs: 2,
-                failure_threshold: 2,
-                success_threshold: 2,
-            },
+            // Keep only TCP health checks after HTTP removal
         ];
 
         for health_check in &health_checks {
@@ -200,17 +176,7 @@ mod tests {
                 timeout_secs: 3,
                 success_threshold: 1,
             },
-            ReadinessCheck {
-                check_type: HealthCheckType::Http {
-                    port: 3000,
-                    path: "/ready".to_string(),
-                    success_codes: vec![200],
-                },
-                initial_delay_secs: 10,
-                interval_secs: 2,
-                timeout_secs: 1,
-                success_threshold: 3,
-            },
+            // HTTP readiness removed
         ];
 
         for readiness_check in &readiness_checks {
@@ -313,12 +279,16 @@ mod tests {
             ServiceEvent::RouteAttached {
                 service_id: "test".to_string(),
                 route: "/api/v1".to_string(),
+                route_host: None,
+                route_path: None,
                 backend_address: "127.0.0.1:8080".to_string(),
                 timestamp: "2024-01-01T00:00:09Z".to_string(),
             },
             ServiceEvent::RouteDetached {
                 service_id: "test".to_string(),
                 route: "/api/v1".to_string(),
+                route_host: None,
+                route_path: None,
                 timestamp: "2024-01-01T00:00:10Z".to_string(),
             },
             ServiceEvent::LogOutput {
@@ -446,6 +416,7 @@ mod tests {
             args: vec![],
             environment: HashMap::new(),
             working_directory: Some("/tmp".to_string()),
+            route: None,
             restart_policy: RestartPolicy::OnFailure,
             backoff_config: BackoffConfig::default(),
             health_check: None,

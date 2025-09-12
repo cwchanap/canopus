@@ -8,5 +8,4 @@ mod supervisor_restart_tests;
 #[path = "proxy_integration_tests.rs"]
 mod proxy_integration_tests;
 
-#[path = "health_integration_tests.rs"]
-mod health_integration_tests;
+// HTTP-based health integration tests removed

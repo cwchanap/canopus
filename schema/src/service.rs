@@ -309,17 +309,6 @@ pub enum HealthCheckType {
         /// Port to connect to
         port: u16,
     },
-    /// HTTP GET request to a specific path
-    Http {
-        /// Port for HTTP request
-        port: u16,
-        /// Path to request (default: "/health")
-        #[serde(default = "default_health_path")]
-        path: String,
-        /// Expected HTTP status codes (default: [200])
-        #[serde(default = "default_success_codes")]
-        success_codes: Vec<u16>,
-    },
     /// Execute a command and check exit code
     Exec {
         /// Command to execute
@@ -328,14 +317,6 @@ pub enum HealthCheckType {
         #[serde(default)]
         args: Vec<String>,
     },
-}
-
-fn default_health_path() -> String {
-    "/health".to_string()
-}
-
-fn default_success_codes() -> Vec<u16> {
-    vec![200]
 }
 
 const fn default_health_interval_secs() -> u64 {
@@ -411,6 +392,7 @@ mod tests {
             args: vec!["hello".to_string()],
             environment: HashMap::new(),
             working_directory: None,
+            route: None,
             restart_policy: RestartPolicy::default(),
             backoff_config: BackoffConfig::default(),
             health_check: None,
@@ -472,11 +454,7 @@ mod tests {
     #[test]
     fn test_readiness_check_durations() {
         let readiness = ReadinessCheck {
-            check_type: HealthCheckType::Http {
-                port: 8080,
-                path: "/ready".to_string(),
-                success_codes: vec![200, 204],
-            },
+            check_type: HealthCheckType::Tcp { port: 8080 },
             initial_delay_secs: 5,
             interval_secs: 2,
             timeout_secs: 3,
@@ -528,21 +506,8 @@ mod tests {
     }
 
     #[test]
-    fn test_health_check_type_http_defaults() {
-        let http_check = HealthCheckType::Http {
-            port: 8080,
-            path: default_health_path(),
-            success_codes: default_success_codes(),
-        };
-        
-        match http_check {
-            HealthCheckType::Http { port, path, success_codes } => {
-                assert_eq!(port, 8080);
-                assert_eq!(path, "/health");
-                assert_eq!(success_codes, vec![200]);
-            }
-            _ => panic!("Expected HTTP check"),
-        }
+    fn test_health_check_type_http_defaults_removed() {
+        // HTTP check type removed; nothing to test here
     }
 
     #[test]

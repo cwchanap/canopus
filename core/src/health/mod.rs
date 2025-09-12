@@ -8,8 +8,6 @@
 //!
 //! - [`Probe`]: The main trait for health check implementations
 //! - [`TcpProbe`]: TCP connection-based health checking
-//! - [`HttpProbe`]: HTTP request-based health checking
-//! - [`Expect`]: Expected response criteria for HTTP probes
 //! - [`HealthError`]: Error types for health check failures
 //!
 //! ## Integration
@@ -18,16 +16,14 @@
 //! for the health checks configured in service specifications.
 
 pub mod error;
-pub mod http;
 pub mod tcp;
 pub mod types;
 
 // Tests are included inline in each module
 
 pub use error::HealthError;
-pub use http::HttpProbe;
 pub use tcp::TcpProbe;
-pub use types::{Expect, Probe};
+pub use types::Probe;
 
 use schema::{HealthCheck, HealthCheckType};
 use std::time::Duration;
@@ -43,26 +39,6 @@ pub fn create_probe(
     match check_type {
         HealthCheckType::Tcp { port } => {
             let probe = TcpProbe::new("127.0.0.1", *port, timeout);
-            Ok(Box::new(probe))
-        }
-        HealthCheckType::Http {
-            port,
-            path,
-            success_codes,
-        } => {
-            let url = format!("http://127.0.0.1:{}{}", port, path);
-            let expect = if success_codes.len() == 1 && success_codes[0] == 200 {
-                Expect::Status(200)
-            } else if success_codes == &[200, 201, 202, 203, 204] {
-                Expect::Any2xx
-            } else if success_codes.len() == 1 {
-                Expect::Status(success_codes[0])
-            } else {
-                // For multiple specific codes, we'll use the first one for now
-                // In a full implementation, we might want to extend Expect to handle multiple codes
-                Expect::Status(success_codes[0])
-            };
-            let probe = HttpProbe::new(url, expect, timeout);
             Ok(Box::new(probe))
         }
         HealthCheckType::Exec { .. } => {

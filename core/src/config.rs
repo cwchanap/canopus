@@ -160,26 +160,6 @@ fn validate_probe(
                 )));
             }
         }
-        HealthCheckType::Http { port, path, success_codes } => {
-            if *port == 0 {
-                return Err(CoreError::ValidationError(format!(
-                    "services[{}].{}.type[Http].port: must be 1..=65535",
-                    index, field
-                )));
-            }
-            if !path.starts_with('/') {
-                return Err(CoreError::ValidationError(format!(
-                    "services[{}].{}.type[Http].path: must start with '/'",
-                    index, field
-                )));
-            }
-            if success_codes.iter().any(|c| *c < 100 || *c > 599) {
-                return Err(CoreError::ValidationError(format!(
-                    "services[{}].{}.type[Http].successCodes: must be valid HTTP codes (100-599)",
-                    index, field
-                )));
-            }
-        }
         HealthCheckType::Exec { command, .. } => {
             if command.trim().is_empty() {
                 return Err(CoreError::ValidationError(format!(
@@ -265,18 +245,17 @@ mod tests {
     }
 
     #[test]
-    fn errors_on_http_bad_code() {
+    fn errors_on_tcp_bad_port() {
         let input = r#"
         [[services]]
         id = "s"
         name = "S"
         command = "echo"
         [services.healthCheck.checkType]
-        type = "http"
+        type = "tcp"
         port = 0
-        path = "/health"
         "#;
         let err = load_services_from_toml_str(input).unwrap_err();
-        assert!(format!("{}", err).contains("type[Http].port"));
+        assert!(format!("{}", err).contains("type[Tcp].port"));
     }
 }

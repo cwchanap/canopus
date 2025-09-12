@@ -26,5 +26,9 @@ canopus-core = { workspace = true }
 name = "daemon"
 path = "src/main.rs"
 
+[[bin]]
+name = "toy_http"
+path = "src/bin/toy_http.rs"
+
 [dev-dependencies]
 tempfile = "3"

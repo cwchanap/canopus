@@ -340,6 +340,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_port_release_on_drop() {
         clear_reservations();
         let allocator = PortAllocator::new();

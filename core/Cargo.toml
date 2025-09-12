@@ -22,7 +22,6 @@ dashmap = "5.5"
 once_cell = "1.19"
 tokio = { workspace = true, features = ["net", "time", "process", "io-util"] }
 async-trait = "0.1"
-hyper = { version = "0.14", features = ["client", "server", "http1", "tcp"] }
 humantime = "2.1"
 dirs-next = "2.0"
 
