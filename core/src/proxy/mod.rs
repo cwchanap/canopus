@@ -18,7 +18,7 @@ pub trait ProxyAdapter: Send + Sync {
 }
 
 /// A no-op proxy adapter used by default
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct NoopProxyAdapter;
 
 #[async_trait]
@@ -34,7 +34,9 @@ impl ProxyAdapter for NoopProxyAdapter {
 /// Recorded proxy operations for testing
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProxyOp {
+    /// Attach a host to the given backend port
     Attach { host: String, port: u16 },
+    /// Detach a host from the proxy
     Detach { host: String },
 }
 

@@ -76,7 +76,7 @@ mod tests {
             spec,
             process_adapter,
             event_tx,
-            proxy_adapter: std::sync::Arc::new(NoopProxyAdapter::default()),
+            proxy_adapter: Arc::new(NoopProxyAdapter::default()),
         };
 
         let handle = spawn_supervisor(config);
@@ -139,7 +139,7 @@ mod tests {
             spec,
             process_adapter,
             event_tx,
-            proxy_adapter: std::sync::Arc::new(NoopProxyAdapter::default()),
+            proxy_adapter: Arc::new(NoopProxyAdapter::default()),
         };
 
         let handle = spawn_supervisor(config);
@@ -199,7 +199,7 @@ mod tests {
             spec,
             process_adapter,
             event_tx,
-            proxy_adapter: std::sync::Arc::new(NoopProxyAdapter::default()),
+            proxy_adapter: Arc::new(NoopProxyAdapter::default()),
         };
 
         let handle = spawn_supervisor(config);
