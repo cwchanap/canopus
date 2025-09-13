@@ -1,8 +1,8 @@
 //! Logging utilities: bounded ring buffer with drop counters and snapshot/iterator APIs
 
-use std::collections::VecDeque;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 
 /// A single log entry captured from a service's stdout/stderr
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -57,16 +57,24 @@ impl LogRing {
     }
 
     /// Current number of entries retained
-    pub fn len(&self) -> usize { self.entries.len() }
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
 
     /// Whether the ring is empty
-    pub fn is_empty(&self) -> bool { self.entries.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
 
     /// Total number of entries ever dropped due to capacity
-    pub fn total_dropped(&self) -> u64 { self.total_dropped }
+    pub fn total_dropped(&self) -> u64 {
+        self.total_dropped
+    }
 
     /// Current high-water sequence value (the next seq to be assigned)
-    pub fn next_seq(&self) -> u64 { self.next_seq }
+    pub fn next_seq(&self) -> u64 {
+        self.next_seq
+    }
 
     /// Snapshot the current entries. Returns (next_seq, entries_clone)
     /// where `next_seq` can be used to resume with `iter_after` later.
@@ -90,7 +98,12 @@ mod tests {
     use super::*;
 
     fn mk_entry(stream: schema::LogStream, content: &str) -> LogEntry {
-        LogEntry { seq: 0, stream, content: content.to_string(), timestamp: schema::ServiceEvent::current_timestamp() }
+        LogEntry {
+            seq: 0,
+            stream,
+            content: content.to_string(),
+            timestamp: schema::ServiceEvent::current_timestamp(),
+        }
     }
 
     #[test]

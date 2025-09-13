@@ -91,7 +91,8 @@ pub fn load_snapshot(path: impl AsRef<Path>) -> Result<RegistrySnapshot> {
         ))
     })?;
 
-    let snap: RegistrySnapshot = serde_json::from_str(&buf).map_err(CoreError::SerializationError)?;
+    let snap: RegistrySnapshot =
+        serde_json::from_str(&buf).map_err(CoreError::SerializationError)?;
 
     if snap.version != SNAPSHOT_VERSION {
         return Err(CoreError::ValidationError(format!(
@@ -132,12 +133,22 @@ pub fn write_snapshot_atomic(path: impl AsRef<Path>, snap: &RegistrySnapshot) ->
             .write(true)
             .truncate(true)
             .open(&tmp_path)
-            .map_err(|e| CoreError::IoError(std::io::Error::new(e.kind(), format!(
-                "Failed to open temp snapshot {}: {}", tmp_path.display(), e
-            ))))?;
-        f.write_all(&json).map_err(|e| CoreError::IoError(std::io::Error::new(e.kind(), format!(
-            "Failed to write temp snapshot {}: {}", tmp_path.display(), e
-        ))))?;
+            .map_err(|e| {
+                CoreError::IoError(std::io::Error::new(
+                    e.kind(),
+                    format!("Failed to open temp snapshot {}: {}", tmp_path.display(), e),
+                ))
+            })?;
+        f.write_all(&json).map_err(|e| {
+            CoreError::IoError(std::io::Error::new(
+                e.kind(),
+                format!(
+                    "Failed to write temp snapshot {}: {}",
+                    tmp_path.display(),
+                    e
+                ),
+            ))
+        })?;
         f.flush().ok();
         // Best-effort durability
         let _ = f.sync_all();
@@ -149,7 +160,9 @@ pub fn write_snapshot_atomic(path: impl AsRef<Path>, snap: &RegistrySnapshot) ->
             e.kind(),
             format!(
                 "Failed to replace snapshot {} with {}: {}",
-                path.display(), tmp_path.display(), e
+                path.display(),
+                tmp_path.display(),
+                e
             ),
         ))
     })?;

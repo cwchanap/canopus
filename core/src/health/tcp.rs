@@ -21,7 +21,7 @@ use super::{HealthError, Probe};
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let probe = TcpProbe::new("127.0.0.1", 8080, Duration::from_secs(5));
-/// 
+///
 /// // This will fail unless something is listening on port 8080
 /// match probe.check().await {
 ///     Ok(()) => println!("TCP connection successful"),
@@ -79,7 +79,10 @@ impl Probe for TcpProbe {
                 Err(HealthError::Tcp(io_error))
             }
             Err(_timeout_error) => {
-                debug!("TCP probe to {} timed out after {:?}", address, self.timeout);
+                debug!(
+                    "TCP probe to {} timed out after {:?}",
+                    address, self.timeout
+                );
                 Err(HealthError::Timeout(self.timeout))
             }
         }
@@ -95,9 +98,11 @@ mod tests {
     #[tokio::test]
     async fn test_tcp_probe_success() {
         // Bind to any available port
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("Failed to bind");
         let addr = listener.local_addr().expect("Failed to get local address");
-        
+
         // Spawn a task to accept connections (but we don't need to do anything with them)
         let _handle = task::spawn(async move {
             while let Ok((_stream, _addr)) = listener.accept().await {
@@ -115,10 +120,13 @@ mod tests {
         // Try to connect to a port that's definitely not listening
         let probe = TcpProbe::new("127.0.0.1", 1, Duration::from_secs(1));
         let result = probe.check().await;
-        
-        assert!(result.is_err(), "TCP probe should fail for refused connection");
+
+        assert!(
+            result.is_err(),
+            "TCP probe should fail for refused connection"
+        );
         match result.unwrap_err() {
-            HealthError::Tcp(_) => {}, // Expected
+            HealthError::Tcp(_) => {} // Expected
             other => panic!("Expected HealthError::Tcp, got {:?}", other),
         }
     }
@@ -129,7 +137,7 @@ mod tests {
         // 10.255.255.1 is non-routable and should timeout
         let probe = TcpProbe::new("10.255.255.1", 80, Duration::from_millis(100));
         let result = probe.check().await;
-        
+
         assert!(result.is_err(), "TCP probe should timeout");
         match result.unwrap_err() {
             HealthError::Timeout(d) => assert_eq!(d, Duration::from_millis(100)),
@@ -141,7 +149,7 @@ mod tests {
     fn test_tcp_probe_address() {
         let probe = TcpProbe::new("localhost", 8080, Duration::from_secs(5));
         assert_eq!(probe.address(), "localhost:8080");
-        
+
         let probe = TcpProbe::new("127.0.0.1", 3000, Duration::from_secs(1));
         assert_eq!(probe.address(), "127.0.0.1:3000");
     }

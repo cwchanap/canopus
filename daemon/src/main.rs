@@ -5,7 +5,7 @@
 #![allow(unused_crate_dependencies)]
 
 use clap::Parser;
-use daemon::{Daemon, bootstrap};
+use daemon::{bootstrap, Daemon};
 use schema::DaemonConfig;
 use tracing::{error, info};
 
@@ -13,7 +13,7 @@ use tracing::{error, info};
 
 /// Daemon CLI options
 #[derive(Debug, Parser)]
-#[command(name = "canopus-daemon", version, about = "Canopus daemon")] 
+#[command(name = "canopus-daemon", version, about = "Canopus daemon")]
 struct Opts {
     /// Path to services TOML configuration
     #[arg(short, long)]

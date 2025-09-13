@@ -114,16 +114,27 @@ async fn main() -> canopus_core::Result<()> {
                     }
                     Ok(())
                 }
-                LocalCmd::Start { service_id } => uds.start(service_id).await.map_err(anyhow_to_core),
+                LocalCmd::Start { service_id } => {
+                    uds.start(service_id).await.map_err(anyhow_to_core)
+                }
                 LocalCmd::Stop { service_id } => uds.stop(service_id).await.map_err(anyhow_to_core),
-                LocalCmd::Restart { service_id } => uds.restart(service_id).await.map_err(anyhow_to_core),
+                LocalCmd::Restart { service_id } => {
+                    uds.restart(service_id).await.map_err(anyhow_to_core)
+                }
                 LocalCmd::Health { service_id } => {
                     let healthy = uds.health_check(service_id).await.map_err(anyhow_to_core)?;
-                    println!("{}: {}", service_id, if healthy {"healthy"} else {"unhealthy"});
+                    println!(
+                        "{}: {}",
+                        service_id,
+                        if healthy { "healthy" } else { "unhealthy" }
+                    );
                     Ok(())
                 }
                 LocalCmd::TailLogs { service_id } => {
-                    let mut rx = uds.tail_logs(service_id, None).await.map_err(anyhow_to_core)?;
+                    let mut rx = uds
+                        .tail_logs(service_id, None)
+                        .await
+                        .map_err(anyhow_to_core)?;
                     while let Some(evt) = rx.recv().await {
                         print_event(&evt);
                     }
@@ -151,8 +162,22 @@ fn cli_to_core(e: cli::CliError) -> canopus_core::CoreError {
 
 fn print_event(evt: &ServiceEvent) {
     match evt {
-        ServiceEvent::LogOutput { service_id, stream, content, timestamp } => {
-            println!("{} [{}] {}: {}", timestamp, match stream { schema::LogStream::Stdout => "STDOUT", schema::LogStream::Stderr => "STDERR" }, service_id, content);
+        ServiceEvent::LogOutput {
+            service_id,
+            stream,
+            content,
+            timestamp,
+        } => {
+            println!(
+                "{} [{}] {}: {}",
+                timestamp,
+                match stream {
+                    schema::LogStream::Stdout => "STDOUT",
+                    schema::LogStream::Stderr => "STDERR",
+                },
+                service_id,
+                content
+            );
         }
         other => {
             println!("EVENT: {:?}", other);

@@ -8,16 +8,16 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 // Service management types
-pub mod service;
 pub mod events;
+pub mod service;
 
 // Testing modules
 #[cfg(test)]
 mod json_roundtrip_tests;
 
 // Re-export service types for convenience
-pub use service::*;
 pub use events::*;
+pub use service::*;
 
 /// Message types for communication between daemon and CLI
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

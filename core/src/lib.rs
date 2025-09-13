@@ -3,18 +3,18 @@
 //! This crate contains shared types, utilities, and business logic
 //! that can be used by both the daemon and CLI components.
 
+pub mod config;
 pub mod error;
 pub mod health;
+pub mod logging;
+pub mod persistence;
 pub mod port;
 #[cfg(unix)]
 pub mod process;
-pub mod logging;
+pub mod proxy;
 pub mod proxy_api;
 pub mod supervisor;
-pub mod proxy;
 pub mod utilities;
-pub mod config;
-pub mod persistence;
 
 #[cfg(test)]
 mod error_tests;

@@ -65,12 +65,12 @@ impl UnixProcessAdapter {
 impl ProcessAdapter for UnixProcessAdapter {
     async fn spawn(&self, spec: &ServiceSpec) -> Result<Box<dyn ManagedProcess>> {
         use crate::process::unix;
-        
+
         debug!("Spawning Unix process: {} {:?}", spec.command, spec.args);
-        
+
         let args: Vec<&str> = spec.args.iter().map(|s| s.as_str()).collect();
         let child = unix::spawn(&spec.command, &args)?;
-        
+
         Ok(Box::new(UnixManagedProcess { child }))
     }
 }
@@ -90,7 +90,7 @@ impl ManagedProcess for UnixManagedProcess {
 
     async fn wait(&mut self) -> Result<ServiceExit> {
         let exit_status = self.child.wait().await?;
-        
+
         let (exit_code, signal) = if let Some(code) = exit_status.code() {
             (Some(code), None)
         } else {
@@ -106,7 +106,7 @@ impl ManagedProcess for UnixManagedProcess {
                 (None, None)
             }
         };
-        
+
         Ok(ServiceExit {
             pid: self.pid(),
             exit_code,
@@ -133,21 +133,17 @@ impl ManagedProcess for UnixManagedProcess {
     }
 
     fn take_stdout(&mut self) -> Option<Pin<Box<dyn AsyncRead + Send + Unpin>>> {
-        self.child
-            .take_stdout()
-            .map(|s| {
-                let r: Pin<Box<dyn AsyncRead + Send + Unpin>> = Box::pin(s);
-                r
-            })
+        self.child.take_stdout().map(|s| {
+            let r: Pin<Box<dyn AsyncRead + Send + Unpin>> = Box::pin(s);
+            r
+        })
     }
 
     fn take_stderr(&mut self) -> Option<Pin<Box<dyn AsyncRead + Send + Unpin>>> {
-        self.child
-            .take_stderr()
-            .map(|s| {
-                let r: Pin<Box<dyn AsyncRead + Send + Unpin>> = Box::pin(s);
-                r
-            })
+        self.child.take_stderr().map(|s| {
+            let r: Pin<Box<dyn AsyncRead + Send + Unpin>> = Box::pin(s);
+            r
+        })
     }
 }
 
@@ -207,12 +203,14 @@ impl MockProcessAdapter {
         let adapter = Self::new();
         let adapter_clone = adapter.clone();
         tokio::spawn(async move {
-            adapter_clone.set_instructions(vec![MockInstruction {
-                exit_delay: std::time::Duration::from_millis(50),
-                exit_code: Some(0),
-                signal: None,
-                responds_to_signals: true,
-            }]).await;
+            adapter_clone
+                .set_instructions(vec![MockInstruction {
+                    exit_delay: std::time::Duration::from_millis(50),
+                    exit_code: Some(0),
+                    signal: None,
+                    responds_to_signals: true,
+                }])
+                .await;
         });
         adapter
     }
@@ -222,12 +220,14 @@ impl MockProcessAdapter {
         let adapter = Self::new();
         let adapter_clone = adapter.clone();
         tokio::spawn(async move {
-            adapter_clone.set_instructions(vec![MockInstruction {
-                exit_delay: std::time::Duration::from_millis(50),
-                exit_code: Some(1),
-                signal: None,
-                responds_to_signals: true,
-            }]).await;
+            adapter_clone
+                .set_instructions(vec![MockInstruction {
+                    exit_delay: std::time::Duration::from_millis(50),
+                    exit_code: Some(1),
+                    signal: None,
+                    responds_to_signals: true,
+                }])
+                .await;
         });
         adapter
     }
@@ -237,12 +237,14 @@ impl MockProcessAdapter {
         let adapter = Self::new();
         let adapter_clone = adapter.clone();
         tokio::spawn(async move {
-            adapter_clone.set_instructions(vec![MockInstruction {
-                exit_delay: std::time::Duration::from_secs(5),
-                exit_code: Some(0),
-                signal: None,
-                responds_to_signals: true,
-            }]).await;
+            adapter_clone
+                .set_instructions(vec![MockInstruction {
+                    exit_delay: std::time::Duration::from_secs(5),
+                    exit_code: Some(0),
+                    signal: None,
+                    responds_to_signals: true,
+                }])
+                .await;
         });
         adapter
     }
@@ -257,18 +259,21 @@ impl Default for MockProcessAdapter {
 #[async_trait]
 impl ProcessAdapter for MockProcessAdapter {
     async fn spawn(&self, spec: &ServiceSpec) -> Result<Box<dyn ManagedProcess>> {
-        debug!("Spawning mock process for: {} {:?}", spec.command, spec.args);
-        
+        debug!(
+            "Spawning mock process for: {} {:?}",
+            spec.command, spec.args
+        );
+
         let mut instructions = self.instructions.lock().await;
         let instruction = if instructions.is_empty() {
             MockInstruction::default()
         } else {
             instructions.remove(0)
         };
-        
+
         // Generate a fake PID
         let pid = rand::random::<u32>() % 65536 + 1000;
-        
+
         Ok(Box::new(MockManagedProcess::new(pid, instruction)))
     }
 }
@@ -297,7 +302,7 @@ impl MockManagedProcess {
         if self.killed || self.terminated {
             return true;
         }
-        
+
         self.started_at.elapsed() >= self.instruction.exit_delay
     }
 
@@ -330,7 +335,7 @@ impl ManagedProcess for MockManagedProcess {
         while !self.should_exit() {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
-        
+
         Ok(self.create_exit())
     }
 
@@ -364,9 +369,9 @@ impl ManagedProcess for MockManagedProcess {
 // Simple random number generator for mock PIDs
 mod rand {
     use std::sync::atomic::{AtomicU32, Ordering};
-    
+
     static SEED: AtomicU32 = AtomicU32::new(1);
-    
+
     pub(crate) fn random<T>() -> T
     where
         T: From<u32>,
@@ -406,7 +411,7 @@ mod tests {
     async fn test_mock_adapter_spawn() {
         let adapter = MockProcessAdapter::new();
         let spec = create_test_spec();
-        
+
         let process = adapter.spawn(&spec).await.unwrap();
         assert!(process.pid() > 0);
         assert!(process.is_alive());
@@ -416,10 +421,10 @@ mod tests {
     async fn test_mock_process_wait() {
         let adapter = MockProcessAdapter::new();
         let spec = create_test_spec();
-        
+
         let mut process = adapter.spawn(&spec).await.unwrap();
         let exit = process.wait().await.unwrap();
-        
+
         assert_eq!(exit.exit_code, Some(0));
         assert_eq!(exit.signal, None);
         assert_eq!(exit.pid, process.pid());
@@ -428,22 +433,24 @@ mod tests {
     #[tokio::test]
     async fn test_mock_process_terminate() {
         let adapter = MockProcessAdapter::new();
-        adapter.add_instruction(MockInstruction {
-            exit_delay: Duration::from_secs(10), // Long delay
-            exit_code: Some(0),
-            signal: None,
-            responds_to_signals: true,
-        }).await;
-        
+        adapter
+            .add_instruction(MockInstruction {
+                exit_delay: Duration::from_secs(10), // Long delay
+                exit_code: Some(0),
+                signal: None,
+                responds_to_signals: true,
+            })
+            .await;
+
         let spec = create_test_spec();
         let mut process = adapter.spawn(&spec).await.unwrap();
-        
+
         // Process should be alive initially
         assert!(process.is_alive());
-        
+
         // Terminate it
         process.terminate().await.unwrap();
-        
+
         // Wait should return quickly with signal
         let exit = process.wait().await.unwrap();
         assert_eq!(exit.exit_code, None);
@@ -453,19 +460,21 @@ mod tests {
     #[tokio::test]
     async fn test_mock_process_kill() {
         let adapter = MockProcessAdapter::new();
-        adapter.add_instruction(MockInstruction {
-            exit_delay: Duration::from_secs(10), // Long delay
-            exit_code: Some(0),
-            signal: None,
-            responds_to_signals: true,
-        }).await;
-        
+        adapter
+            .add_instruction(MockInstruction {
+                exit_delay: Duration::from_secs(10), // Long delay
+                exit_code: Some(0),
+                signal: None,
+                responds_to_signals: true,
+            })
+            .await;
+
         let spec = create_test_spec();
         let mut process = adapter.spawn(&spec).await.unwrap();
-        
+
         // Kill it
         process.kill().await.unwrap();
-        
+
         // Wait should return quickly with SIGKILL
         let exit = process.wait().await.unwrap();
         assert_eq!(exit.exit_code, None);
@@ -477,10 +486,10 @@ mod tests {
         // Test success factory
         let adapter = MockProcessAdapter::success();
         let spec = create_test_spec();
-        
+
         // Wait a bit for the async instruction setup
         tokio::time::sleep(Duration::from_millis(10)).await;
-        
+
         let mut process = adapter.spawn(&spec).await.unwrap();
         let exit = process.wait().await.unwrap();
         assert_eq!(exit.exit_code, Some(0));
@@ -488,7 +497,7 @@ mod tests {
         // Test failure factory
         let adapter = MockProcessAdapter::failure();
         tokio::time::sleep(Duration::from_millis(10)).await;
-        
+
         let mut process = adapter.spawn(&spec).await.unwrap();
         let exit = process.wait().await.unwrap();
         assert_eq!(exit.exit_code, Some(1));

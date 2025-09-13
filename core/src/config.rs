@@ -106,10 +106,24 @@ impl ServicesFile {
 
             // health/readiness checks
             if let Some(h) = &svc.health_check {
-                validate_probe(i, "healthCheck", &h.check_type, h.interval_secs, h.timeout_secs, Some((h.failure_threshold, h.success_threshold)))?;
+                validate_probe(
+                    i,
+                    "healthCheck",
+                    &h.check_type,
+                    h.interval_secs,
+                    h.timeout_secs,
+                    Some((h.failure_threshold, h.success_threshold)),
+                )?;
             }
             if let Some(r) = &svc.readiness_check {
-                validate_probe(i, "readinessCheck", &r.check_type, r.interval_secs, r.timeout_secs, Some((1, r.success_threshold)))?;
+                validate_probe(
+                    i,
+                    "readinessCheck",
+                    &r.check_type,
+                    r.interval_secs,
+                    r.timeout_secs,
+                    Some((1, r.success_threshold)),
+                )?;
             }
         }
         Ok(())
@@ -183,9 +197,8 @@ pub fn load_services_from_toml_path(path: impl AsRef<Path>) -> Result<ServicesFi
 
 /// Load services from a TOML string
 pub fn load_services_from_toml_str(input: &str) -> Result<ServicesFile> {
-    let cfg: ServicesFile = toml::from_str(input).map_err(|e| {
-        CoreError::ConfigurationError(format!("TOML parse error: {}", e))
-    })?;
+    let cfg: ServicesFile = toml::from_str(input)
+        .map_err(|e| CoreError::ConfigurationError(format!("TOML parse error: {}", e)))?;
     cfg.validate()?;
     Ok(cfg)
 }
@@ -211,7 +224,8 @@ mod tests {
         name = "Service Two"
         command = "sh"
         args = ["-c", "exit 0"]
-        "#.to_string()
+        "#
+        .to_string()
     }
 
     #[test]

@@ -19,9 +19,9 @@
 use crate::{IpcError, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
-use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
@@ -62,13 +62,22 @@ pub struct JsonRpcError {
 
 impl JsonRpcResponse {
     fn ok(id: Option<Value>, result: Value) -> Self {
-        Self { jsonrpc: "2.0".to_string(), result: Some(result), error: None, id }
+        Self {
+            jsonrpc: "2.0".to_string(),
+            result: Some(result),
+            error: None,
+            id,
+        }
     }
     fn err(id: Option<Value>, code: i32, message: impl Into<String>, data: Option<Value>) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),
             result: None,
-            error: Some(JsonRpcError { code, message: message.into(), data }),
+            error: Some(JsonRpcError {
+                code,
+                message: message.into(),
+                data,
+            }),
             id,
         }
     }
@@ -108,7 +117,10 @@ pub struct IpcServer {
 impl IpcServer {
     /// Create a new IPC server
     pub fn new(config: IpcServerConfig) -> Self {
-        Self { config, router: Arc::new(NoopControlPlane) }
+        Self {
+            config,
+            router: Arc::new(NoopControlPlane),
+        }
     }
 
     /// Create with a provided control plane/router implementation
@@ -128,18 +140,18 @@ impl IpcServer {
         }
         #[cfg(all(not(unix), not(windows)))]
         {
-            Err(IpcError::ProtocolError("Unsupported platform for local IPC".to_string()))
+            Err(IpcError::ProtocolError(
+                "Unsupported platform for local IPC".to_string(),
+            ))
         }
     }
 
     #[cfg(unix)]
     async fn serve_unix(&self) -> Result<()> {
         use tokio::net::UnixListener;
-        let path = self
-            .config
-            .unix_socket_path
-            .clone()
-            .ok_or_else(|| IpcError::ProtocolError("unix_socket_path is required on Unix".to_string()))?;
+        let path = self.config.unix_socket_path.clone().ok_or_else(|| {
+            IpcError::ProtocolError("unix_socket_path is required on Unix".to_string())
+        })?;
 
         // Remove pre-existing socket file if present
         if path.exists() {
@@ -187,14 +199,23 @@ impl IpcServer {
 }
 
 #[cfg(unix)]
-async fn handle_connection_unix(stream: tokio::net::UnixStream, config: IpcServerConfig, router: Arc<dyn ControlPlane>) -> Result<()> {
+async fn handle_connection_unix(
+    stream: tokio::net::UnixStream,
+    config: IpcServerConfig,
+    router: Arc<dyn ControlPlane>,
+) -> Result<()> {
     // Handshake: expect a JSON-RPC call canopus.handshake with optional token
     let (mut reader, writer) = stream.into_split();
     let writer = Arc::new(Mutex::new(writer));
 
     let req = read_request(&mut reader).await?;
     if req.jsonrpc != "2.0" || req.method != "canopus.handshake" {
-        let resp = JsonRpcResponse::err(req.id, -32600, "Handshake required (canopus.handshake)", None);
+        let resp = JsonRpcResponse::err(
+            req.id,
+            -32600,
+            "Handshake required (canopus.handshake)",
+            None,
+        );
         write_response_locked(writer.clone(), &resp).await?;
         return Err(IpcError::ProtocolError("Missing handshake".to_string()));
     }
@@ -216,10 +237,7 @@ async fn handle_connection_unix(stream: tokio::net::UnixStream, config: IpcServe
     }
 
     // Respond with version in handshake result
-    let resp = JsonRpcResponse::ok(
-        req.id,
-        serde_json::json!({"version": config.version}),
-    );
+    let resp = JsonRpcResponse::ok(req.id, serde_json::json!({"version": config.version}));
     write_response_locked(writer.clone(), &resp).await?;
 
     // Now enter request loop
@@ -256,51 +274,86 @@ async fn route_method(
     }
 
     Ok(Some(match method {
-        "canopus.version" => JsonRpcResponse::ok(id, serde_json::json!({"version": config.version })),
+        "canopus.version" => {
+            JsonRpcResponse::ok(id, serde_json::json!({"version": config.version }))
+        }
         "canopus.list" => {
             let services = router.list().await?;
             JsonRpcResponse::ok(id, serde_json::json!({"services": services}))
         }
         "canopus.start" => {
-            let sid = params.get("serviceId").and_then(|v| v.as_str()).ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
+            let sid = params
+                .get("serviceId")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
             router.start(sid).await?;
             JsonRpcResponse::ok(id, serde_json::json!({"ok": true}))
         }
         "canopus.stop" => {
-            let sid = params.get("serviceId").and_then(|v| v.as_str()).ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
+            let sid = params
+                .get("serviceId")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
             router.stop(sid).await?;
             JsonRpcResponse::ok(id, serde_json::json!({"ok": true}))
         }
         "canopus.restart" => {
-            let sid = params.get("serviceId").and_then(|v| v.as_str()).ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
+            let sid = params
+                .get("serviceId")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
             router.restart(sid).await?;
             JsonRpcResponse::ok(id, serde_json::json!({"ok": true}))
         }
         "canopus.bindHost" => {
-            let sid = params.get("serviceId").and_then(|v| v.as_str()).ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
-            let host = params.get("host").and_then(|v| v.as_str()).ok_or_else(|| IpcError::ProtocolError("missing host".into()))?;
+            let sid = params
+                .get("serviceId")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
+            let host = params
+                .get("host")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| IpcError::ProtocolError("missing host".into()))?;
             router.bind_host(sid, host).await?;
             JsonRpcResponse::ok(id, serde_json::json!({"ok": true}))
         }
         "canopus.assignPort" => {
-            let sid = params.get("serviceId").and_then(|v| v.as_str()).ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
-            let preferred = params.get("preferred").and_then(|v| v.as_u64()).map(|n| n as u16);
+            let sid = params
+                .get("serviceId")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
+            let preferred = params
+                .get("preferred")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as u16);
             let port = router.assign_port(sid, preferred).await?;
             JsonRpcResponse::ok(id, serde_json::json!({"port": port}))
         }
         "canopus.healthCheck" => {
-            let sid = params.get("serviceId").and_then(|v| v.as_str()).ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
+            let sid = params
+                .get("serviceId")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
             let healthy = router.health_check(sid).await?;
             JsonRpcResponse::ok(id, serde_json::json!({"healthy": healthy}))
         }
         "canopus.tailLogs" => {
-            let sid = params.get("serviceId").and_then(|v| v.as_str()).ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?.to_string();
+            let sid = params
+                .get("serviceId")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?
+                .to_string();
             let from_seq = params.get("fromSeq").and_then(|v| v.as_u64());
             let mut rx = router.tail_logs(&sid, from_seq).await?;
             let writer_clone = writer.clone();
             tokio::spawn(async move {
                 while let Some(evt) = rx.recv().await {
-                    let _ = write_notification_locked(writer_clone.clone(), "canopus.tailLogs.update", serde_json::to_value(&evt).unwrap()).await;
+                    let _ = write_notification_locked(
+                        writer_clone.clone(),
+                        "canopus.tailLogs.update",
+                        serde_json::to_value(&evt).unwrap(),
+                    )
+                    .await;
                 }
             });
             JsonRpcResponse::ok(id, serde_json::json!({"subscribed": true}))
@@ -327,9 +380,13 @@ async fn write_response_locked(
     writer: Arc<Mutex<tokio::net::unix::OwnedWriteHalf>>,
     resp: &JsonRpcResponse,
 ) -> Result<()> {
-    let data = serde_json::to_vec(resp).map_err(|e| IpcError::SerializationFailed(e.to_string()))?;
+    let data =
+        serde_json::to_vec(resp).map_err(|e| IpcError::SerializationFailed(e.to_string()))?;
     let mut guard = writer.lock().await;
-    guard.write_all(&data).await.map_err(|e| IpcError::SendFailed(e.to_string()))
+    guard
+        .write_all(&data)
+        .await
+        .map_err(|e| IpcError::SendFailed(e.to_string()))
 }
 
 async fn write_notification_locked(
@@ -342,9 +399,13 @@ async fn write_notification_locked(
         "method": method,
         "params": params,
     });
-    let data = serde_json::to_vec(&notif).map_err(|e| IpcError::SerializationFailed(e.to_string()))?;
+    let data =
+        serde_json::to_vec(&notif).map_err(|e| IpcError::SerializationFailed(e.to_string()))?;
     let mut guard = writer.lock().await;
-    guard.write_all(&data).await.map_err(|e| IpcError::SendFailed(e.to_string()))
+    guard
+        .write_all(&data)
+        .await
+        .map_err(|e| IpcError::SendFailed(e.to_string()))
 }
 
 /// Abstract control plane that the IPC server delegates to
@@ -358,7 +419,11 @@ pub trait ControlPlane: Send + Sync {
     async fn bind_host(&self, service_id: &str, host: &str) -> Result<()>;
     async fn assign_port(&self, service_id: &str, preferred: Option<u16>) -> Result<u16>;
     async fn health_check(&self, service_id: &str) -> Result<bool>;
-    async fn tail_logs(&self, service_id: &str, from_seq: Option<u64>) -> Result<mpsc::Receiver<schema::ServiceEvent>>;
+    async fn tail_logs(
+        &self,
+        service_id: &str,
+        from_seq: Option<u64>,
+    ) -> Result<mpsc::Receiver<schema::ServiceEvent>>;
 }
 
 /// Minimal summary for listing services
@@ -393,9 +458,15 @@ impl ControlPlane for NoopControlPlane {
         Err(IpcError::ProtocolError("assignPort not implemented".into()))
     }
     async fn health_check(&self, _service_id: &str) -> Result<bool> {
-        Err(IpcError::ProtocolError("healthCheck not implemented".into()))
+        Err(IpcError::ProtocolError(
+            "healthCheck not implemented".into(),
+        ))
     }
-    async fn tail_logs(&self, _service_id: &str, _from_seq: Option<u64>) -> Result<mpsc::Receiver<schema::ServiceEvent>> {
+    async fn tail_logs(
+        &self,
+        _service_id: &str,
+        _from_seq: Option<u64>,
+    ) -> Result<mpsc::Receiver<schema::ServiceEvent>> {
         let (_tx, rx) = mpsc::channel(1);
         Ok(rx)
     }
@@ -419,7 +490,10 @@ pub mod supervisor_adapter {
     }
 
     impl SupervisorControlPlane {
-        pub fn new(handles: HashMap<String, SupervisorHandle>, event_tx: broadcast::Sender<ServiceEvent>) -> Self {
+        pub fn new(
+            handles: HashMap<String, SupervisorHandle>,
+            event_tx: broadcast::Sender<ServiceEvent>,
+        ) -> Self {
             Self { handles, event_tx }
         }
     }
@@ -488,7 +562,11 @@ pub mod supervisor_adapter {
                 .map_err(|e| super::IpcError::ProtocolError(e.to_string()))
         }
 
-        async fn tail_logs(&self, service_id: &str, _from_seq: Option<u64>) -> Result<mpsc::Receiver<ServiceEvent>> {
+        async fn tail_logs(
+            &self,
+            service_id: &str,
+            _from_seq: Option<u64>,
+        ) -> Result<mpsc::Receiver<ServiceEvent>> {
             let mut rx = self.event_tx.subscribe();
             let (tx, out_rx) = mpsc::channel(100);
             let sid = service_id.to_string();
@@ -535,7 +613,9 @@ mod tests {
             };
 
             let server = IpcServer::new(cfg.clone());
-            tokio::spawn(async move { let _ = server.serve_unix().await; });
+            tokio::spawn(async move {
+                let _ = server.serve_unix().await;
+            });
             // Give server a moment
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 

@@ -41,9 +41,9 @@ pub fn create_probe(
             let probe = TcpProbe::new("127.0.0.1", *port, timeout);
             Ok(Box::new(probe))
         }
-        HealthCheckType::Exec { .. } => {
-            Err(HealthError::UnsupportedProbeType("Exec probes not yet implemented".to_string()))
-        }
+        HealthCheckType::Exec { .. } => Err(HealthError::UnsupportedProbeType(
+            "Exec probes not yet implemented".to_string(),
+        )),
     }
 }
 

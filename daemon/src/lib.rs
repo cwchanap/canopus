@@ -2,8 +2,8 @@
 
 #![allow(unused_crate_dependencies)]
 
-pub mod simple_error;
 pub mod bootstrap;
+pub mod simple_error;
 
 #[cfg(test)]
 mod simple_error_tests;

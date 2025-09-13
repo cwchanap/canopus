@@ -15,10 +15,8 @@ pub enum HealthError {
     Tcp(#[from] std::io::Error),
 
     // HTTP-related errors removed
-
     /// Unsupported probe type requested
     #[error("unsupported probe type: {0}")]
     UnsupportedProbeType(String),
-
     // HTTP request/URI errors removed
 }

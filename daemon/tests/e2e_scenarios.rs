@@ -6,10 +6,10 @@
 //! becoming Ready, tailing logs, restart/stop calls, and snapshot persistence
 //! across a simulated restart.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use ipc::uds_client::JsonRpcClient;
 use canopus_core::persistence::load_snapshot;
+use ipc::uds_client::JsonRpcClient;
 
 fn toy_bin_path() -> PathBuf {
     // Prefer Cargo-provided binary path
@@ -26,7 +26,7 @@ fn toy_bin_path() -> PathBuf {
     panic!("Unable to locate toy_http binary; set CARGO_BIN_EXE_toy_http or ensure target/debug/toy_http exists");
 }
 
-fn make_services_toml(bin_path: &PathBuf, port: u16) -> String {
+fn make_services_toml(bin_path: &Path, port: u16) -> String {
     format!(
         r#"
 [[services]]
@@ -66,7 +66,11 @@ port = {port}
     )
 }
 
-async fn wait_until_ready(client: &JsonRpcClient, service_id: &str, timeout_ms: u64) -> ipc::Result<()> {
+async fn wait_until_ready(
+    client: &JsonRpcClient,
+    service_id: &str,
+    timeout_ms: u64,
+) -> ipc::Result<()> {
     use tokio::time::{sleep, Duration, Instant};
     let deadline = Instant::now() + Duration::from_millis(timeout_ms);
     loop {
@@ -119,8 +123,12 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
         use tokio::time::{sleep, Duration, Instant};
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
-            if sock_path.exists() { break; }
-            if Instant::now() >= deadline { panic!("IPC socket not created in time"); }
+            if sock_path.exists() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                panic!("IPC socket not created in time");
+            }
             sleep(Duration::from_millis(50)).await;
         }
     }
@@ -136,7 +144,9 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
             match client.list().await {
                 Ok(svcs) => break svcs,
                 Err(_) => {
-                    if Instant::now() >= deadline { panic!("IPC list did not respond in time"); }
+                    if Instant::now() >= deadline {
+                        panic!("IPC list did not respond in time");
+                    }
                     sleep(Duration::from_millis(50)).await;
                 }
             }
@@ -153,7 +163,7 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
 
     // Wait for either a ready state or a ready log line
     let mut saw_ready_log = false;
-    let mut ready_wait = wait_until_ready(&client, "toy-http", 10_000);
+    let ready_wait = wait_until_ready(&client, "toy-http", 10_000);
     tokio::pin!(ready_wait);
     loop {
         tokio::select! {
@@ -172,7 +182,9 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
     }
 
     // Ensure Ready state before asserting health
-    wait_until_ready(&client, "toy-http", 10_000).await.expect("became ready");
+    wait_until_ready(&client, "toy-http", 10_000)
+        .await
+        .expect("became ready");
 
     // Confirm health check via API returns true
     let healthy = client.health_check("toy-http").await.expect("health ok");
@@ -180,14 +192,20 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
 
     // Snapshot should exist and indicate Ready with some pid
     let snap = load_snapshot(&state_path).expect("load snapshot");
-    let svc = snap.services.iter().find(|s| s.id == "toy-http").expect("svc in snap");
+    let svc = snap
+        .services
+        .iter()
+        .find(|s| s.id == "toy-http")
+        .expect("svc in snap");
     assert_eq!(svc.last_state, schema::ServiceState::Ready);
     assert!(svc.last_pid.is_some(), "pid should be recorded");
 
     // Restart via IPC
     client.restart("toy-http").await.expect("restart ok");
     // Wait back to Ready again
-    wait_until_ready(&client, "toy-http", 10_000).await.expect("ready after restart");
+    wait_until_ready(&client, "toy-http", 10_000)
+        .await
+        .expect("ready after restart");
 
     // Stop via IPC
     client.stop("toy-http").await.expect("stop ok");
@@ -195,21 +213,34 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
     // Give a moment for snapshot update
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     let snap2 = load_snapshot(&state_path).expect("load snapshot2");
-    let svc2 = snap2.services.iter().find(|s| s.id == "toy-http").expect("svc in snap2");
-    assert!(matches!(svc2.last_state, schema::ServiceState::Stopping | schema::ServiceState::Idle));
+    let svc2 = snap2
+        .services
+        .iter()
+        .find(|s| s.id == "toy-http")
+        .expect("svc in snap2");
+    assert!(matches!(
+        svc2.last_state,
+        schema::ServiceState::Stopping | schema::ServiceState::Idle
+    ));
 
     // Simulate daemon restart: shutdown bootstrap, then bootstrap again with same config
     boot.shutdown().await;
     // New bootstrap on same socket/state paths
-    let _boot2 = daemon::bootstrap::bootstrap(Some(cfg_path.clone())).await.expect("bootstrap2 ok");
+    let _boot2 = daemon::bootstrap::bootstrap(Some(cfg_path.clone()))
+        .await
+        .expect("bootstrap2 ok");
 
     // Wait for IPC to accept after restart
     {
         use tokio::time::{sleep, Duration, Instant};
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
-            if sock_path.exists() { break; }
-            if Instant::now() >= deadline { panic!("IPC socket not recreated in time"); }
+            if sock_path.exists() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                panic!("IPC socket not recreated in time");
+            }
             sleep(Duration::from_millis(50)).await;
         }
     }
@@ -224,11 +255,15 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
             match client2.list().await {
                 Ok(_) => break,
                 Err(_) => {
-                    if Instant::now() >= deadline { break; }
+                    if Instant::now() >= deadline {
+                        break;
+                    }
                     sleep(Duration::from_millis(50)).await;
                 }
             }
         }
     }
-    wait_until_ready(&client2, "toy-http", 12_000).await.expect("ready after recover");
+    wait_until_ready(&client2, "toy-http", 12_000)
+        .await
+        .expect("ready after recover");
 }

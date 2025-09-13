@@ -20,7 +20,11 @@ mod tests {
     {
         let json = serde_json::to_string(original).expect("Failed to serialize to JSON");
         let deserialized: T = serde_json::from_str(&json).expect("Failed to deserialize from JSON");
-        assert_eq!(*original, deserialized, "Round-trip failed for JSON: {}", json);
+        assert_eq!(
+            *original, deserialized,
+            "Round-trip failed for JSON: {}",
+            json
+        );
     }
 
     #[test]

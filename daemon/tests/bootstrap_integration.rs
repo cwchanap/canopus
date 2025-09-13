@@ -24,7 +24,9 @@ async fn bootstrap_start_stop() {
     fs::write(&path, toml).unwrap();
 
     // Bootstrap
-    let handle = daemon::bootstrap::bootstrap(Some(path)).await.expect("bootstrap should succeed");
+    let handle = daemon::bootstrap::bootstrap(Some(path))
+        .await
+        .expect("bootstrap should succeed");
     assert_eq!(handle.services.len(), 1);
 
     // Trigger shutdown

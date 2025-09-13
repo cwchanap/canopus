@@ -12,9 +12,9 @@ use tracing::debug;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RestartAction {
     /// Restart the service after the specified delay
-    Restart { 
+    Restart {
         /// Backoff delay before restart
-        delay: Duration 
+        delay: Duration,
     },
     /// Do not restart the service
     Stop,
@@ -44,17 +44,23 @@ impl FailureTracker {
             .duration_since(UNIX_EPOCH)
             .unwrap_or(Duration::ZERO)
             .as_secs();
-        
+
         self.failures.push(secs);
         self.cleanup_old_failures(timestamp);
-        
-        debug!("Recorded failure at timestamp {}, total failures in window: {}", 
-               secs, self.failures.len());
+
+        debug!(
+            "Recorded failure at timestamp {}, total failures in window: {}",
+            secs,
+            self.failures.len()
+        );
     }
 
     /// Clear all failures (called after a successful run period)
     pub fn reset(&mut self) {
-        debug!("Resetting failure tracker, had {} failures", self.failures.len());
+        debug!(
+            "Resetting failure tracker, had {} failures",
+            self.failures.len()
+        );
         self.failures.clear();
     }
 
@@ -71,10 +77,11 @@ impl FailureTracker {
             .duration_since(UNIX_EPOCH)
             .unwrap_or(Duration::ZERO)
             .as_secs();
-        
+
         let window_start = current_secs.saturating_sub(self.window_duration.as_secs());
-        
-        self.failures.retain(|&failure_time| failure_time >= window_start);
+
+        self.failures
+            .retain(|&failure_time| failure_time >= window_start);
     }
 }
 
@@ -99,10 +106,12 @@ impl RestartPolicyEngine {
     /// Determine the restart action for a service exit
     pub fn should_restart(&mut self, exit_info: &ServiceExit) -> RestartAction {
         let current_time = SystemTime::now();
-        
-        debug!("Evaluating restart policy {:?} for exit: pid={}, exit_code={:?}, signal={:?}",
-               self.policy, exit_info.pid, exit_info.exit_code, exit_info.signal);
-        
+
+        debug!(
+            "Evaluating restart policy {:?} for exit: pid={}, exit_code={:?}, signal={:?}",
+            self.policy, exit_info.pid, exit_info.exit_code, exit_info.signal
+        );
+
         match self.policy {
             RestartPolicy::Never => {
                 debug!("RestartPolicy::Never - not restarting service");
@@ -139,7 +148,7 @@ impl RestartPolicyEngine {
     /// Calculate the backoff delay based on failure history
     fn calculate_backoff_delay(&self, current_time: SystemTime) -> Duration {
         let failure_count = self.failure_tracker.failure_count(current_time);
-        
+
         if failure_count == 0 {
             debug!("No recent failures, using minimum delay");
             return Duration::from_millis(100); // Minimum delay for immediate restarts
@@ -149,22 +158,22 @@ impl RestartPolicyEngine {
         let base_delay_ms = self.backoff_config.base_delay().as_millis() as f64;
         let multiplier = self.backoff_config.multiplier;
         let exponent = (failure_count - 1) as f64;
-        
+
         let calculated_delay_ms = base_delay_ms * multiplier.powf(exponent);
         let max_delay_ms = self.backoff_config.max_delay().as_millis() as f64;
-        
+
         // Cap at maximum delay
         let capped_delay_ms = calculated_delay_ms.min(max_delay_ms);
-        
+
         // Apply jitter
         let jitter_factor = 1.0 + (self.backoff_config.jitter * (2.0 * random_f64() - 1.0));
         let final_delay_ms = (capped_delay_ms * jitter_factor).max(0.0);
-        
+
         let delay = Duration::from_millis(final_delay_ms as u64);
-        
+
         debug!("Calculated backoff delay: {} failures -> {}ms (base={}ms, multiplier={}, max={}ms, jitter={})",
                failure_count, final_delay_ms, base_delay_ms, multiplier, max_delay_ms, self.backoff_config.jitter);
-        
+
         delay
     }
 
@@ -183,14 +192,14 @@ impl RestartPolicyEngine {
 /// We use a simple approach to avoid adding external dependencies
 fn random_f64() -> f64 {
     use std::sync::atomic::{AtomicU64, Ordering};
-    
+
     static SEED: AtomicU64 = AtomicU64::new(1);
-    
+
     // Linear congruential generator
     let prev = SEED.load(Ordering::Relaxed);
     let next = prev.wrapping_mul(1103515245).wrapping_add(12345);
     SEED.store(next, Ordering::Relaxed);
-    
+
     // Convert to [0, 1) range
     (next as f64) / (u64::MAX as f64)
 }
@@ -239,10 +248,8 @@ mod tests {
 
     #[test]
     fn test_restart_policy_never() {
-        let mut engine = RestartPolicyEngine::new(
-            RestartPolicy::Never,
-            create_test_backoff_config(),
-        );
+        let mut engine =
+            RestartPolicyEngine::new(RestartPolicy::Never, create_test_backoff_config());
 
         // Should never restart, regardless of exit status
         let action = engine.should_restart(&create_exit_success());
@@ -257,10 +264,8 @@ mod tests {
 
     #[test]
     fn test_restart_policy_on_failure() {
-        let mut engine = RestartPolicyEngine::new(
-            RestartPolicy::OnFailure,
-            create_test_backoff_config(),
-        );
+        let mut engine =
+            RestartPolicyEngine::new(RestartPolicy::OnFailure, create_test_backoff_config());
 
         // Should not restart on success
         let action = engine.should_restart(&create_exit_success());
@@ -277,10 +282,8 @@ mod tests {
 
     #[test]
     fn test_restart_policy_always() {
-        let mut engine = RestartPolicyEngine::new(
-            RestartPolicy::Always,
-            create_test_backoff_config(),
-        );
+        let mut engine =
+            RestartPolicyEngine::new(RestartPolicy::Always, create_test_backoff_config());
 
         // Should always restart
         let action = engine.should_restart(&create_exit_success());
@@ -323,7 +326,7 @@ mod tests {
             panic!("Expected restart action");
         }
 
-        // Third failure - should double again  
+        // Third failure - should double again
         let action3 = engine.should_restart(&create_exit_failure());
         if let RestartAction::Restart { delay } = action3 {
             // Should be approximately 4 seconds
@@ -348,7 +351,7 @@ mod tests {
         let mut tracker = FailureTracker::new(window_duration);
 
         let base_time = SystemTime::now();
-        
+
         // Add a failure at base time
         tracker.record_failure(base_time);
         assert_eq!(tracker.failure_count(base_time), 1);
@@ -370,7 +373,7 @@ mod tests {
     #[test]
     fn test_failure_tracker_reset() {
         let mut tracker = FailureTracker::new(Duration::from_secs(300));
-        
+
         // Add some failures
         let now = SystemTime::now();
         tracker.record_failure(now);
@@ -407,7 +410,11 @@ mod tests {
         // And should be within reasonable bounds (base_delay ± jitter)
         for &delay_ms in &delays {
             // With 50% jitter, delay should be between 1s and 3s
-            assert!((1000..=3000).contains(&delay_ms), "Delay {} outside expected range", delay_ms);
+            assert!(
+                (1000..=3000).contains(&delay_ms),
+                "Delay {} outside expected range",
+                delay_ms
+            );
         }
 
         // Check that we actually have variation (not all the same)

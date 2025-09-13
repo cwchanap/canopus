@@ -226,7 +226,9 @@ pub enum LogStream {
 }
 
 /// Event severity level for filtering and alerting
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord,
+)]
 #[serde(rename_all = "camelCase")]
 pub enum EventSeverity {
     /// Debug information
@@ -327,10 +329,12 @@ impl ServiceEvent {
     pub fn current_timestamp() -> String {
         // Simple RFC3339 format: YYYY-MM-DDTHH:MM:SSZ
         // For production use, consider using chrono for proper timezone handling
-        format!("{}Z", 
+        format!(
+            "{}Z",
             humantime::format_rfc3339_seconds(SystemTime::now())
                 .to_string()
-                .trim_end_matches(".000000000Z"))
+                .trim_end_matches(".000000000Z")
+        )
     }
 
     /// Create a state change event
@@ -458,11 +462,11 @@ pub struct EventFilter {
     /// Filter by service IDs (empty means all services)
     #[serde(default)]
     pub service_ids: Vec<String>,
-    
+
     /// Filter by minimum severity level
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min_severity: Option<EventSeverity>,
-    
+
     /// Filter by event types (empty means all types)
     #[serde(default)]
     pub event_types: Vec<String>,
@@ -499,7 +503,9 @@ impl EventFilter {
     /// Check if this filter matches the given event
     pub fn matches(&self, event: &ServiceEvent) -> bool {
         // Check service ID filter
-        if !self.service_ids.is_empty() && !self.service_ids.contains(&event.service_id().to_string()) {
+        if !self.service_ids.is_empty()
+            && !self.service_ids.contains(&event.service_id().to_string())
+        {
             return false;
         }
 
@@ -529,7 +535,7 @@ impl EventFilter {
                 ServiceEvent::StartupTimeout { .. } => "startupTimeout",
                 ServiceEvent::ServiceUnhealthy { .. } => "serviceUnhealthy",
             };
-            
+
             if !self.event_types.contains(&event_type.to_string()) {
                 return false;
             }
@@ -552,7 +558,7 @@ mod tests {
             ServiceState::Spawning,
             None,
         );
-        
+
         assert_eq!(event.service_id(), "test-service");
     }
 
@@ -588,7 +594,7 @@ mod tests {
     #[test]
     fn test_service_event_constructors() {
         let service_id = "test-service".to_string();
-        
+
         // Test state changed event
         let state_event = ServiceEvent::state_changed(
             service_id.clone(),
@@ -596,9 +602,14 @@ mod tests {
             ServiceState::Ready,
             Some("Health check passed".to_string()),
         );
-        
+
         match state_event {
-            ServiceEvent::StateChanged { from_state, to_state, reason, .. } => {
+            ServiceEvent::StateChanged {
+                from_state,
+                to_state,
+                reason,
+                ..
+            } => {
                 assert_eq!(from_state, ServiceState::Idle);
                 assert_eq!(to_state, ServiceState::Ready);
                 assert_eq!(reason, Some("Health check passed".to_string()));
@@ -613,9 +624,11 @@ mod tests {
             "echo".to_string(),
             vec!["hello".to_string()],
         );
-        
+
         match process_event {
-            ServiceEvent::ProcessStarted { pid, command, args, .. } => {
+            ServiceEvent::ProcessStarted {
+                pid, command, args, ..
+            } => {
                 assert_eq!(pid, 1234);
                 assert_eq!(command, "echo");
                 assert_eq!(args, vec!["hello"]);
@@ -629,7 +642,7 @@ mod tests {
             "Service is slow to respond".to_string(),
             Some("WARN001".to_string()),
         );
-        
+
         match warning_event {
             ServiceEvent::Warning { message, code, .. } => {
                 assert_eq!(message, "Service is slow to respond");
@@ -648,28 +661,28 @@ mod tests {
             ServiceState::Ready,
             None,
         );
-        
+
         assert!(filter.matches(&event));
     }
 
     #[test]
     fn test_event_filter_service() {
         let filter = EventFilter::for_service("test-service".to_string());
-        
+
         let matching_event = ServiceEvent::state_changed(
             "test-service".to_string(),
             ServiceState::Idle,
             ServiceState::Ready,
             None,
         );
-        
+
         let non_matching_event = ServiceEvent::state_changed(
             "other-service".to_string(),
             ServiceState::Idle,
             ServiceState::Ready,
             None,
         );
-        
+
         assert!(filter.matches(&matching_event));
         assert!(!filter.matches(&non_matching_event));
     }
@@ -677,20 +690,17 @@ mod tests {
     #[test]
     fn test_event_filter_severity() {
         let filter = EventFilter::with_min_severity(EventSeverity::Warning);
-        
-        let warning_event = ServiceEvent::warning(
-            "test".to_string(),
-            "Warning message".to_string(),
-            None,
-        );
-        
+
+        let warning_event =
+            ServiceEvent::warning("test".to_string(), "Warning message".to_string(), None);
+
         let info_event = ServiceEvent::state_changed(
             "test".to_string(),
             ServiceState::Idle,
             ServiceState::Ready,
             None,
         );
-        
+
         assert!(filter.matches(&warning_event));
         assert!(!filter.matches(&info_event));
     }
@@ -702,20 +712,16 @@ mod tests {
             min_severity: None,
             event_types: vec!["stateChanged".to_string()],
         };
-        
+
         let state_event = ServiceEvent::state_changed(
             "test".to_string(),
             ServiceState::Idle,
             ServiceState::Ready,
             None,
         );
-        
-        let warning_event = ServiceEvent::warning(
-            "test".to_string(),
-            "Warning".to_string(),
-            None,
-        );
-        
+
+        let warning_event = ServiceEvent::warning("test".to_string(), "Warning".to_string(), None);
+
         assert!(filter.matches(&state_event));
         assert!(!filter.matches(&warning_event));
     }
@@ -723,7 +729,7 @@ mod tests {
     #[test]
     fn test_current_timestamp_format() {
         let timestamp = ServiceEvent::current_timestamp();
-        
+
         // Should be roughly RFC3339 format
         // Just check it's not empty and contains expected parts
         assert!(!timestamp.is_empty());
@@ -735,11 +741,11 @@ mod tests {
     fn test_log_stream_serialization() {
         let stdout = LogStream::Stdout;
         let stderr = LogStream::Stderr;
-        
+
         // Should serialize to camelCase
         let stdout_json = serde_json::to_string(&stdout).unwrap();
         let stderr_json = serde_json::to_string(&stderr).unwrap();
-        
+
         assert_eq!(stdout_json, "\"stdout\"");
         assert_eq!(stderr_json, "\"stderr\"");
     }

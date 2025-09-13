@@ -1,4 +1,4 @@
-#![cfg_attr(test, allow(unused_crate_dependencies))]
+#![allow(unused_crate_dependencies)]
 //! Tiny TCP toy service for E2E tests (no HTTP)
 //!
 //! Behavior:

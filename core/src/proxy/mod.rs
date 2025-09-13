@@ -35,9 +35,17 @@ impl ProxyAdapter for NoopProxyAdapter {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProxyOp {
     /// Attach a host to the given backend port
-    Attach { host: String, port: u16 },
+    Attach {
+        /// Hostname to register in the proxy
+        host: String,
+        /// Backend port to route traffic to
+        port: u16,
+    },
     /// Detach a host from the proxy
-    Detach { host: String },
+    Detach {
+        /// Hostname to remove from the proxy
+        host: String,
+    },
 }
 
 /// Mock proxy adapter that records operations for assertions in tests
@@ -47,19 +55,33 @@ pub struct MockProxyAdapter {
 }
 
 impl MockProxyAdapter {
-    pub fn new() -> Self { Self::default() }
-    pub async fn ops(&self) -> Vec<ProxyOp> { self.ops.lock().await.clone() }
-    pub async fn clear(&self) { self.ops.lock().await.clear(); }
+    /// Create a new mock adapter that records operations
+    pub fn new() -> Self {
+        Self::default()
+    }
+    /// Return a snapshot of all recorded proxy operations
+    pub async fn ops(&self) -> Vec<ProxyOp> {
+        self.ops.lock().await.clone()
+    }
+    /// Clear all recorded operations
+    pub async fn clear(&self) {
+        self.ops.lock().await.clear();
+    }
 }
 
 #[async_trait]
 impl ProxyAdapter for MockProxyAdapter {
     async fn attach(&self, host: &str, port: u16) -> Result<()> {
-        self.ops.lock().await.push(ProxyOp::Attach { host: host.to_string(), port });
+        self.ops.lock().await.push(ProxyOp::Attach {
+            host: host.to_string(),
+            port,
+        });
         Ok(())
     }
     async fn detach(&self, host: &str) -> Result<()> {
-        self.ops.lock().await.push(ProxyOp::Detach { host: host.to_string() });
+        self.ops.lock().await.push(ProxyOp::Detach {
+            host: host.to_string(),
+        });
         Ok(())
     }
 }
@@ -72,7 +94,9 @@ pub struct ApiProxyAdapter<T: crate::proxy_api::ProxyApi + Send + Sync + 'static
 
 impl<T: crate::proxy_api::ProxyApi + Send + Sync + 'static> ApiProxyAdapter<T> {
     /// Create a new adapter from an existing `ProxyApi` instance
-    pub fn new(inner: Arc<T>) -> Self { Self { inner } }
+    pub fn new(inner: Arc<T>) -> Self {
+        Self { inner }
+    }
 }
 
 #[async_trait]

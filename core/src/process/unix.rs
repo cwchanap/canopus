@@ -134,9 +134,9 @@ pub fn spawn(cmd: &str, args: &[&str]) -> Result<ChildProcess> {
     })?;
 
     // tokio::process::Child::id() may return Option on some platforms
-    let raw_pid = child.id().ok_or_else(|| {
-        CoreError::ProcessSpawn("Spawned child did not have a PID".to_string())
-    })?;
+    let raw_pid = child
+        .id()
+        .ok_or_else(|| CoreError::ProcessSpawn("Spawned child did not have a PID".to_string()))?;
     let pid = Pid::from_raw(raw_pid as i32);
     debug!("Successfully spawned process {} in new process group", pid);
 

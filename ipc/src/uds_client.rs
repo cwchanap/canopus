@@ -24,7 +24,10 @@ pub struct JsonRpcClient {
 #[allow(missing_docs)]
 impl JsonRpcClient {
     pub fn new(socket_path: impl Into<PathBuf>, token: Option<String>) -> Self {
-        Self { socket_path: socket_path.into(), token }
+        Self {
+            socket_path: socket_path.into(),
+            token,
+        }
     }
 
     pub async fn version(&self) -> Result<String> {
@@ -33,7 +36,11 @@ impl JsonRpcClient {
         write_json(&mut writer, &req).await?;
         let resp = read_json::<JsonRpcResponse, _>(&mut reader).await?;
         if let Some(result) = resp.result {
-            Ok(result.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string())
+            Ok(result
+                .get("version")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string())
         } else {
             Err(IpcError::ProtocolError("version call failed".into()))
         }
@@ -45,7 +52,10 @@ impl JsonRpcClient {
         write_json(&mut writer, &req).await?;
         let resp = read_json::<JsonRpcResponse, _>(&mut reader).await?;
         if let Some(result) = resp.result {
-            let services = result.get("services").cloned().unwrap_or(Value::Array(vec![]));
+            let services = result
+                .get("services")
+                .cloned()
+                .unwrap_or(Value::Array(vec![]));
             serde_json::from_value::<Vec<ServiceSummary>>(services)
                 .map_err(|e| IpcError::DeserializationFailed(e.to_string()))
         } else {
@@ -54,24 +64,46 @@ impl JsonRpcClient {
     }
 
     pub async fn start(&self, service_id: &str) -> Result<()> {
-        self.simple_ok("canopus.start", serde_json::json!({"serviceId": service_id}), 3).await
+        self.simple_ok(
+            "canopus.start",
+            serde_json::json!({"serviceId": service_id}),
+            3,
+        )
+        .await
     }
 
     pub async fn stop(&self, service_id: &str) -> Result<()> {
-        self.simple_ok("canopus.stop", serde_json::json!({"serviceId": service_id}), 4).await
+        self.simple_ok(
+            "canopus.stop",
+            serde_json::json!({"serviceId": service_id}),
+            4,
+        )
+        .await
     }
 
     pub async fn restart(&self, service_id: &str) -> Result<()> {
-        self.simple_ok("canopus.restart", serde_json::json!({"serviceId": service_id}), 5).await
+        self.simple_ok(
+            "canopus.restart",
+            serde_json::json!({"serviceId": service_id}),
+            5,
+        )
+        .await
     }
 
     pub async fn health_check(&self, service_id: &str) -> Result<bool> {
         let (mut reader, mut writer) = self.connect_and_handshake().await?;
-        let req = jsonrpc_req("canopus.healthCheck", serde_json::json!({"serviceId": service_id}), 6);
+        let req = jsonrpc_req(
+            "canopus.healthCheck",
+            serde_json::json!({"serviceId": service_id}),
+            6,
+        );
         write_json(&mut writer, &req).await?;
         let resp = read_json::<JsonRpcResponse, _>(&mut reader).await?;
         if let Some(result) = resp.result {
-            Ok(result.get("healthy").and_then(|v| v.as_bool()).unwrap_or(false))
+            Ok(result
+                .get("healthy")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false))
         } else {
             Err(IpcError::ProtocolError("healthCheck call failed".into()))
         }
@@ -86,7 +118,9 @@ impl JsonRpcClient {
         );
         write_json(&mut writer, &req).await?;
         let resp = read_json::<JsonRpcResponse, _>(&mut reader).await?;
-        if resp.error.is_some() { return Err(IpcError::ProtocolError("bindHost failed".into())); }
+        if resp.error.is_some() {
+            return Err(IpcError::ProtocolError("bindHost failed".into()));
+        }
         Ok(())
     }
 
@@ -106,7 +140,11 @@ impl JsonRpcClient {
         }
     }
 
-    pub async fn tail_logs(&self, service_id: &str, from_seq: Option<u64>) -> Result<mpsc::Receiver<schema::ServiceEvent>> {
+    pub async fn tail_logs(
+        &self,
+        service_id: &str,
+        from_seq: Option<u64>,
+    ) -> Result<mpsc::Receiver<schema::ServiceEvent>> {
         let stream = UnixStream::connect(&self.socket_path)
             .await
             .map_err(|e| IpcError::ConnectionFailed(e.to_string()))?;
@@ -141,7 +179,9 @@ impl JsonRpcClient {
                 if let Some(method) = v.get("method").and_then(|m| m.as_str()) {
                     if method == "canopus.tailLogs.update" {
                         if let Some(params) = v.get("params") {
-                            if let Ok(evt) = serde_json::from_value::<schema::ServiceEvent>(params.clone()) {
+                            if let Ok(evt) =
+                                serde_json::from_value::<schema::ServiceEvent>(params.clone())
+                            {
                                 let _ = tx.send(evt).await;
                             }
                         }
@@ -164,7 +204,12 @@ impl JsonRpcClient {
         Ok(())
     }
 
-    async fn connect_and_handshake(&self) -> Result<(tokio::net::unix::OwnedReadHalf, tokio::net::unix::OwnedWriteHalf)> {
+    async fn connect_and_handshake(
+        &self,
+    ) -> Result<(
+        tokio::net::unix::OwnedReadHalf,
+        tokio::net::unix::OwnedWriteHalf,
+    )> {
         let stream = UnixStream::connect(&self.socket_path)
             .await
             .map_err(|e| IpcError::ConnectionFailed(e.to_string()))?;
@@ -218,25 +263,46 @@ fn jsonrpc_req(method: &str, params: Value, id: u64) -> JsonRpcRequest {
 
 async fn write_json<S: AsyncWriteExt + Unpin>(writer: &mut S, v: &impl Serialize) -> Result<()> {
     let data = serde_json::to_vec(v).map_err(|e| IpcError::SerializationFailed(e.to_string()))?;
-    writer.write_all(&data).await.map_err(|e| IpcError::SendFailed(e.to_string()))
+    writer
+        .write_all(&data)
+        .await
+        .map_err(|e| IpcError::SendFailed(e.to_string()))
 }
 
-async fn write_json_locked(writer: Arc<Mutex<tokio::net::unix::OwnedWriteHalf>>, v: &impl Serialize) -> Result<()> {
+async fn write_json_locked(
+    writer: Arc<Mutex<tokio::net::unix::OwnedWriteHalf>>,
+    v: &impl Serialize,
+) -> Result<()> {
     let data = serde_json::to_vec(v).map_err(|e| IpcError::SerializationFailed(e.to_string()))?;
     let mut guard = writer.lock().await;
-    guard.write_all(&data).await.map_err(|e| IpcError::SendFailed(e.to_string()))
+    guard
+        .write_all(&data)
+        .await
+        .map_err(|e| IpcError::SendFailed(e.to_string()))
 }
 
-async fn read_json<T: for<'de> Deserialize<'de>, S: AsyncReadExt + Unpin>(reader: &mut S) -> Result<T> {
+async fn read_json<T: for<'de> Deserialize<'de>, S: AsyncReadExt + Unpin>(
+    reader: &mut S,
+) -> Result<T> {
     let mut buf = vec![0u8; 65536];
-    let n = reader.read(&mut buf).await.map_err(|e| IpcError::ReceiveFailed(e.to_string()))?;
-    if n == 0 { return Err(IpcError::EmptyResponse); }
+    let n = reader
+        .read(&mut buf)
+        .await
+        .map_err(|e| IpcError::ReceiveFailed(e.to_string()))?;
+    if n == 0 {
+        return Err(IpcError::EmptyResponse);
+    }
     serde_json::from_slice(&buf[..n]).map_err(|e| IpcError::DeserializationFailed(e.to_string()))
 }
 
 async fn read_value<S: AsyncReadExt + Unpin>(reader: &mut S) -> Result<Value> {
     let mut buf = vec![0u8; 65536];
-    let n = reader.read(&mut buf).await.map_err(|e| IpcError::ReceiveFailed(e.to_string()))?;
-    if n == 0 { return Err(IpcError::EmptyResponse); }
+    let n = reader
+        .read(&mut buf)
+        .await
+        .map_err(|e| IpcError::ReceiveFailed(e.to_string()))?;
+    if n == 0 {
+        return Err(IpcError::EmptyResponse);
+    }
     serde_json::from_slice(&buf[..n]).map_err(|e| IpcError::DeserializationFailed(e.to_string()))
 }

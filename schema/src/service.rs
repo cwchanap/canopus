@@ -31,21 +31,21 @@ use std::time::Duration;
 pub struct ServiceSpec {
     /// Unique identifier for this service
     pub id: String,
-    
+
     /// Human-readable name for the service
     pub name: String,
-    
+
     /// Command to execute
     pub command: String,
-    
+
     /// Command-line arguments
     #[serde(default)]
     pub args: Vec<String>,
-    
+
     /// Environment variables to set for the process
     #[serde(default)]
     pub environment: HashMap<String, String>,
-    
+
     /// Working directory for the process
     #[serde(skip_serializing_if = "Option::is_none")]
     pub working_directory: Option<String>,
@@ -57,27 +57,27 @@ pub struct ServiceSpec {
     /// unhealthy transitions. If not set, the `id` is used as the default.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub route: Option<String>,
-    
+
     /// Restart policy for this service
     #[serde(default)]
     pub restart_policy: RestartPolicy,
-    
+
     /// Backoff configuration for restart delays
     #[serde(default)]
     pub backoff_config: BackoffConfig,
-    
+
     /// Health check configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub health_check: Option<HealthCheck>,
-    
+
     /// Readiness check configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub readiness_check: Option<ReadinessCheck>,
-    
+
     /// Maximum time to wait for graceful shutdown before using SIGKILL
     #[serde(default = "default_graceful_timeout_secs")]
     pub graceful_timeout_secs: u64,
-    
+
     /// Maximum time to wait for the service to become ready after starting
     #[serde(default = "default_startup_timeout_secs")]
     pub startup_timeout_secs: u64,
@@ -88,7 +88,7 @@ impl ServiceSpec {
     pub fn graceful_timeout(&self) -> Duration {
         Duration::from_secs(self.graceful_timeout_secs)
     }
-    
+
     /// Get the startup timeout as a Duration
     pub fn startup_timeout(&self) -> Duration {
         Duration::from_secs(self.startup_timeout_secs)
@@ -124,15 +124,18 @@ impl ServiceState {
     pub fn is_running(&self) -> bool {
         !matches!(self, ServiceState::Idle)
     }
-    
+
     /// Check if the service is ready to handle requests
     pub fn is_ready(&self) -> bool {
         matches!(self, ServiceState::Ready)
     }
-    
+
     /// Check if the service is transitioning between states
     pub fn is_transitional(&self) -> bool {
-        matches!(self, ServiceState::Spawning | ServiceState::Starting | ServiceState::Stopping)
+        matches!(
+            self,
+            ServiceState::Spawning | ServiceState::Starting | ServiceState::Stopping
+        )
     }
 }
 
@@ -156,19 +159,19 @@ pub struct BackoffConfig {
     /// Base delay in seconds for the first restart attempt
     #[serde(default = "default_base_delay_secs")]
     pub base_delay_secs: u64,
-    
+
     /// Multiplicative factor for exponential backoff
     #[serde(default = "default_multiplier")]
     pub multiplier: f64,
-    
+
     /// Maximum delay in seconds (caps exponential growth)
     #[serde(default = "default_max_delay_secs")]
     pub max_delay_secs: u64,
-    
+
     /// Jitter percentage (0.0 to 1.0) to add randomness
     #[serde(default = "default_jitter")]
     pub jitter: f64,
-    
+
     /// Window in seconds for counting failures (failures outside this window are ignored)
     #[serde(default = "default_failure_window_secs")]
     pub failure_window_secs: u64,
@@ -179,12 +182,12 @@ impl BackoffConfig {
     pub fn base_delay(&self) -> Duration {
         Duration::from_secs(self.base_delay_secs)
     }
-    
+
     /// Get the maximum delay as a Duration
     pub fn max_delay(&self) -> Duration {
         Duration::from_secs(self.max_delay_secs)
     }
-    
+
     /// Get the failure window as a Duration
     pub fn failure_window(&self) -> Duration {
         Duration::from_secs(self.failure_window_secs)
@@ -229,19 +232,19 @@ const fn default_failure_window_secs() -> u64 {
 pub struct HealthCheck {
     /// Type of health check to perform
     pub check_type: HealthCheckType,
-    
+
     /// Interval between health checks in seconds
     #[serde(default = "default_health_interval_secs")]
     pub interval_secs: u64,
-    
+
     /// Timeout for each health check in seconds
     #[serde(default = "default_health_timeout_secs")]
     pub timeout_secs: u64,
-    
+
     /// Number of consecutive failures before marking as unhealthy
     #[serde(default = "default_failure_threshold")]
     pub failure_threshold: u32,
-    
+
     /// Number of consecutive successes to mark as healthy again
     #[serde(default = "default_success_threshold")]
     pub success_threshold: u32,
@@ -252,7 +255,7 @@ impl HealthCheck {
     pub fn interval(&self) -> Duration {
         Duration::from_secs(self.interval_secs)
     }
-    
+
     /// Get the timeout as a Duration
     pub fn timeout(&self) -> Duration {
         Duration::from_secs(self.timeout_secs)
@@ -265,19 +268,19 @@ impl HealthCheck {
 pub struct ReadinessCheck {
     /// Type of readiness check to perform
     pub check_type: HealthCheckType,
-    
+
     /// Initial delay before starting readiness checks in seconds
     #[serde(default = "default_initial_delay_secs")]
     pub initial_delay_secs: u64,
-    
+
     /// Interval between readiness checks in seconds
     #[serde(default = "default_readiness_interval_secs")]
     pub interval_secs: u64,
-    
+
     /// Timeout for each readiness check in seconds
     #[serde(default = "default_readiness_timeout_secs")]
     pub timeout_secs: u64,
-    
+
     /// Number of consecutive successes required to mark as ready
     #[serde(default = "default_success_threshold")]
     pub success_threshold: u32,
@@ -288,12 +291,12 @@ impl ReadinessCheck {
     pub fn initial_delay(&self) -> Duration {
         Duration::from_secs(self.initial_delay_secs)
     }
-    
+
     /// Get the interval as a Duration
     pub fn interval(&self) -> Duration {
         Duration::from_secs(self.interval_secs)
     }
-    
+
     /// Get the timeout as a Duration
     pub fn timeout(&self) -> Duration {
         Duration::from_secs(self.timeout_secs)
@@ -353,15 +356,15 @@ const fn default_success_threshold() -> u32 {
 pub struct ServiceExit {
     /// Process ID that exited
     pub pid: u32,
-    
+
     /// Exit code (None if killed by signal)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i32>,
-    
+
     /// Signal that killed the process (Unix only)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signal: Option<i32>,
-    
+
     /// Timestamp when the exit was detected
     pub timestamp: String,
 }
@@ -371,7 +374,7 @@ impl ServiceExit {
     pub fn is_success(&self) -> bool {
         self.exit_code == Some(0)
     }
-    
+
     /// Check if this represents a failure (non-zero exit code or signal)
     pub fn is_failure(&self) -> bool {
         !self.is_success()
@@ -400,7 +403,7 @@ mod tests {
             graceful_timeout_secs: default_graceful_timeout_secs(),
             startup_timeout_secs: default_startup_timeout_secs(),
         };
-        
+
         assert_eq!(spec.graceful_timeout(), Duration::from_secs(30));
         assert_eq!(spec.startup_timeout(), Duration::from_secs(60));
     }
@@ -446,7 +449,7 @@ mod tests {
             failure_threshold: 3,
             success_threshold: 1,
         };
-        
+
         assert_eq!(health.interval(), Duration::from_secs(10));
         assert_eq!(health.timeout(), Duration::from_secs(5));
     }
@@ -460,7 +463,7 @@ mod tests {
             timeout_secs: 3,
             success_threshold: 1,
         };
-        
+
         assert_eq!(readiness.initial_delay(), Duration::from_secs(5));
         assert_eq!(readiness.interval(), Duration::from_secs(2));
         assert_eq!(readiness.timeout(), Duration::from_secs(3));
@@ -516,7 +519,7 @@ mod tests {
             command: "curl".to_string(),
             args: vec!["-f".to_string(), "http://localhost:8080/health".to_string()],
         };
-        
+
         match exec_check {
             HealthCheckType::Exec { command, args } => {
                 assert_eq!(command, "curl");

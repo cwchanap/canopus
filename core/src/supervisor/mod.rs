@@ -20,8 +20,8 @@
 //! - [`ProcessAdapter`]: Trait for abstracting process management
 //! - [`ServiceSupervisor`]: Per-service task managing state transitions
 
-use crate::Result;
 use crate::proxy::ProxyAdapter;
+use crate::Result;
 use schema::{ServiceEvent, ServiceSpec, ServiceState};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -162,9 +162,9 @@ pub struct SupervisorHandle {
 impl SupervisorHandle {
     /// Send a control message to the supervisor
     pub fn send(&self, msg: ControlMsg) -> Result<()> {
-        self.control_tx
-            .send(msg)
-            .map_err(|_| crate::CoreError::ServiceError("Supervisor task has shut down".to_string()))?;
+        self.control_tx.send(msg).map_err(|_| {
+            crate::CoreError::ServiceError("Supervisor task has shut down".to_string())
+        })?;
         Ok(())
     }
 
@@ -209,13 +209,14 @@ impl SupervisorHandle {
     /// including timers, check results, and failure counts.
     pub async fn get_health_status(&self) -> Result<HealthStatus> {
         let (response_tx, response_rx) = oneshot::channel();
-        
+
         self.send(ControlMsg::GetHealthStatus {
             response: response_tx,
         })?;
-        
-        response_rx.await
-            .map_err(|_| crate::CoreError::ServiceError("Failed to get health status response".to_string()))
+
+        response_rx.await.map_err(|_| {
+            crate::CoreError::ServiceError("Failed to get health status response".to_string())
+        })
     }
 
     /// Trigger an on-demand health check for debugging
@@ -224,15 +225,17 @@ impl SupervisorHandle {
     /// useful for testing and debugging health check configurations.
     pub async fn trigger_health_check(&self) -> Result<bool> {
         let (response_tx, response_rx) = oneshot::channel();
-        
+
         self.send(ControlMsg::TriggerHealthCheck {
             response: response_tx,
         })?;
-        
+
         match response_rx.await {
             Ok(Ok(success)) => Ok(success),
             Ok(Err(e)) => Err(e),
-            Err(_) => Err(crate::CoreError::ServiceError("Failed to get health check response".to_string())),
+            Err(_) => Err(crate::CoreError::ServiceError(
+                "Failed to get health check response".to_string(),
+            )),
         }
     }
 
@@ -242,15 +245,17 @@ impl SupervisorHandle {
     /// useful for testing and debugging readiness check configurations.
     pub async fn trigger_readiness_check(&self) -> Result<bool> {
         let (response_tx, response_rx) = oneshot::channel();
-        
+
         self.send(ControlMsg::TriggerReadinessCheck {
             response: response_tx,
         })?;
-        
+
         match response_rx.await {
             Ok(Ok(success)) => Ok(success),
             Ok(Err(e)) => Err(e),
-            Err(_) => Err(crate::CoreError::ServiceError("Failed to get readiness check response".to_string())),
+            Err(_) => Err(crate::CoreError::ServiceError(
+                "Failed to get readiness check response".to_string(),
+            )),
         }
     }
 
@@ -261,7 +266,7 @@ impl SupervisorHandle {
     /// - Service has no health checks configured and is running
     pub async fn is_healthy(&self) -> Result<bool> {
         let status = self.get_health_status().await?;
-        
+
         match status.state {
             ServiceState::Ready => Ok(true),
             ServiceState::Starting | ServiceState::Spawning => {
@@ -325,7 +330,8 @@ pub fn spawn_supervisor(config: SupervisorConfig) -> SupervisorHandle {
     // Spawn the supervisor task
     let service_id = spec.id.clone();
     tokio::spawn(async move {
-        let mut supervisor = ServiceSupervisor::new(spec, process_adapter, proxy_adapter, event_tx, state_tx);
+        let mut supervisor =
+            ServiceSupervisor::new(spec, process_adapter, proxy_adapter, event_tx, state_tx);
 
         if let Err(e) = supervisor.run(control_rx).await {
             error!("Supervisor task for service '{}' failed: {}", service_id, e);
@@ -344,8 +350,8 @@ pub fn spawn_supervisor(config: SupervisorConfig) -> SupervisorHandle {
 #[cfg(test)]
 mod unit_tests {
     use super::*;
-    use crate::supervisor::adapters::MockProcessAdapter;
     use crate::proxy::NoopProxyAdapter;
+    use crate::supervisor::adapters::MockProcessAdapter;
     use schema::RestartPolicy;
     use std::time::Duration;
     use tokio::time::timeout;
@@ -378,7 +384,7 @@ mod unit_tests {
             spec,
             process_adapter,
             event_tx,
-            proxy_adapter: Arc::new(NoopProxyAdapter::default()),
+            proxy_adapter: Arc::new(NoopProxyAdapter),
         };
 
         let handle = spawn_supervisor(config);
@@ -395,7 +401,11 @@ mod unit_tests {
         // Should receive a state change event
         if let Ok(event) = timeout(Duration::from_millis(100), event_rx.recv()).await {
             match event.unwrap() {
-                ServiceEvent::StateChanged { from_state, to_state, .. } => {
+                ServiceEvent::StateChanged {
+                    from_state,
+                    to_state,
+                    ..
+                } => {
                     assert_eq!(from_state, ServiceState::Idle);
                     assert!(matches!(to_state, ServiceState::Spawning));
                 }
@@ -405,7 +415,7 @@ mod unit_tests {
 
         // Clean shutdown
         assert!(handle.shutdown().is_ok());
-        
+
         // Give time for shutdown
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
@@ -420,7 +430,7 @@ mod unit_tests {
             spec,
             process_adapter,
             event_tx,
-            proxy_adapter: Arc::new(NoopProxyAdapter::default()),
+            proxy_adapter: Arc::new(NoopProxyAdapter),
         };
 
         let handle = spawn_supervisor(config);
@@ -429,12 +439,12 @@ mod unit_tests {
         assert!(handle.start().is_ok());
         assert!(handle.stop().is_ok());
         assert!(handle.restart().is_ok());
-        
+
         let new_spec = create_test_spec();
         assert!(handle.update_spec(new_spec).is_ok());
-        
+
         assert!(handle.shutdown().is_ok());
-        
+
         // Give time for shutdown
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
@@ -449,7 +459,7 @@ mod unit_tests {
             spec,
             process_adapter,
             event_tx,
-            proxy_adapter: Arc::new(NoopProxyAdapter::default()),
+            proxy_adapter: Arc::new(NoopProxyAdapter),
         };
 
         let handle = spawn_supervisor(config);
@@ -464,7 +474,10 @@ mod unit_tests {
         // Wait for any state changes - we expect at least one transition away from Idle
         let mut saw_non_idle = false;
         for _ in 0..5 {
-            if timeout(Duration::from_millis(100), state_rx.changed()).await.is_ok() {
+            if timeout(Duration::from_millis(100), state_rx.changed())
+                .await
+                .is_ok()
+            {
                 let new_state = *state_rx.borrow();
                 if new_state != ServiceState::Idle {
                     saw_non_idle = true;
@@ -472,9 +485,12 @@ mod unit_tests {
                 }
             }
         }
-        
+
         // We should have seen at least one non-idle state during the service lifecycle
-        assert!(saw_non_idle, "Should have observed at least one non-idle state transition");
+        assert!(
+            saw_non_idle,
+            "Should have observed at least one non-idle state transition"
+        );
 
         handle.shutdown().unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;

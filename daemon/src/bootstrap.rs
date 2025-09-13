@@ -5,10 +5,12 @@
 //! plane, and installs graceful shutdown handling primitives.
 
 use canopus_core::config::load_services_from_toml_path;
-use canopus_core::proxy_api::NullProxy;
+use canopus_core::persistence::{
+    default_snapshot_path, write_snapshot_atomic, RegistrySnapshot, ServiceSnapshot,
+};
 use canopus_core::proxy::NullProxyAdapter as ProxyAdapterNull;
+use canopus_core::proxy_api::NullProxy;
 use canopus_core::supervisor::{spawn_supervisor, SupervisorConfig, UnixProcessAdapter};
-use canopus_core::persistence::{default_snapshot_path, write_snapshot_atomic, RegistrySnapshot, ServiceSnapshot};
 use schema::ServiceSpec;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -131,9 +133,10 @@ pub async fn bootstrap(config_path: Option<PathBuf>) -> Result<BootstrapHandle> 
     let server_task = {
         #[cfg(unix)]
         {
-            use ipc::server::{IpcServer, IpcServerConfig};
             use ipc::server::supervisor_adapter::SupervisorControlPlane;
-            let socket_path = std::env::var("CANOPUS_IPC_SOCKET").unwrap_or_else(|_| "/tmp/canopus.sock".to_string());
+            use ipc::server::{IpcServer, IpcServerConfig};
+            let socket_path = std::env::var("CANOPUS_IPC_SOCKET")
+                .unwrap_or_else(|_| "/tmp/canopus.sock".to_string());
             let token = std::env::var("CANOPUS_IPC_TOKEN").ok();
             let cfg = IpcServerConfig {
                 version: env!("CARGO_PKG_VERSION").to_string(),
@@ -160,18 +163,27 @@ pub async fn bootstrap(config_path: Option<PathBuf>) -> Result<BootstrapHandle> 
             while let Ok(evt) = rx.recv().await {
                 // Update registry entries based on event
                 match &evt {
-                    schema::ServiceEvent::StateChanged { service_id, to_state, .. } => {
-                        if let Some(e) = registry.services.iter_mut().find(|e| &e.id == service_id) {
+                    schema::ServiceEvent::StateChanged {
+                        service_id,
+                        to_state,
+                        ..
+                    } => {
+                        if let Some(e) = registry.services.iter_mut().find(|e| &e.id == service_id)
+                        {
                             e.last_state = *to_state;
                         }
                     }
-                    schema::ServiceEvent::ProcessStarted { service_id, pid, .. } => {
-                        if let Some(e) = registry.services.iter_mut().find(|e| &e.id == service_id) {
+                    schema::ServiceEvent::ProcessStarted {
+                        service_id, pid, ..
+                    } => {
+                        if let Some(e) = registry.services.iter_mut().find(|e| &e.id == service_id)
+                        {
                             e.last_pid = Some(*pid);
                         }
                     }
                     schema::ServiceEvent::ProcessExited { service_id, .. } => {
-                        if let Some(e) = registry.services.iter_mut().find(|e| &e.id == service_id) {
+                        if let Some(e) = registry.services.iter_mut().find(|e| &e.id == service_id)
+                        {
                             e.last_pid = None;
                         }
                     }
@@ -191,5 +203,10 @@ pub async fn bootstrap(config_path: Option<PathBuf>) -> Result<BootstrapHandle> 
         warn!("No services configured; IPC will still run if enabled");
     }
 
-    Ok(BootstrapHandle { services, proxy, server_task, handles })
+    Ok(BootstrapHandle {
+        services,
+        proxy,
+        server_task,
+        handles,
+    })
 }

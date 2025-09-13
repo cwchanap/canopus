@@ -127,23 +127,32 @@ cargo run --bin canopus -- status
 
 ## Current Development Status
 
-### Completed Features
+### Completed Features (Phase 2 - Process Control)
 - **Unix Process Management**: Full implementation with process group management and signal handling
 - **Service Supervision**: Complete state machine with restart policies and health monitoring
 - **Health Monitoring**: HTTP and TCP health probes with configurable parameters
 - **Schema Generation**: JSON schemas and TypeScript definitions via xtask
+- **Reverse Proxy**: Service routing with attach/detach lifecycle management
+- **File-based Registry**: Persistence with atomic writes and crash recovery
+- **TOML Configuration**: Loading and validation for services
 
 ### Key Implementation Details
 - **Unsafe code**: Limited to essential system calls in `core::process::unix` with proper safety documentation
 - **Error codes**: Systematic error code assignment (CORE009-CORE011 for process management)
 - **Testing coverage**: 49 total tests across unit, integration, and documentation tests
+- **Service Task**: Complete state machine in `ServiceSupervisor` with lifecycle management
+- **Port Management**: Dynamic port allocation and management system
 
 ## Critical Files to Understand
 
 - **`Cargo.toml`**: Workspace configuration with extensive lint rules and shared dependencies
-- **`justfile`**: Comprehensive development commands and CI pipeline automation  
+- **`justfile`**: Comprehensive development commands and CI pipeline automation
 - **`schema/src/lib.rs`**: Core data structures driving the entire communication protocol
 - **`core/src/error.rs`**: Error handling patterns used throughout the codebase
 - **`core/src/supervisor/service_task.rs`**: Service supervision state machine implementation
 - **`core/src/process/unix.rs`**: Unix process management with safety-critical code
+- **`core/src/proxy/mod.rs`**: Reverse proxy adapter for service routing
+- **`core/src/persistence.rs`**: File-based registry with atomic operations
+- **`core/src/port.rs`**: Port allocation and management system
 - **`deny.toml`**: Security and license policy configuration
+- **`.github/copilot-instructions.md`**: Additional AI coding agent guidance and project status

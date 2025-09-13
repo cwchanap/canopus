@@ -1,7 +1,7 @@
 //! Core types and traits for health checking
 
-use async_trait::async_trait;
 use super::HealthError;
+use async_trait::async_trait;
 
 /// Trait for health check implementations
 ///

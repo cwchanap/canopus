@@ -33,7 +33,9 @@ async fn corrupted_snapshot_does_not_prevent_bootstrap() {
     )
     .unwrap();
 
-    let handle = bootstrap::bootstrap(Some(cfg_path)).await.expect("bootstrap ok");
+    let handle = bootstrap::bootstrap(Some(cfg_path))
+        .await
+        .expect("bootstrap ok");
     assert_eq!(handle.services.len(), 1);
 
     // Give snapshot writer a moment to run and write a clean file

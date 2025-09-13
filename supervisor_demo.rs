@@ -1,14 +1,14 @@
 //! Simple demonstration of the supervisor functionality
-//! 
+//!
 //! This shows the basic usage of the supervisor system we've just implemented.
 
 #![allow(unused_crate_dependencies)]
 #![allow(unused_imports)]
 
-use canopus_core::supervisor::{spawn_supervisor, SupervisorConfig, MockProcessAdapter};
 use canopus_core::proxy::NoopProxyAdapter;
+use canopus_core::supervisor::{spawn_supervisor, MockProcessAdapter, SupervisorConfig};
 use canopus_core::Result;
-use schema::{ServiceSpec, RestartPolicy};
+use schema::{RestartPolicy, ServiceSpec};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::time::{timeout, Duration};
@@ -46,7 +46,7 @@ async fn main() -> Result<()> {
         spec,
         process_adapter: Arc::new(MockProcessAdapter::new()),
         event_tx,
-        proxy_adapter: Arc::new(NoopProxyAdapter::default()),
+        proxy_adapter: Arc::new(NoopProxyAdapter),
     };
 
     // Spawn the supervisor
@@ -58,17 +58,47 @@ async fn main() -> Result<()> {
         info!("👁 Starting event monitor");
         while let Ok(event) = event_rx.recv().await {
             match event {
-                schema::ServiceEvent::StateChanged { service_id, from_state, to_state, .. } => {
-                    info!("🔄 Service '{}' state: {:?} → {:?}", service_id, from_state, to_state);
+                schema::ServiceEvent::StateChanged {
+                    service_id,
+                    from_state,
+                    to_state,
+                    ..
+                } => {
+                    info!(
+                        "🔄 Service '{}' state: {:?} → {:?}",
+                        service_id, from_state, to_state
+                    );
                 }
-                schema::ServiceEvent::ProcessStarted { service_id, pid, command, args, .. } => {
-                    info!("✅ Process started for '{}' (PID: {}, Command: {} {:?})", service_id, pid, command, args);
+                schema::ServiceEvent::ProcessStarted {
+                    service_id,
+                    pid,
+                    command,
+                    args,
+                    ..
+                } => {
+                    info!(
+                        "✅ Process started for '{}' (PID: {}, Command: {} {:?})",
+                        service_id, pid, command, args
+                    );
                 }
-                schema::ServiceEvent::ProcessExited { service_id, exit_info } => {
-                    info!("❌ Process exited for '{}' (PID: {}, Exit code: {:?})", service_id, exit_info.pid, exit_info.exit_code);
+                schema::ServiceEvent::ProcessExited {
+                    service_id,
+                    exit_info,
+                } => {
+                    info!(
+                        "❌ Process exited for '{}' (PID: {}, Exit code: {:?})",
+                        service_id, exit_info.pid, exit_info.exit_code
+                    );
                 }
-                schema::ServiceEvent::ConfigurationUpdated { service_id, changed_fields, .. } => {
-                    info!("⚙ Configuration updated for '{}': {:?}", service_id, changed_fields);
+                schema::ServiceEvent::ConfigurationUpdated {
+                    service_id,
+                    changed_fields,
+                    ..
+                } => {
+                    info!(
+                        "⚙ Configuration updated for '{}': {:?}",
+                        service_id, changed_fields
+                    );
                 }
                 _ => {}
             }
@@ -108,7 +138,10 @@ async fn main() -> Result<()> {
     handle.shutdown()?;
 
     // Wait for monitor task to finish
-    if timeout(Duration::from_millis(500), monitor_task).await.is_err() {
+    if timeout(Duration::from_millis(500), monitor_task)
+        .await
+        .is_err()
+    {
         info!("Monitor task timed out, that's OK");
     }
 
