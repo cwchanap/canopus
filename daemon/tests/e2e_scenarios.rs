@@ -1,3 +1,4 @@
+#![allow(unused_crate_dependencies)]
 //! End-to-end scenarios: toy TCP service supervised via bootstrap + IPC
 //!
 //! This test boots the daemon bootstrap (supervisors + UDS IPC), starts a

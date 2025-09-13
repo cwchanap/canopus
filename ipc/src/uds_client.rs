@@ -77,6 +77,35 @@ impl JsonRpcClient {
         }
     }
 
+    pub async fn bind_host(&self, service_id: &str, host: &str) -> Result<()> {
+        let (mut reader, mut writer) = self.connect_and_handshake().await?;
+        let req = jsonrpc_req(
+            "canopus.bindHost",
+            serde_json::json!({"serviceId": service_id, "host": host}),
+            7,
+        );
+        write_json(&mut writer, &req).await?;
+        let resp = read_json::<JsonRpcResponse, _>(&mut reader).await?;
+        if resp.error.is_some() { return Err(IpcError::ProtocolError("bindHost failed".into())); }
+        Ok(())
+    }
+
+    pub async fn assign_port(&self, service_id: &str, preferred: Option<u16>) -> Result<u16> {
+        let (mut reader, mut writer) = self.connect_and_handshake().await?;
+        let req = jsonrpc_req(
+            "canopus.assignPort",
+            serde_json::json!({"serviceId": service_id, "preferred": preferred}),
+            8,
+        );
+        write_json(&mut writer, &req).await?;
+        let resp = read_json::<JsonRpcResponse, _>(&mut reader).await?;
+        if let Some(result) = resp.result {
+            Ok(result.get("port").and_then(|v| v.as_u64()).unwrap_or(0) as u16)
+        } else {
+            Err(IpcError::ProtocolError("assignPort failed".into()))
+        }
+    }
+
     pub async fn tail_logs(&self, service_id: &str, from_seq: Option<u64>) -> Result<mpsc::Receiver<schema::ServiceEvent>> {
         let stream = UnixStream::connect(&self.socket_path)
             .await

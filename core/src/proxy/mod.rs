@@ -5,7 +5,6 @@
 //! provide a `NoopProxyAdapter` and a `MockProxyAdapter` for tests.
 
 use crate::Result;
-use crate::proxy_api::ProxyApi as _;
 use async_trait::async_trait;
 use std::sync::Arc;
 

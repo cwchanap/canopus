@@ -18,6 +18,5 @@ pub trait Probe {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     // No HTTP-specific expectations to test
 }

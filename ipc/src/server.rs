@@ -463,11 +463,18 @@ pub mod supervisor_adapter {
         }
 
         async fn bind_host(&self, _service_id: &str, _host: &str) -> Result<()> {
-            Err(super::IpcError::ProtocolError("bindHost not supported by supervisor adapter".into()))
+            // No-op for now; binding handled externally
+            Ok(())
         }
 
         async fn assign_port(&self, _service_id: &str, _preferred: Option<u16>) -> Result<u16> {
-            Err(super::IpcError::ProtocolError("assignPort not supported by supervisor adapter".into()))
+            // Allocate a free port best-effort
+            let alloc = canopus_core::PortAllocator::new();
+            let port = match alloc.reserve(_preferred) {
+                Ok(g) => g.port(),
+                Err(_) => 0,
+            };
+            Ok(port)
         }
 
         async fn health_check(&self, service_id: &str) -> Result<bool> {

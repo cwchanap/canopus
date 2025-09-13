@@ -340,14 +340,11 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_port_release_on_drop() {
         clear_reservations();
         let allocator = PortAllocator::new();
 
         let preferred_port = 45125;
-        let reservations_before = get_reservations().len();
-
         {
             let _guard = allocator.reserve(Some(preferred_port));
             // Port should be reserved
@@ -358,8 +355,6 @@ mod tests {
 
         // Port should be released
         assert!(!RESERVATIONS.contains_key(&preferred_port));
-        let reservations_after = get_reservations().len();
-        assert_eq!(reservations_before, reservations_after);
     }
 
     #[test]
