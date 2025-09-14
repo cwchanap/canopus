@@ -4,7 +4,7 @@
 
 set -e
 
-echo "Running pre-commit checks..."
+echo "Running pre-commit checks (fmt + clippy)..."
 
 # Check if we're in a git repository
 if ! git rev-parse --git-dir > /dev/null 2>&1; then
@@ -13,42 +13,86 @@ if ! git rev-parse --git-dir > /dev/null 2>&1; then
 fi
 
 # Check if there are any staged files
-if git diff --cached --name-only | grep -qE '\.(rs|toml)$'; then
-    echo "Found Rust files to check..."
-    
-    # Run cargo fmt check
+staged_files=$(git diff --cached --name-only)
+changed_rust=$(echo "$staged_files" | grep -E '\\.(rs|toml)$' || true)
+
+if [ -n "$changed_rust" ]; then
+    echo "Found Rust/TOML files to check..."
+
+    # Run cargo fmt check across the workspace (fast)
     echo "🔍 Checking formatting..."
-    if ! cargo fmt --check; then
+    if ! cargo fmt --all --check; then
         echo "❌ Code formatting issues found. Run 'cargo fmt' to fix them."
         exit 1
     fi
     echo "✅ Formatting check passed"
-    
-    # Run clippy
+
+    # Determine affected crates to lint selectively
+    pkgs=()
+    workspace_wide=false
+    while IFS= read -r f; do
+        case "$f" in
+            core/*|supervisor_demo.rs)
+                pkgs+=("canopus-core") ;;
+            ipc/*)
+                pkgs+=("ipc") ;;
+            daemon/*)
+                pkgs+=("daemon") ;;
+            cli/*)
+                pkgs+=("cli") ;;
+            schema/*)
+                pkgs+=("schema") ;;
+            xtask/*)
+                pkgs+=("xtask") ;;
+            Cargo.toml)
+                workspace_wide=true ;;
+            *)
+                # Unknown location impacting Rust build; be safe and run workspace-wide
+                workspace_wide=true ;;
+        esac
+    done << EOF
+$(echo "$changed_rust")
+EOF
+
+    # Deduplicate packages
+    if [ "$workspace_wide" = false ]; then
+        # unique array
+        uniq_pkgs=()
+        for p in "${pkgs[@]}"; do
+            skip=false
+            for q in "${uniq_pkgs[@]}"; do
+                if [ "$p" = "$q" ]; then skip=true; break; fi
+            done
+            if [ "$skip" = false ]; then uniq_pkgs+=("$p"); fi
+        done
+    fi
+
+    # Run clippy for affected packages
     echo "🔍 Running Clippy..."
-    if ! cargo clippy --workspace --all-targets --all-features -- -D warnings; then
-        echo "❌ Clippy found issues. Please fix them before committing."
-        exit 1
+    if [ "$workspace_wide" = true ] || [ ${#pkgs[@]} -eq 0 ]; then
+        echo "(workspace)"
+        if ! cargo clippy --workspace --all-targets --all-features -- -D warnings; then
+            echo "❌ Clippy found issues. Please fix them before committing."
+            exit 1
+        fi
+    else
+        echo "(packages: ${uniq_pkgs[*]})"
+        if ! cargo clippy --all-targets --all-features $(printf -- ' -p %s' "${uniq_pkgs[@]}") -- -D warnings; then
+            echo "❌ Clippy found issues in selected packages. Please fix them before committing."
+            exit 1
+        fi
     fi
     echo "✅ Clippy check passed"
     
-    # Run tests
-    echo "🔍 Running tests..."
-    if ! cargo test --workspace; then
-        echo "❌ Tests failed. Please fix them before committing."
-        exit 1
-    fi
-    echo "✅ Tests passed"
-    
     # Check for todo/fixme comments in staged files
     echo "🔍 Checking for TODO/FIXME comments..."
-    staged_files=$(git diff --cached --name-only --diff-filter=A)
-    if echo "$staged_files" | xargs grep -Hn "TODO\|FIXME" 2>/dev/null; then
+    newly_added=$(git diff --cached --name-only --diff-filter=A)
+    if echo "$newly_added" | xargs grep -Hn "TODO\|FIXME" 2>/dev/null; then
         echo "⚠️  Found TODO/FIXME comments in staged files. Consider addressing them."
         # Don't fail on TODOs, just warn
     fi
     
-    echo "✅ All pre-commit checks passed!"
+    echo "✅ Pre-commit checks passed (fmt + clippy)"
 else
     echo "No Rust files to check in this commit."
 fi

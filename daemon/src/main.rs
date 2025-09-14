@@ -18,6 +18,12 @@ struct Opts {
     /// Path to services TOML configuration
     #[arg(short, long)]
     config: Option<std::path::PathBuf>,
+    /// Host to bind the daemon to
+    #[arg(long, default_value = "127.0.0.1")]
+    host: String,
+    /// Port to bind the daemon to
+    #[arg(long, default_value_t = 8080)]
+    port: u16,
 }
 
 #[tokio::main]
@@ -29,7 +35,9 @@ async fn main() -> daemon::Result<()> {
     info!("Starting Canopus Daemon");
 
     // Load configuration (in a real app, this might come from a config file)
-    let config = DaemonConfig::default();
+    let mut config = DaemonConfig::default();
+    config.host = opts.host.clone();
+    config.port = opts.port;
 
     // Create and start the daemon (TCP prototype server)
     let daemon = Daemon::new(config);

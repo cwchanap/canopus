@@ -8,6 +8,9 @@ pub use error::{CliError, Result};
 use ipc::IpcClient;
 use schema::{ClientConfig, Message, Response};
 use tracing::error;
+use tokio::time::{sleep, Duration};
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
 
 /// CLI client for communicating with the daemon
 #[derive(Debug)]
@@ -65,24 +68,65 @@ impl Client {
 
     /// Start the daemon
     pub async fn start(&self) -> Result<()> {
-        match self.send_message(Message::Start).await? {
-            Response::Ok { message } => {
-                println!("✓ {}", message);
-            }
-            Response::Error { message, code } => {
-                error!("Failed to start daemon: {}", message);
-                if let Some(c) = code {
-                    error!("Error code: {}", c);
+        // First, try to send Start to a running daemon
+        match self.send_message(Message::Start).await {
+            Ok(resp) => match resp {
+                Response::Ok { message } => {
+                    println!("✓ {}", message);
+                    return Ok(());
                 }
-                return Err(CliError::DaemonError(message));
+                Response::Error { message, code } => {
+                    // Treat already running as success
+                    if matches!(code.as_deref(), Some("DAEMON_ALREADY_RUNNING")) {
+                        println!("✓ Daemon already running");
+                        return Ok(());
+                    }
+                    error!("Failed to start daemon: {}", message);
+                    if let Some(c) = code { error!("Error code: {}", c); }
+                    return Err(CliError::DaemonError(message));
+                }
+                _ => {
+                    let err = "Unexpected response type".to_string();
+                    error!("{}", err);
+                    return Err(CliError::DaemonError(err));
+                }
+            },
+            Err(CliError::IpcError(ipc_err)) => {
+                // Connection failure: try to spawn the daemon, then wait for readiness
+                if let ipc::IpcError::ConnectionFailed(_) = ipc_err {
+                    println!("Daemon not running; attempting to start it...");
+                    self.spawn_daemon_background()?;
+                    // Wait up to 20s for the daemon to become reachable
+                    self.wait_for_ready(Duration::from_secs(20)).await?;
+                    // After ready, sending Start is optional; do it for symmetry
+                    match self.send_message(Message::Start).await {
+                        Ok(Response::Ok { message }) => {
+                            println!("✓ {}", message);
+                            Ok(())
+                        }
+                        Ok(Response::Error { message, code }) => {
+                            if matches!(code.as_deref(), Some("DAEMON_ALREADY_RUNNING")) {
+                                println!("✓ Daemon started and is running");
+                                Ok(())
+                            } else {
+                                error!("Failed to start daemon: {}", message);
+                                if let Some(c) = code { error!("Error code: {}", c); }
+                                Err(CliError::DaemonError(message))
+                            }
+                        }
+                        Ok(_) => {
+                            let err = "Unexpected response type".to_string();
+                            error!("{}", err);
+                            Err(CliError::DaemonError(err))
+                        }
+                        Err(e) => Err(e),
+                    }
+                } else {
+                    Err(CliError::IpcError(ipc_err))
+                }
             }
-            _ => {
-                let err = "Unexpected response type".to_string();
-                error!("{}", err);
-                return Err(CliError::DaemonError(err));
-            }
+            Err(e) => Err(e),
         }
-        Ok(())
     }
 
     /// Stop the daemon
@@ -153,6 +197,57 @@ impl Client {
                 return Err(CliError::DaemonError(err));
             }
         }
+        Ok(())
+    }
+}
+
+impl Client {
+    async fn wait_for_ready(&self, timeout: Duration) -> Result<()> {
+        let start = std::time::Instant::now();
+        let mut last_err: Option<CliError> = None;
+        while start.elapsed() < timeout {
+            match self.send_message(Message::Status).await {
+                Ok(Response::Status { running, .. }) => {
+                    if running { return Ok(()); }
+                }
+                Ok(_) => { /* keep trying */ }
+                Err(e) => { last_err = Some(e); }
+            }
+            sleep(Duration::from_millis(200)).await;
+        }
+        Err(last_err.unwrap_or_else(|| CliError::ConnectionFailed("Timed out waiting for daemon".into())))
+    }
+
+    fn spawn_daemon_background(&self) -> Result<()> {
+        // Prefer spawning the daemon binary from the same target directory as this CLI binary
+        if let Ok(path) = std::env::current_exe() {
+            if let Some(bin_dir) = path.parent() {
+                // Replace canopus with daemon, preserving .exe suffix on Windows if any
+                let file_name = if cfg!(windows) { "daemon.exe" } else { "daemon" };
+                let daemon_path: PathBuf = bin_dir.join(file_name);
+                if daemon_path.exists() {
+                    let _child = Command::new(&daemon_path)
+                        .arg("--host").arg(&self.config.daemon_host)
+                        .arg("--port").arg(self.config.daemon_port.to_string())
+                        .stdin(Stdio::null())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .spawn()
+                        .map_err(CliError::IoError)?;
+                    return Ok(());
+                }
+            }
+        }
+
+        // Fallback: rely on PATH to find a `daemon` binary
+        let _child = Command::new("daemon")
+            .arg("--host").arg(&self.config.daemon_host)
+            .arg("--port").arg(self.config.daemon_port.to_string())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(CliError::IoError)?;
         Ok(())
     }
 }
