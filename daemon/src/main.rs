@@ -22,7 +22,7 @@ struct Opts {
     #[arg(long, default_value = "127.0.0.1")]
     host: String,
     /// Port to bind the daemon to
-    #[arg(long, default_value_t = 8080)]
+    #[arg(long, default_value_t = 49384)]
     port: u16,
 }
 

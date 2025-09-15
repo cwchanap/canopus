@@ -19,9 +19,9 @@ Common library containing shared utilities, error handling, and business logic u
 Inter-process communication library for daemon-client communication.
 
 **Features:**
-- TCP-based communication protocol
-- Async message handling
-- Connection management with proper error handling
+- TCP-based control plane between CLI and daemon (default: `127.0.0.1:49384`)
+- Local Unix Domain Socket (UDS) JSON-RPC control plane for managing services (`/tmp/canopus.sock`)
+- Async message handling and robust error handling
 - Serialization/deserialization of messages
 
 ### 🛠️ Schema (`schema/`)
@@ -39,17 +39,18 @@ A Rust daemon server that runs in the background and handles client operations.
 **Features:**
 - TCP server for handling client connections
 - Asynchronous message processing with proper error handling
-- Status reporting and management
+- Status reporting (now includes PID and version)
 - Graceful shutdown handling
 
 ### 💻 CLI (`cli/`)
 Command-line interface tool for managing and communicating with the daemon.
 
 **Features:**
-- Subcommands for daemon management (start, stop, restart, status)
-- Custom command support with structured error reporting
-- Configurable daemon connection settings
-- User-friendly output formatting
+- Subcommands for daemon management (`start`, `stop`, `restart`, `status`, `version`)
+- `services` subcommand for local UDS control plane operations (`list`, `status <SERVICE_ID>`, `start <SERVICE_ID>`, `stop`, `restart`, `health`, `tail-logs`)
+- Auto-starts the daemon if not running
+- Configurable daemon connection settings (`--host`, `--port`, default port `49384`)
+- User-friendly output formatting (daemon `status` shows PID and version; `services status` shows per-service PID)
 
 ### ⚙️ XTask (`xtask/`)
 Development automation and schema generation tool.
@@ -77,13 +78,16 @@ cargo build -p cli
 
 ### Start the daemon:
 ```bash
-cargo run --bin daemon
+cargo run --bin daemon -- --host 127.0.0.1 --port 49384
 ```
 
 ### Use the CLI:
 ```bash
 # Get daemon status
 cargo run --bin canopus -- status
+
+# Print daemon version (via TCP)
+cargo run --bin canopus -- version
 
 # Start daemon (if not running)
 cargo run --bin canopus -- start
@@ -97,8 +101,15 @@ cargo run --bin canopus -- restart
 # Send custom command
 cargo run --bin canopus -- custom "hello world"
 
-# Use different host/port
-cargo run --bin canopus -- --host 192.168.1.100 --port 9090 status
+# Use different host/port (TCP)
+cargo run --bin canopus -- --host 192.168.1.100 --port 50000 status
+
+# Manage services via local UDS control plane
+cargo run --bin canopus -- services list
+cargo run --bin canopus -- services status <SERVICE_ID>
+cargo run --bin canopus -- services start <SERVICE_ID>
+cargo run --bin canopus -- services stop <SERVICE_ID>
+cargo run --bin canopus -- services health <SERVICE_ID>
 ```
 
 ## Testing
@@ -149,7 +160,15 @@ The daemon and CLI communicate over TCP using JSON-serialized messages:
 **Response Types:**
 - `Ok(String)` - Success with message
 - `Error(String)` - Error with message
-- `Status { running: bool, uptime: u64 }` - Status information
+- `Status { running: bool, uptime_seconds: u64, pid: u32, version?: string }` - Status information
+
+### Service Control (UDS JSON-RPC)
+
+The daemon exposes a local UDS JSON-RPC control plane for service management at `/tmp/canopus.sock` by default. The CLI `services` subcommand uses this channel.
+
+- `services start <SERVICE_ID>` waits until the service reaches the Ready state by default, with a timeout of `startup_timeout_secs + 5s`.
+- `services status <SERVICE_ID>` returns the current state and the service's PID if it is running.
+- Spawned service processes are detached from the terminal (stdin is set to null) and placed in their own process group for safe signal handling.
 
 ## Dependencies
 

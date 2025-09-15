@@ -68,6 +68,11 @@ pub enum ControlMsg {
         /// Response channel for readiness check result
         response: oneshot::Sender<Result<bool>>,
     },
+    /// Get current process PID if running
+    GetPid {
+        /// Response channel for the current PID (None if not running)
+        response: oneshot::Sender<Option<u32>>,
+    },
 }
 
 /// Current internal state of the supervisor
@@ -257,6 +262,15 @@ impl SupervisorHandle {
                 "Failed to get readiness check response".to_string(),
             )),
         }
+    }
+
+    /// Get current process PID if running
+    pub async fn get_pid(&self) -> Result<Option<u32>> {
+        let (tx, rx) = oneshot::channel();
+        self.send(ControlMsg::GetPid { response: tx })?;
+        rx.await.map_err(|_| {
+            crate::CoreError::ServiceError("Failed to get PID response".to_string())
+        })
     }
 
     /// Check if the service is healthy based on current state and health checks

@@ -10,6 +10,7 @@
 //! - `canopus.start`
 //! - `canopus.stop`
 //! - `canopus.restart`
+//! - `canopus.status`
 //! - `canopus.bindHost`
 //! - `canopus.assignPort`
 //! - `canopus.tailLogs` (streaming skeleton)
@@ -281,6 +282,14 @@ async fn route_method(
             let services = router.list().await?;
             JsonRpcResponse::ok(id, serde_json::json!({"services": services}))
         }
+        "canopus.status" => {
+            let sid = params
+                .get("serviceId")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
+            let detail = router.status(sid).await?;
+            JsonRpcResponse::ok(id, serde_json::to_value(detail).unwrap())
+        }
         "canopus.start" => {
             let sid = params
                 .get("serviceId")
@@ -416,6 +425,7 @@ pub trait ControlPlane: Send + Sync {
     async fn start(&self, service_id: &str) -> Result<()>;
     async fn stop(&self, service_id: &str) -> Result<()>;
     async fn restart(&self, service_id: &str) -> Result<()>;
+    async fn status(&self, service_id: &str) -> Result<ServiceDetail>;
     async fn bind_host(&self, service_id: &str, host: &str) -> Result<()>;
     async fn assign_port(&self, service_id: &str, preferred: Option<u16>) -> Result<u16>;
     async fn health_check(&self, service_id: &str) -> Result<bool>;
@@ -435,6 +445,17 @@ pub struct ServiceSummary {
     pub state: schema::ServiceState,
 }
 
+/// Detailed service status for a specific service
+#[allow(missing_docs)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceDetail {
+    pub id: String,
+    pub name: String,
+    pub state: schema::ServiceState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
+}
+
 struct NoopControlPlane;
 
 #[async_trait::async_trait]
@@ -450,6 +471,9 @@ impl ControlPlane for NoopControlPlane {
     }
     async fn restart(&self, _service_id: &str) -> Result<()> {
         Err(IpcError::ProtocolError("restart not implemented".into()))
+    }
+    async fn status(&self, _service_id: &str) -> Result<ServiceDetail> {
+        Err(IpcError::ProtocolError("status not implemented".into()))
     }
     async fn bind_host(&self, _service_id: &str, _host: &str) -> Result<()> {
         Err(IpcError::ProtocolError("bindHost not implemented".into()))
@@ -475,7 +499,7 @@ impl ControlPlane for NoopControlPlane {
 #[cfg(feature = "supervisor")]
 #[allow(missing_docs)]
 pub mod supervisor_adapter {
-    use super::{ControlPlane, Result, ServiceSummary};
+    use super::{ControlPlane, Result, ServiceDetail, ServiceSummary};
     use async_trait::async_trait;
     use canopus_core::supervisor::SupervisorHandle;
     use schema::ServiceEvent;
@@ -513,11 +537,62 @@ pub mod supervisor_adapter {
         }
 
         async fn start(&self, service_id: &str) -> Result<()> {
-            self.handles
+            let handle = self
+                .handles
                 .get(service_id)
-                .ok_or_else(|| super::IpcError::ProtocolError("unknown service".into()))?
+                .ok_or_else(|| super::IpcError::ProtocolError("unknown service".into()))?;
+
+            // Subscribe to state changes before starting to avoid missing Ready transition
+            let mut state_rx = handle.subscribe_to_state();
+
+            handle
                 .start()
-                .map_err(|e| super::IpcError::ProtocolError(e.to_string()))
+                .map_err(|e| super::IpcError::ProtocolError(e.to_string()))?;
+
+            // Default wait-ready behavior: wait until service reaches Ready state
+            let current = *state_rx.borrow();
+            if current == schema::ServiceState::Ready {
+                return Ok(());
+            }
+
+            let timeout_secs = (handle.spec.startup_timeout_secs as u64).saturating_add(5);
+            let wait = async {
+                loop {
+                    if state_rx.changed().await.is_err() {
+                        return Err(());
+                    }
+                    if *state_rx.borrow() == schema::ServiceState::Ready {
+                        return Ok(());
+                    }
+                }
+            };
+
+            match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), wait).await {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(())) => Err(super::IpcError::ProtocolError(
+                    "service state channel closed".into(),
+                )),
+                Err(_) => Err(super::IpcError::ProtocolError(
+                    "timed out waiting for service readiness".into(),
+                )),
+            }
+        }
+
+        async fn status(&self, service_id: &str) -> Result<ServiceDetail> {
+            let handle = self
+                .handles
+                .get(service_id)
+                .ok_or_else(|| super::IpcError::ProtocolError("unknown service".into()))?;
+            let pid = handle
+                .get_pid()
+                .await
+                .map_err(|e| super::IpcError::ProtocolError(e.to_string()))?;
+            Ok(ServiceDetail {
+                id: service_id.to_string(),
+                name: handle.spec.name.clone(),
+                state: handle.current_state(),
+                pid,
+            })
         }
 
         async fn stop(&self, service_id: &str) -> Result<()> {

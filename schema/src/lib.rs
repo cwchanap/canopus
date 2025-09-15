@@ -62,6 +62,8 @@ pub enum Response {
         running: bool,
         /// Uptime in seconds
         uptime_seconds: u64,
+        /// Process ID of the daemon
+        pid: u32,
         #[serde(skip_serializing_if = "Option::is_none")]
         /// Optional version string
         version: Option<String>,
@@ -87,7 +89,7 @@ impl Default for DaemonConfig {
     fn default() -> Self {
         Self {
             host: "127.0.0.1".to_string(),
-            port: 8080,
+            port: 49384,
             log_level: "info".to_string(),
             max_connections: default_max_connections(),
         }
@@ -115,7 +117,7 @@ impl Default for ClientConfig {
     fn default() -> Self {
         Self {
             daemon_host: "127.0.0.1".to_string(),
-            daemon_port: 8080,
+            daemon_port: 49384,
             timeout_seconds: default_timeout(),
         }
     }
@@ -224,10 +226,10 @@ mod tests {
     fn test_default_configs() {
         let daemon_config = DaemonConfig::default();
         assert_eq!(daemon_config.host, "127.0.0.1");
-        assert_eq!(daemon_config.port, 8080);
+        assert_eq!(daemon_config.port, 49384);
 
         let client_config = ClientConfig::default();
         assert_eq!(client_config.daemon_host, "127.0.0.1");
-        assert_eq!(client_config.daemon_port, 8080);
+        assert_eq!(client_config.daemon_port, 49384);
     }
 }

@@ -110,6 +110,8 @@ pub fn spawn(cmd: &str, args: &[&str]) -> Result<ChildProcess> {
 
     let mut command = Command::new(cmd);
     command.args(args);
+    // Detach stdin so services do not block waiting for terminal input
+    command.stdin(Stdio::null());
     // Pipe stdout/stderr so we can capture logs asynchronously
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());

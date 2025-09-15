@@ -38,17 +38,12 @@ impl Client {
     /// Get daemon status
     pub async fn status(&self) -> Result<()> {
         match self.send_message(Message::Status).await? {
-            Response::Status {
-                running,
-                uptime_seconds,
-                version,
-            } => {
+            Response::Status { running, uptime_seconds, pid, version } => {
                 println!("Daemon Status:");
                 println!("  Running: {}", running);
                 println!("  Uptime: {} seconds", uptime_seconds);
-                if let Some(v) = version {
-                    println!("  Version: {}", v);
-                }
+                println!("  PID: {}", pid);
+                if let Some(v) = version { println!("  Version: {}", v); }
             }
             Response::Error { message, code } => {
                 error!("Error getting status: {}", message);
@@ -198,6 +193,25 @@ impl Client {
             }
         }
         Ok(())
+    }
+}
+
+impl Client {
+    /// Get daemon semantic version via TCP Status response
+    pub async fn version(&self) -> Result<()> {
+        match self.send_message(Message::Status).await? {
+            Response::Status { version, .. } => {
+                match version {
+                    Some(v) => {
+                        println!("{}", v);
+                        Ok(())
+                    }
+                    None => Err(CliError::DaemonError("version unavailable".into())),
+                }
+            }
+            Response::Error { message, .. } => Err(CliError::DaemonError(message)),
+            _ => Err(CliError::DaemonError("Unexpected response".into())),
+        }
     }
 }
 

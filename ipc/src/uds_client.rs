@@ -12,7 +12,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::sync::{mpsc, Mutex};
 
-use crate::server::ServiceSummary;
+use crate::server::{ServiceDetail, ServiceSummary};
 
 #[allow(missing_docs)]
 #[derive(Debug, Clone)]
@@ -88,6 +88,23 @@ impl JsonRpcClient {
             5,
         )
         .await
+    }
+
+    pub async fn status(&self, service_id: &str) -> Result<ServiceDetail> {
+        let (mut reader, mut writer) = self.connect_and_handshake().await?;
+        let req = jsonrpc_req(
+            "canopus.status",
+            serde_json::json!({"serviceId": service_id}),
+            9,
+        );
+        write_json(&mut writer, &req).await?;
+        let resp = read_json::<JsonRpcResponse, _>(&mut reader).await?;
+        if let Some(result) = resp.result {
+            serde_json::from_value::<ServiceDetail>(result)
+                .map_err(|e| IpcError::DeserializationFailed(e.to_string()))
+        } else {
+            Err(IpcError::ProtocolError("status call failed".into()))
+        }
     }
 
     pub async fn health_check(&self, service_id: &str) -> Result<bool> {

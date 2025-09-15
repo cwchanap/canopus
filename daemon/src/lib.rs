@@ -91,10 +91,12 @@ impl Daemon {
             Message::Status => {
                 let uptime_seconds = self.start_time.elapsed().as_secs();
                 let running = self.running.load(std::sync::atomic::Ordering::SeqCst);
+                let pid = std::process::id();
                 Response::Status {
                     running,
                     uptime_seconds,
-                    version: Some("0.1.0".to_string()),
+                    pid,
+                    version: Some(env!("CARGO_PKG_VERSION").to_string()),
                 }
             }
             Message::Start => {

@@ -24,7 +24,7 @@ struct Cli {
     host: String,
 
     /// Daemon port
-    #[arg(long, default_value_t = 8080)]
+    #[arg(long, default_value_t = 49384)]
     port: u16,
 }
 
@@ -32,6 +32,8 @@ struct Cli {
 enum Commands {
     /// Get daemon status
     Status,
+    /// Print daemon version
+    Version,
     /// Start the daemon
     Start,
     /// Stop the daemon
@@ -43,10 +45,10 @@ enum Commands {
         /// The custom command to send
         command: String,
     },
-    /// Local UDS control plane
-    Local {
+    /// Manage services via local UDS control plane
+    Services {
         #[command(subcommand)]
-        cmd: LocalCmd,
+        cmd: ServicesCmd,
         /// UDS socket path
         #[arg(long, default_value = "/tmp/canopus.sock")]
         socket: String,
@@ -57,11 +59,11 @@ enum Commands {
 }
 
 #[derive(Subcommand)]
-enum LocalCmd {
-    /// Get daemon version via UDS
-    Version,
+enum ServicesCmd {
     /// List services
     List,
+    /// Show status for a service
+    Status { service_id: String },
     /// Start a service
     Start { service_id: String },
     /// Stop a service
@@ -91,19 +93,15 @@ async fn main() -> canopus_core::Result<()> {
 
     let result = match &cli.command {
         Commands::Status => client.status().await.map_err(cli_to_core),
+        Commands::Version => client.version().await.map_err(cli_to_core),
         Commands::Start => client.start().await.map_err(cli_to_core),
         Commands::Stop => client.stop().await.map_err(cli_to_core),
         Commands::Restart => client.restart().await.map_err(cli_to_core),
         Commands::Custom { command } => client.custom(command).await.map_err(cli_to_core),
-        Commands::Local { cmd, socket, token } => {
+        Commands::Services { cmd, socket, token } => {
             let uds = JsonRpcClient::new(socket, token.clone());
             match cmd {
-                LocalCmd::Version => {
-                    let v = uds.version().await.map_err(anyhow_to_core)?;
-                    println!("Version: {}", v);
-                    Ok(())
-                }
-                LocalCmd::List => {
+                ServicesCmd::List => {
                     let services = uds.list().await.map_err(anyhow_to_core)?;
                     if services.is_empty() {
                         println!("No services");
@@ -114,14 +112,23 @@ async fn main() -> canopus_core::Result<()> {
                     }
                     Ok(())
                 }
-                LocalCmd::Start { service_id } => {
+                ServicesCmd::Status { service_id } => {
+                    let d = uds.status(service_id).await.map_err(anyhow_to_core)?;
+                    println!("Service Status:");
+                    println!("  ID: {}", d.id);
+                    println!("  Name: {}", d.name);
+                    println!("  State: {:?}", d.state);
+                    if let Some(pid) = d.pid { println!("  PID: {}", pid); }
+                    Ok(())
+                }
+                ServicesCmd::Start { service_id } => {
                     uds.start(service_id).await.map_err(anyhow_to_core)
                 }
-                LocalCmd::Stop { service_id } => uds.stop(service_id).await.map_err(anyhow_to_core),
-                LocalCmd::Restart { service_id } => {
+                ServicesCmd::Stop { service_id } => uds.stop(service_id).await.map_err(anyhow_to_core),
+                ServicesCmd::Restart { service_id } => {
                     uds.restart(service_id).await.map_err(anyhow_to_core)
                 }
-                LocalCmd::Health { service_id } => {
+                ServicesCmd::Health { service_id } => {
                     let healthy = uds.health_check(service_id).await.map_err(anyhow_to_core)?;
                     println!(
                         "{}: {}",
@@ -130,7 +137,7 @@ async fn main() -> canopus_core::Result<()> {
                     );
                     Ok(())
                 }
-                LocalCmd::TailLogs { service_id } => {
+                ServicesCmd::TailLogs { service_id } => {
                     let mut rx = uds
                         .tail_logs(service_id, None)
                         .await

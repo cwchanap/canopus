@@ -269,6 +269,10 @@ impl ServiceSupervisor {
                     )));
                 }
             }
+            ControlMsg::GetPid { response } => {
+                let pid = self.current_process.as_ref().map(|p| p.pid());
+                let _ = response.send(pid);
+            }
         }
         Ok(())
     }
