@@ -443,6 +443,8 @@ pub struct ServiceSummary {
     pub id: String,
     pub name: String,
     pub state: schema::ServiceState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
 }
 
 /// Detailed service status for a specific service
@@ -527,10 +529,15 @@ pub mod supervisor_adapter {
         async fn list(&self) -> Result<Vec<ServiceSummary>> {
             let mut out = Vec::with_capacity(self.handles.len());
             for (id, h) in &self.handles {
+                let pid = h
+                    .get_pid()
+                    .await
+                    .map_err(|e| super::IpcError::ProtocolError(e.to_string()))?;
                 out.push(ServiceSummary {
                     id: id.clone(),
                     name: h.spec.name.clone(),
                     state: h.current_state(),
+                    pid,
                 });
             }
             Ok(out)

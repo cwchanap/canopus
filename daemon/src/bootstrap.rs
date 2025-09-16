@@ -19,6 +19,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
 use crate::{DaemonError, Result};
+use crate::storage::SqliteStorage;
 
 /// Handle to manage the running components
 #[allow(missing_debug_implementations)]
@@ -57,6 +58,10 @@ pub async fn bootstrap(config_path: Option<PathBuf>) -> Result<BootstrapHandle> 
     };
 
     let proxy = Arc::new(NullProxy::new());
+
+    // Initialize persistent storage (SQLite in $HOME/.canopus/canopus.db)
+    let storage = SqliteStorage::open_default()
+        .map_err(|e| DaemonError::ServerError(format!("storage init failed: {}", e)))?;
 
     // Shared event bus
     let (event_tx, _event_rx) = tokio::sync::broadcast::channel(1024);
@@ -113,6 +118,14 @@ pub async fn bootstrap(config_path: Option<PathBuf>) -> Result<BootstrapHandle> 
         }
         handles.insert(spec.id.clone(), handle);
 
+        // Seed persistent storage row for this service (Idle, no PID)
+        if let Err(e) = storage
+            .upsert_service(&spec.id, &spec.name, &format!("{:?}", schema::ServiceState::Idle), None)
+            .await
+        {
+            warn!("Failed to seed storage for service {}: {}", spec.id, e);
+        }
+
         // Seed registry snapshot entry for this service if missing
         if !registry_snap.services.iter().any(|s| s.id == spec.id) {
             registry_snap.services.push(ServiceSnapshot {
@@ -159,6 +172,7 @@ pub async fn bootstrap(config_path: Option<PathBuf>) -> Result<BootstrapHandle> 
         let mut rx = event_tx.subscribe();
         let snapshot_path = snapshot_path.clone();
         let mut registry = registry_snap;
+        let storage = storage.clone();
         tokio::spawn(async move {
             while let Ok(evt) = rx.recv().await {
                 // Update registry entries based on event
@@ -172,6 +186,13 @@ pub async fn bootstrap(config_path: Option<PathBuf>) -> Result<BootstrapHandle> 
                         {
                             e.last_state = *to_state;
                         }
+                        // Persist to SQLite
+                        if let Err(e) = storage
+                            .update_state(service_id, &format!("{:?}", to_state))
+                            .await
+                        {
+                            warn!("Failed to persist state for {}: {}", service_id, e);
+                        }
                     }
                     schema::ServiceEvent::ProcessStarted {
                         service_id, pid, ..
@@ -180,11 +201,17 @@ pub async fn bootstrap(config_path: Option<PathBuf>) -> Result<BootstrapHandle> 
                         {
                             e.last_pid = Some(*pid);
                         }
+                        if let Err(e) = storage.update_pid(service_id, Some(*pid)).await {
+                            warn!("Failed to persist pid for {}: {}", service_id, e);
+                        }
                     }
                     schema::ServiceEvent::ProcessExited { service_id, .. } => {
                         if let Some(e) = registry.services.iter_mut().find(|e| &e.id == service_id)
                         {
                             e.last_pid = None;
+                        }
+                        if let Err(e) = storage.update_pid(service_id, None).await {
+                            warn!("Failed to clear pid for {}: {}", service_id, e);
                         }
                     }
                     _ => {}

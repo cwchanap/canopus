@@ -4,6 +4,7 @@
 
 pub mod bootstrap;
 pub mod simple_error;
+pub mod storage;
 
 #[cfg(test)]
 mod simple_error_tests;

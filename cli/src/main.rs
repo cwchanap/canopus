@@ -107,7 +107,10 @@ async fn main() -> canopus_core::Result<()> {
                         println!("No services");
                     } else {
                         for s in services {
-                            println!("{}\t{}\t{:?}", s.id, s.name, s.state);
+                            match s.pid {
+                                Some(pid) => println!("{}\t{}\t{:?}\tPID:{}", s.id, s.name, s.state, pid),
+                                None => println!("{}\t{}\t{:?}", s.id, s.name, s.state),
+                            }
                         }
                     }
                     Ok(())
