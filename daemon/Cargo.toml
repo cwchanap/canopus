@@ -19,6 +19,7 @@ tracing-subscriber = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 anyhow = "1"
 rusqlite = { version = "0.30", features = ["bundled"] }
+async-trait = "0.1"
 
 schema = { workspace = true }
 ipc = { workspace = true, features = ["supervisor"] }
@@ -31,6 +32,10 @@ path = "src/main.rs"
 [[bin]]
 name = "toy_http"
 path = "src/bin/toy_http.rs"
+
+[[bin]]
+name = "e2e_http"
+path = "src/bin/e2e_http.rs"
 
 [dev-dependencies]
 tempfile = "3"

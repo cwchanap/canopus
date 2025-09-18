@@ -273,6 +273,9 @@ impl ServiceSupervisor {
                 let pid = self.current_process.as_ref().map(|p| p.pid());
                 let _ = response.send(pid);
             }
+            ControlMsg::GetSpec { response } => {
+                let _ = response.send(self.spec.clone());
+            }
         }
         Ok(())
     }

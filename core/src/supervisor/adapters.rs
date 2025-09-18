@@ -68,8 +68,16 @@ impl ProcessAdapter for UnixProcessAdapter {
 
         debug!("Spawning Unix process: {} {:?}", spec.command, spec.args);
 
+        // Build args vector
         let args: Vec<&str> = spec.args.iter().map(|s| s.as_str()).collect();
-        let child = unix::spawn(&spec.command, &args)?;
+
+        // Spawn the process with environment and working directory
+        let child = unix::spawn_with(
+            &spec.command,
+            &args,
+            &spec.environment,
+            spec.working_directory.as_deref(),
+        )?;
 
         Ok(Box::new(UnixManagedProcess { child }))
     }

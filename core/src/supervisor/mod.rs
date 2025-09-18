@@ -73,6 +73,11 @@ pub enum ControlMsg {
         /// Response channel for the current PID (None if not running)
         response: oneshot::Sender<Option<u32>>,
     },
+    /// Get the current effective service specification
+    GetSpec {
+        /// Response channel for the current ServiceSpec
+        response: oneshot::Sender<ServiceSpec>,
+    },
 }
 
 /// Current internal state of the supervisor
@@ -270,6 +275,15 @@ impl SupervisorHandle {
         self.send(ControlMsg::GetPid { response: tx })?;
         rx.await.map_err(|_| {
             crate::CoreError::ServiceError("Failed to get PID response".to_string())
+        })
+    }
+
+    /// Get the current effective service specification from the supervisor task
+    pub async fn get_spec(&self) -> Result<ServiceSpec> {
+        let (tx, rx) = oneshot::channel();
+        self.send(ControlMsg::GetSpec { response: tx })?;
+        rx.await.map_err(|_| {
+            crate::CoreError::ServiceError("Failed to get spec response".to_string())
         })
     }
 

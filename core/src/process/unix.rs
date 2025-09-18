@@ -45,6 +45,58 @@ pub struct ChildProcess {
     child: Child,
 }
 
+/// Spawn a new process with environment variables and working directory
+///
+/// This variant extends [`spawn`] by allowing the caller to specify environment
+/// variables and an optional working directory for the child process.
+pub fn spawn_with(
+    cmd: &str,
+    args: &[&str],
+    envs: &std::collections::HashMap<String, String>,
+    working_dir: Option<&str>,
+) -> Result<ChildProcess> {
+    debug!("Spawning process with env/wd: {} {:?}", cmd, args);
+
+    let mut command = Command::new(cmd);
+    command.args(args);
+    if let Some(dir) = working_dir {
+        command.current_dir(dir);
+    }
+    if !envs.is_empty() {
+        command.envs(envs.iter().map(|(k, v)| (k, v)));
+    }
+    // Detach stdin so services do not block waiting for terminal input
+    command.stdin(Stdio::null());
+    // Pipe stdout/stderr so we can capture logs asynchronously
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
+
+    // Use before_exec to call setsid() in the child process
+    #[deny(unsafe_op_in_unsafe_fn)]
+    unsafe {
+        command.pre_exec(|| {
+            let result = libc::setsid();
+            if result == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+
+    let child = command.spawn().map_err(|e| {
+        error!("Failed to spawn process '{}': {}", cmd, e);
+        CoreError::ProcessSpawn(format!("Failed to spawn '{}': {}", cmd, e))
+    })?;
+
+    let raw_pid = child
+        .id()
+        .ok_or_else(|| CoreError::ProcessSpawn("Spawned child did not have a PID".to_string()))?;
+    let pid = Pid::from_raw(raw_pid as i32);
+    debug!("Successfully spawned process {} in new process group", pid);
+
+    Ok(ChildProcess { pid, child })
+}
+
 impl ChildProcess {
     /// Get the process ID
     pub fn pid(&self) -> u32 {

@@ -65,7 +65,15 @@ enum ServicesCmd {
     /// Show status for a service
     Status { service_id: String },
     /// Start a service
-    Start { service_id: String },
+    Start {
+        service_id: String,
+        /// Preferred port to run the service on
+        #[arg(long)]
+        port: Option<u16>,
+        /// Hostname alias to bind to this service (e.g. test.dev)
+        #[arg(long)]
+        hostname: Option<String>,
+    },
     /// Stop a service
     Stop { service_id: String },
     /// Restart a service
@@ -107,9 +115,14 @@ async fn main() -> canopus_core::Result<()> {
                         println!("No services");
                     } else {
                         for s in services {
-                            match s.pid {
-                                Some(pid) => println!("{}\t{}\t{:?}\tPID:{}", s.id, s.name, s.state, pid),
-                                None => println!("{}\t{}\t{:?}", s.id, s.name, s.state),
+                            let mut extras: Vec<String> = Vec::new();
+                            if let Some(pid) = s.pid { extras.push(format!("PID:{}", pid)); }
+                            if let Some(port) = s.port { extras.push(format!("PORT:{}", port)); }
+                            if let Some(hn) = &s.hostname { extras.push(format!("HOST:{}", hn)); }
+                            if extras.is_empty() {
+                                println!("{}\t{}\t{:?}", s.id, s.name, s.state);
+                            } else {
+                                println!("{}\t{}\t{:?}\t{}", s.id, s.name, s.state, extras.join(" "));
                             }
                         }
                     }
@@ -122,10 +135,12 @@ async fn main() -> canopus_core::Result<()> {
                     println!("  Name: {}", d.name);
                     println!("  State: {:?}", d.state);
                     if let Some(pid) = d.pid { println!("  PID: {}", pid); }
+                    if let Some(port) = d.port { println!("  Port: {}", port); }
+                    if let Some(hn) = d.hostname { println!("  Hostname: {}", hn); }
                     Ok(())
                 }
-                ServicesCmd::Start { service_id } => {
-                    uds.start(service_id).await.map_err(anyhow_to_core)
+                ServicesCmd::Start { service_id, port, hostname } => {
+                    uds.start(service_id, *port, hostname.as_deref()).await.map_err(anyhow_to_core)
                 }
                 ServicesCmd::Stop { service_id } => uds.stop(service_id).await.map_err(anyhow_to_core),
                 ServicesCmd::Restart { service_id } => {

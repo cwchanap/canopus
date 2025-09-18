@@ -120,7 +120,7 @@ pub async fn bootstrap(config_path: Option<PathBuf>) -> Result<BootstrapHandle> 
 
         // Seed persistent storage row for this service (Idle, no PID)
         if let Err(e) = storage
-            .upsert_service(&spec.id, &spec.name, &format!("{:?}", schema::ServiceState::Idle), None)
+            .upsert_service(&spec.id, &spec.name, &format!("{:?}", schema::ServiceState::Idle), None, None, None)
             .await
         {
             warn!("Failed to seed storage for service {}: {}", spec.id, e);
@@ -157,7 +157,9 @@ pub async fn bootstrap(config_path: Option<PathBuf>) -> Result<BootstrapHandle> 
                 unix_socket_path: Some(PathBuf::from(socket_path)),
                 windows_pipe_name: None,
             };
-            let router = SupervisorControlPlane::new(handles.clone(), event_tx.clone());
+            use std::sync::Arc as StdArc;
+            let router = SupervisorControlPlane::new(handles.clone(), event_tx.clone())
+                .with_meta_store(StdArc::new(storage.clone()));
             let server = IpcServer::with_router(cfg, Arc::new(router));
             Some(tokio::spawn(async move { server.serve().await }))
         }
@@ -212,6 +214,10 @@ pub async fn bootstrap(config_path: Option<PathBuf>) -> Result<BootstrapHandle> 
                         }
                         if let Err(e) = storage.update_pid(service_id, None).await {
                             warn!("Failed to clear pid for {}: {}", service_id, e);
+                        }
+                        // Clear port on exit since it's no longer occupied
+                        if let Err(e) = storage.update_port(service_id, None).await {
+                            warn!("Failed to clear port for {}: {}", service_id, e);
                         }
                     }
                     _ => {}

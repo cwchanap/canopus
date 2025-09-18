@@ -26,6 +26,15 @@ use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
+/// Metadata store for per-service runtime info (e.g., port, hostname)
+#[async_trait::async_trait]
+pub trait ServiceMetaStore: Send + Sync {
+    async fn set_port(&self, service_id: &str, port: Option<u16>) -> Result<()>;
+    async fn set_hostname(&self, service_id: &str, hostname: Option<&str>) -> Result<()>;
+    async fn get_port(&self, service_id: &str) -> Result<Option<u16>>;
+    async fn get_hostname(&self, service_id: &str) -> Result<Option<String>>;
+}
+
 /// JSON-RPC 2.0 request
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -295,7 +304,12 @@ async fn route_method(
                 .get("serviceId")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
-            router.start(sid).await?;
+            let port = params.get("port").and_then(|v| v.as_u64()).map(|n| n as u16);
+            let hostname = params
+                .get("hostname")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            router.start(sid, port, hostname).await?;
             JsonRpcResponse::ok(id, serde_json::json!({"ok": true}))
         }
         "canopus.stop" => {
@@ -422,7 +436,7 @@ async fn write_notification_locked(
 #[allow(missing_docs)]
 pub trait ControlPlane: Send + Sync {
     async fn list(&self) -> Result<Vec<ServiceSummary>>;
-    async fn start(&self, service_id: &str) -> Result<()>;
+    async fn start(&self, service_id: &str, port: Option<u16>, hostname: Option<String>) -> Result<()>;
     async fn stop(&self, service_id: &str) -> Result<()>;
     async fn restart(&self, service_id: &str) -> Result<()>;
     async fn status(&self, service_id: &str) -> Result<ServiceDetail>;
@@ -445,6 +459,10 @@ pub struct ServiceSummary {
     pub state: schema::ServiceState,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pid: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<String>,
 }
 
 /// Detailed service status for a specific service
@@ -456,6 +474,10 @@ pub struct ServiceDetail {
     pub state: schema::ServiceState,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pid: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<String>,
 }
 
 struct NoopControlPlane;
@@ -465,7 +487,7 @@ impl ControlPlane for NoopControlPlane {
     async fn list(&self) -> Result<Vec<ServiceSummary>> {
         Ok(vec![])
     }
-    async fn start(&self, _service_id: &str) -> Result<()> {
+    async fn start(&self, _service_id: &str, _port: Option<u16>, _hostname: Option<String>) -> Result<()> {
         Err(IpcError::ProtocolError("start not implemented".into()))
     }
     async fn stop(&self, _service_id: &str) -> Result<()> {
@@ -506,13 +528,16 @@ pub mod supervisor_adapter {
     use canopus_core::supervisor::SupervisorHandle;
     use schema::ServiceEvent;
     use std::collections::HashMap;
+    use std::sync::Arc;
     use tokio::sync::{broadcast, mpsc};
 
     /// Control plane adapter backed by a set of SupervisorHandles and a shared event bus
-    #[derive(Debug)]
     pub struct SupervisorControlPlane {
         handles: HashMap<String, SupervisorHandle>,
         event_tx: broadcast::Sender<ServiceEvent>,
+        meta: Option<Arc<dyn super::ServiceMetaStore>>, 
+        // Volatile in-memory metadata to reflect values immediately during this process lifetime
+        runtime_meta: std::sync::Mutex<HashMap<String, (Option<u16>, Option<String>)>>,
     }
 
     impl SupervisorControlPlane {
@@ -520,7 +545,69 @@ pub mod supervisor_adapter {
             handles: HashMap<String, SupervisorHandle>,
             event_tx: broadcast::Sender<ServiceEvent>,
         ) -> Self {
-            Self { handles, event_tx }
+            Self { 
+                handles, 
+                event_tx, 
+                meta: None, 
+                runtime_meta: std::sync::Mutex::new(HashMap::new()) 
+            }
+        }
+
+        pub fn with_meta_store(mut self, meta: Arc<dyn super::ServiceMetaStore>) -> Self {
+            self.meta = Some(meta);
+            self
+        }
+
+        #[cfg(unix)]
+        async fn ensure_hostname_binding(&self, hostname: &str) {
+            use std::fs::OpenOptions;
+            use std::io::{Read, Write};
+            let path = "/etc/hosts";
+            let tag = "# canopus";
+            // Read existing contents
+            let mut contents = String::new();
+            if let Ok(mut f) = std::fs::File::open(path) {
+                let _ = f.read_to_string(&mut contents);
+            }
+            // If already present, skip
+            if contents.lines().any(|l| l.contains(tag) && l.contains(hostname)) {
+                return;
+            }
+            let line = format!("127.0.0.1\t{} {}\n", hostname, tag);
+            match OpenOptions::new().append(true).open(path) {
+                Ok(mut f) => {
+                    if let Err(e) = f.write_all(line.as_bytes()) {
+                        tracing::warn!("Failed to append hostname binding to /etc/hosts: {}", e);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Cannot open /etc/hosts for appending: {} (binding '{}' not installed)", e, hostname);
+                }
+            }
+        }
+
+        #[cfg(unix)]
+        async fn remove_hostname_binding(&self, hostname: &str) {
+            use std::io::{Read, Write};
+            let path = "/etc/hosts";
+            let tag = "# canopus";
+            let mut contents = String::new();
+            match std::fs::File::open(path) {
+                Ok(mut f) => {
+                    if f.read_to_string(&mut contents).is_err() { return; }
+                }
+                Err(_) => return,
+            }
+            let new_contents: String = contents
+                .lines()
+                .filter(|l| !(l.contains(tag) && l.contains(hostname)))
+                .map(|s| format!("{}\n", s))
+                .collect();
+            if new_contents != contents {
+                if let Ok(mut f) = std::fs::File::create(path) {
+                    let _ = f.write_all(new_contents.as_bytes());
+                }
+            }
         }
     }
 
@@ -533,21 +620,125 @@ pub mod supervisor_adapter {
                     .get_pid()
                     .await
                     .map_err(|e| super::IpcError::ProtocolError(e.to_string()))?;
+                let (mut port, mut hostname) = if let Some(meta) = &self.meta {
+                    let p = meta.get_port(id).await.unwrap_or(None);
+                    let hn = meta.get_hostname(id).await.unwrap_or(None);
+                    (p, hn)
+                } else {
+                    (None, None)
+                };
+
+                // Use volatile runtime metadata if persistent store returned None
+                if port.is_none() || hostname.is_none() {
+                    if let Ok(map) = self.runtime_meta.lock() {
+                        if let Some((rp, rh)) = map.get(id) {
+                            if port.is_none() { port = *rp; }
+                            if hostname.is_none() { hostname = rh.clone(); }
+                        }
+                    }
+                }
+
+                // Fallbacks from the spec if metadata isn't yet persisted/visible
+                if port.is_none() {
+                    if let Ok(spec) = h.get_spec().await {
+                        if let Some(pstr) = spec.environment.get("PORT") {
+                            if let Ok(pval) = pstr.parse::<u16>() {
+                                port = Some(pval);
+                            }
+                        }
+                    }
+                }
+                if hostname.is_none() {
+                    if let Ok(spec) = h.get_spec().await {
+                        if let Some(route) = &spec.route {
+                            if !route.is_empty() {
+                                hostname = Some(route.clone());
+                            }
+                        }
+                    }
+                }
                 out.push(ServiceSummary {
                     id: id.clone(),
                     name: h.spec.name.clone(),
                     state: h.current_state(),
                     pid,
+                    port,
+                    hostname,
                 });
             }
             Ok(out)
         }
 
-        async fn start(&self, service_id: &str) -> Result<()> {
+        async fn start(&self, service_id: &str, port: Option<u16>, hostname: Option<String>) -> Result<()> {
             let handle = self
                 .handles
                 .get(service_id)
                 .ok_or_else(|| super::IpcError::ProtocolError("unknown service".into()))?;
+
+            // Determine port to use (allocate if not provided)
+            let chosen_port = if let Some(p) = port {
+                Some(p)
+            } else {
+                let alloc = canopus_core::PortAllocator::new();
+                match alloc.reserve(None) {
+                    Ok(g) => Some(g.port()),
+                    Err(_) => None,
+                }
+            };
+
+            // If we have a port/hostname, update spec before starting
+            if chosen_port.is_some() || hostname.is_some() {
+                let mut spec = handle.spec.clone();
+                if let Some(p) = chosen_port {
+                    spec.environment.insert("PORT".to_string(), p.to_string());
+                    // If readiness check is TCP, align port
+                    if let Some(rc) = &mut spec.readiness_check {
+                        if let schema::HealthCheckType::Tcp { port: rp } = &mut rc.check_type {
+                            *rp = p;
+                        }
+                    }
+                }
+                if let Some(hn) = hostname.clone() {
+                    // Use route field to carry hostname for proxy integration
+                    spec.route = Some(hn.clone());
+                }
+                handle
+                    .update_spec(spec)
+                    .map_err(|e| super::IpcError::ProtocolError(e.to_string()))?;
+
+                // Important: wait until the supervisor task applies the spec update
+                // to avoid racing Start with the previous spec (missing PORT or hostname).
+                // We don't need to use the returned value here; the await ensures ordering.
+                let _ = handle
+                    .get_spec()
+                    .await
+                    .map_err(|e| super::IpcError::ProtocolError(e.to_string()))?;
+            }
+
+            // Persist metadata if store present
+            if let Some(meta) = &self.meta {
+                if let Some(p) = chosen_port {
+                    let _ = meta.set_port(service_id, Some(p)).await;
+                }
+                if let Some(hn) = &hostname {
+                    let _ = meta.set_hostname(service_id, Some(hn.as_str())).await;
+                }
+            }
+
+            // Update in-memory runtime metadata immediately
+            {
+                if let Ok(mut map) = self.runtime_meta.lock() {
+                    let entry = map.entry(service_id.to_string()).or_insert((None, None));
+                    if chosen_port.is_some() { entry.0 = chosen_port; }
+                    if let Some(hn) = &hostname { entry.1 = Some(hn.clone()); }
+                }
+            }
+
+            // Best-effort bind hostname via /etc/hosts for local development
+            #[cfg(unix)]
+            if let Some(hn) = &hostname {
+                self.ensure_hostname_binding(hn).await;
+            }
 
             // Subscribe to state changes before starting to avoid missing Ready transition
             let mut state_rx = handle.subscribe_to_state();
@@ -590,19 +781,71 @@ pub mod supervisor_adapter {
                 .handles
                 .get(service_id)
                 .ok_or_else(|| super::IpcError::ProtocolError("unknown service".into()))?;
+
             let pid = handle
                 .get_pid()
                 .await
                 .map_err(|e| super::IpcError::ProtocolError(e.to_string()))?;
+
+            let (mut port, mut hostname) = if let Some(meta) = &self.meta {
+                let p = meta.get_port(service_id).await.unwrap_or(None);
+                let hn = meta.get_hostname(service_id).await.unwrap_or(None);
+                (p, hn)
+            } else {
+                (None, None)
+            };
+
+            // Use volatile runtime metadata if persistent store returned None
+            if port.is_none() || hostname.is_none() {
+                if let Ok(map) = self.runtime_meta.lock() {
+                    if let Some((rp, rh)) = map.get(service_id) {
+                        if port.is_none() { port = *rp; }
+                        if hostname.is_none() { hostname = rh.clone(); }
+                    }
+                }
+            }
+
+            // Fallbacks from the spec if metadata isn't yet persisted/visible
+            if port.is_none() {
+                if let Ok(spec) = handle.get_spec().await {
+                    if let Some(pstr) = spec.environment.get("PORT") {
+                        if let Ok(pval) = pstr.parse::<u16>() {
+                            port = Some(pval);
+                        }
+                    }
+                }
+            }
+            if hostname.is_none() {
+                if let Ok(spec) = handle.get_spec().await {
+                    if let Some(route) = &spec.route {
+                        if !route.is_empty() {
+                            hostname = Some(route.clone());
+                        }
+                    }
+                }
+            }
+
             Ok(ServiceDetail {
                 id: service_id.to_string(),
                 name: handle.spec.name.clone(),
                 state: handle.current_state(),
                 pid,
+                port,
+                hostname,
             })
         }
 
         async fn stop(&self, service_id: &str) -> Result<()> {
+            // Best-effort unbind hostname if previously bound
+            if let Some(meta) = &self.meta {
+                if let Ok(Some(hn_string)) = meta.get_hostname(service_id).await {
+                    #[cfg(unix)]
+                    {
+                        self.remove_hostname_binding(hn_string.as_str()).await;
+                    }
+                }
+            }
+
             self.handles
                 .get(service_id)
                 .ok_or_else(|| super::IpcError::ProtocolError("unknown service".into()))?

@@ -23,7 +23,49 @@ fn toy_bin_path() -> PathBuf {
     if candidate.exists() {
         return candidate;
     }
-    panic!("Unable to locate toy_http binary; set CARGO_BIN_EXE_toy_http or ensure target/debug/toy_http exists");
+    panic!(
+        "Unable to locate toy_http binary; set CARGO_BIN_EXE_toy_http or ensure target/debug/toy_http exists"
+    );
+}
+
+// removed stray e2e_http helper (moved to e2e-tests crate)
+
+fn make_e2e_http_services_toml(bin_path: &Path) -> String {
+    // Placeholder ports; supervisor will override on start
+    let placeholder_port = 1u16;
+    format!(
+        r#"
+[[services]]
+id = "e2e-http"
+name = "E2E HTTP"
+command = "{bin}"
+restartPolicy = "always"
+gracefulTimeoutSecs = 5
+startupTimeoutSecs = 20
+
+[services.readinessCheck]
+initialDelaySecs = 0
+intervalSecs = 1
+timeoutSecs = 2
+successThreshold = 1
+
+[services.readinessCheck.checkType]
+type = "tcp"
+port = {ph}
+
+[services.healthCheck]
+intervalSecs = 1
+timeoutSecs = 2
+failureThreshold = 3
+successThreshold = 1
+
+[services.healthCheck.checkType]
+type = "tcp"
+port = {ph}
+"#,
+        bin = bin_path.display(),
+        ph = placeholder_port,
+    )
 }
 
 fn make_services_toml(bin_path: &Path, port: u16) -> String {
@@ -155,8 +197,8 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
     assert_eq!(services.len(), 1, "one service expected");
     assert_eq!(services[0].id, "toy-http");
 
-    // Start service
-    client.start("toy-http").await.expect("start ok");
+    // Start service (no explicit port/hostname)
+    client.start("toy-http", None, None).await.expect("start ok");
 
     // Tail logs and expect a "ready" line
     let mut log_rx = client.tail_logs("toy-http", None).await.expect("tail ok");
@@ -267,3 +309,5 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
         .await
         .expect("ready after recover");
 }
+
+// removed e2e_http test (moved to e2e-tests crate)

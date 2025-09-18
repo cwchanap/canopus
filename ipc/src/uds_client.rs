@@ -63,10 +63,10 @@ impl JsonRpcClient {
         }
     }
 
-    pub async fn start(&self, service_id: &str) -> Result<()> {
+    pub async fn start(&self, service_id: &str, port: Option<u16>, hostname: Option<&str>) -> Result<()> {
         self.simple_ok(
             "canopus.start",
-            serde_json::json!({"serviceId": service_id}),
+            serde_json::json!({"serviceId": service_id, "port": port, "hostname": hostname}),
             3,
         )
         .await
