@@ -37,26 +37,37 @@ impl Client {
 
     /// Get daemon status
     pub async fn status(&self) -> Result<()> {
-        match self.send_message(Message::Status).await? {
-            Response::Status { running, uptime_seconds, pid, version } => {
+        match self.send_message(Message::Status).await {
+            Ok(Response::Status { running, uptime_seconds, pid, version }) => {
                 println!("Daemon Status:");
                 println!("  Running: {}", running);
                 println!("  Uptime: {} seconds", uptime_seconds);
                 println!("  PID: {}", pid);
                 if let Some(v) = version { println!("  Version: {}", v); }
             }
-            Response::Error { message, code } => {
+            Ok(Response::Error { message, code }) => {
                 error!("Error getting status: {}", message);
                 if let Some(c) = code {
                     error!("Error code: {}", c);
                 }
                 return Err(CliError::DaemonError(message));
             }
-            _ => {
+            Ok(_) => {
                 let err = "Unexpected response type".to_string();
                 error!("{}", err);
                 return Err(CliError::DaemonError(err));
             }
+            Err(CliError::IpcError(ipc_err)) => {
+                // If the daemon isn't running, report a friendly status instead of a raw connection error
+                if let ipc::IpcError::ConnectionFailed(_) = ipc_err {
+                    println!("Daemon Status:");
+                    println!("  Running: false");
+                    println!("  Note: daemon not started");
+                    return Ok(());
+                }
+                Err(CliError::IpcError(ipc_err))?
+            }
+            Err(e) => return Err(e),
         }
         Ok(())
     }

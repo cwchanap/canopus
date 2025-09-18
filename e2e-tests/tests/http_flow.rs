@@ -278,6 +278,190 @@ async fn http_start_without_port_allocator_assigns_and_list_status_show_it() {
     // Health should be true
     let healthy = client.health_check(service_id).await.expect("health ok");
     assert!(healthy);
+ 
+    // Shutdown daemon to avoid interference with subsequent tests
+    boot.shutdown().await;
+}
+
+#[tokio::test]
+async fn http_restart_keeps_port_and_hostname_and_ready_again() {
+    // Temp workspace
+    let temp = tempfile::tempdir().expect("tempdir");
+    let base = temp.path().to_path_buf();
+
+    // Resolve e2e_http binary and choose service id
+    let bin_path = e2e_http_bin_path();
+    let service_id = "e2e-http-4";
+
+    // UDS socket (short path in /tmp) and state file (in temp dir)
+    let sock_path = uds_socket_path(service_id);
+    let state_path = base.join("state.json");
+    std::env::set_var("CANOPUS_IPC_SOCKET", &sock_path);
+    std::env::set_var("CANOPUS_STATE_FILE", &state_path);
+
+    // Choose a free port
+    let allocator = canopus_core::PortAllocator::new();
+    let guard = allocator.reserve(None).expect("reserve port");
+    let port = guard.port();
+    drop(guard);
+
+    // Write services TOML
+    let cfg_path = base.join("services.toml");
+    std::fs::write(&cfg_path, make_services_toml_with_id(&bin_path, service_id)).expect("write services.toml");
+
+    // Bootstrap daemon
+    let boot = daemon::bootstrap::bootstrap(Some(cfg_path.clone()))
+        .await
+        .expect("bootstrap ok");
+
+    // Wait for socket to appear
+    {
+        use tokio::time::{sleep, Duration, Instant};
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if sock_path.exists() { break; }
+            if Instant::now() >= deadline { panic!("IPC socket not created in time"); }
+            sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    // Client
+    let client = JsonRpcClient::new(&sock_path, None);
+
+    // Retry list to ensure server is up
+    {
+        use tokio::time::{sleep, Duration, Instant};
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            if client.list().await.is_ok() { break; }
+            if Instant::now() >= deadline { break; }
+            sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    // Start with explicit port and hostname
+    let hostname = "e2e-restart.dev".to_string();
+    client
+        .start(service_id, Some(port), Some(hostname.as_str()))
+        .await
+        .expect("start ok");
+
+    // Wait for Ready
+    wait_until_ready(&client, service_id, 10_000).await.expect("ready");
+
+    // Verify initial list/status
+    let services = client.list().await.expect("list ok");
+    let svc = services.into_iter().find(|s| s.id == service_id).expect("svc present");
+    assert_eq!(svc.port, Some(port));
+    assert_eq!(svc.hostname.as_deref(), Some(hostname.as_str()));
+    let st = client.status(service_id).await.expect("status ok");
+    assert_eq!(st.port, Some(port));
+    assert_eq!(st.hostname.as_deref(), Some(hostname.as_str()));
+
+    // Restart
+    client.restart(service_id).await.expect("restart ok");
+
+    // Wait for Ready again
+    wait_until_ready(&client, service_id, 10_000).await.expect("ready after restart");
+
+    // Verify port and hostname are unchanged after restart
+    let services = client.list().await.expect("list ok");
+    let svc = services.into_iter().find(|s| s.id == service_id).expect("svc present");
+    assert_eq!(svc.port, Some(port));
+    assert_eq!(svc.hostname.as_deref(), Some(hostname.as_str()));
+    let st = client.status(service_id).await.expect("status ok");
+    assert_eq!(st.port, Some(port));
+    assert_eq!(st.hostname.as_deref(), Some(hostname.as_str()));
+
+    // Health should still be true
+    let healthy = client.health_check(service_id).await.expect("health ok");
+    assert!(healthy);
+
+    // Shutdown daemon to avoid interference with subsequent tests
+    boot.shutdown().await;
+}
+
+#[tokio::test]
+async fn http_duplicate_start_is_idempotent_and_keeps_settings() {
+    // Temp workspace
+    let temp = tempfile::tempdir().expect("tempdir");
+    let base = temp.path().to_path_buf();
+
+    // Resolve e2e_http binary and choose service id
+    let bin_path = e2e_http_bin_path();
+    let service_id = "e2e-http-5";
+
+    // UDS socket (short path in /tmp) and state file (in temp dir)
+    let sock_path = uds_socket_path(service_id);
+    let state_path = base.join("state.json");
+    std::env::set_var("CANOPUS_IPC_SOCKET", &sock_path);
+    std::env::set_var("CANOPUS_STATE_FILE", &state_path);
+
+    // Choose a free port
+    let allocator = canopus_core::PortAllocator::new();
+    let guard = allocator.reserve(None).expect("reserve port");
+    let port = guard.port();
+    drop(guard);
+
+    // Write services TOML
+    let cfg_path = base.join("services.toml");
+    std::fs::write(&cfg_path, make_services_toml_with_id(&bin_path, service_id)).expect("write services.toml");
+
+    // Bootstrap daemon
+    let boot = daemon::bootstrap::bootstrap(Some(cfg_path.clone()))
+        .await
+        .expect("bootstrap ok");
+
+    // Wait for socket to appear
+    {
+        use tokio::time::{sleep, Duration, Instant};
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if sock_path.exists() { break; }
+            if Instant::now() >= deadline { panic!("IPC socket not created in time"); }
+            sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    // Client
+    let client = JsonRpcClient::new(&sock_path, None);
+
+    // Retry list to ensure server is up
+    {
+        use tokio::time::{sleep, Duration, Instant};
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            if client.list().await.is_ok() { break; }
+            if Instant::now() >= deadline { break; }
+            sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    // Start with explicit port and hostname
+    let hostname = "e2e-dup-start.dev".to_string();
+    client
+        .start(service_id, Some(port), Some(hostname.as_str()))
+        .await
+        .expect("start ok");
+
+    // Wait for Ready
+    wait_until_ready(&client, service_id, 10_000).await.expect("ready");
+
+    // Start again (idempotent)
+    client
+        .start(service_id, Some(port), Some(hostname.as_str()))
+        .await
+        .expect("duplicate start ok");
+
+    // Still Ready and settings preserved
+    wait_until_ready(&client, service_id, 10_000).await.expect("still ready");
+    let services = client.list().await.expect("list ok");
+    let svc = services.into_iter().find(|s| s.id == service_id).expect("svc present");
+    assert_eq!(svc.port, Some(port));
+    assert_eq!(svc.hostname.as_deref(), Some(hostname.as_str()));
+    let st = client.status(service_id).await.expect("status ok");
+    assert_eq!(st.port, Some(port));
+    assert_eq!(st.hostname.as_deref(), Some(hostname.as_str()));
 
     // Shutdown daemon to avoid interference with subsequent tests
     boot.shutdown().await;
