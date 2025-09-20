@@ -5,7 +5,8 @@
 #![allow(unused_crate_dependencies)]
 
 use clap::Parser;
-use daemon::{bootstrap, Daemon};
+use daemon::Daemon;
+use daemon::bootstrap::bootstrap_with_runtime;
 use schema::DaemonConfig;
 use tracing::{error, info};
 
@@ -18,6 +19,9 @@ struct Opts {
     /// Path to services TOML configuration
     #[arg(short, long)]
     config: Option<std::path::PathBuf>,
+    /// Path to simple runtime configuration (tables per service with hostname/port)
+    #[arg(long)]
+    runtime_config: Option<std::path::PathBuf>,
     /// Host to bind the daemon to
     #[arg(long, default_value = "127.0.0.1")]
     host: String,
@@ -42,7 +46,7 @@ async fn main() -> daemon::Result<()> {
     // Create and start the daemon (TCP prototype server)
     let daemon = Daemon::new(config);
     // Bootstrap supervisors + IPC + proxy
-    let boot = bootstrap::bootstrap(opts.config.clone()).await?;
+    let boot = bootstrap_with_runtime(opts.config.clone(), opts.runtime_config.clone()).await?;
 
     // Handle graceful shutdown
     let daemon_clone = daemon.clone();

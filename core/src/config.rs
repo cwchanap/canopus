@@ -7,7 +7,7 @@
 use crate::{CoreError, Result};
 use schema::*;
 use serde::Deserialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
@@ -17,6 +17,77 @@ use std::path::Path;
 pub struct ServicesFile {
     /// List of services to supervise
     pub services: Vec<ServiceSpec>,
+}
+
+/// Simple per-service runtime configuration (hostname/port)
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SimpleServiceConfig {
+    /// Optional hostname alias (e.g. test.dev)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<String>,
+    /// Optional fixed port to run on; if omitted a free port will be allocated
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+}
+
+/// Top-level wrapper that flattens service IDs into a map
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+pub struct SimpleServicesFile {
+    /// Map of service_id -> runtime config
+    #[serde(flatten)]
+    pub services: HashMap<String, SimpleServiceConfig>,
+}
+
+impl SimpleServicesFile {
+    /// Validate the simple configuration
+    pub fn validate(&self) -> Result<()> {
+        if self.services.is_empty() {
+            return Err(CoreError::ValidationError(
+                "config must contain at least one service section".to_string(),
+            ));
+        }
+        for (id, cfg) in &self.services {
+            if id.trim().is_empty() {
+                return Err(CoreError::ValidationError(
+                    "service id (table name) cannot be empty".to_string(),
+                ));
+            }
+            if let Some(hn) = &cfg.hostname {
+                if hn.trim().is_empty() {
+                    return Err(CoreError::ValidationError(format!(
+                        "service '{}': hostname cannot be empty",
+                        id
+                    )));
+                }
+            }
+            if let Some(p) = cfg.port {
+                if p == 0 {
+                    return Err(CoreError::ValidationError(format!(
+                        "service '{}': port must be 1..=65535",
+                        id
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Load simple services config from TOML file path
+pub fn load_simple_services_from_toml_path(path: impl AsRef<Path>) -> Result<SimpleServicesFile> {
+    let data = fs::read_to_string(&path).map_err(|e| {
+        CoreError::ConfigurationError(format!("Failed to read config {:?}: {}", path.as_ref(), e))
+    })?;
+    load_simple_services_from_toml_str(&data)
+}
+
+/// Load simple services config from a TOML string
+pub fn load_simple_services_from_toml_str(input: &str) -> Result<SimpleServicesFile> {
+    let cfg: SimpleServicesFile = toml::from_str(input)
+        .map_err(|e| CoreError::ConfigurationError(format!("TOML parse error: {}", e)))?;
+    cfg.validate()?;
+    Ok(cfg)
 }
 
 impl ServicesFile {

@@ -25,14 +25,18 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
+use schema::ServiceEvent;
 
 /// Metadata store for per-service runtime info (e.g., port, hostname)
 #[async_trait::async_trait]
+#[allow(missing_docs)]
 pub trait ServiceMetaStore: Send + Sync {
     async fn set_port(&self, service_id: &str, port: Option<u16>) -> Result<()>;
     async fn set_hostname(&self, service_id: &str, hostname: Option<&str>) -> Result<()>;
     async fn get_port(&self, service_id: &str) -> Result<Option<u16>>;
     async fn get_hostname(&self, service_id: &str) -> Result<Option<String>>;
+    /// Delete the metadata row for a service
+    async fn delete(&self, service_id: &str) -> Result<()>;
 }
 
 /// JSON-RPC 2.0 request
@@ -381,6 +385,14 @@ async fn route_method(
             });
             JsonRpcResponse::ok(id, serde_json::json!({"subscribed": true}))
         }
+        "canopus.deleteMeta" => {
+            let sid = params
+                .get("serviceId")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
+            router.delete_meta(sid).await?;
+            JsonRpcResponse::ok(id, serde_json::json!({"ok": true}))
+        }
         _ => JsonRpcResponse::err(id, -32601, "Method not found", None),
     }))
 }
@@ -447,7 +459,9 @@ pub trait ControlPlane: Send + Sync {
         &self,
         service_id: &str,
         from_seq: Option<u64>,
-    ) -> Result<mpsc::Receiver<schema::ServiceEvent>>;
+    ) -> Result<mpsc::Receiver<ServiceEvent>>;
+    /// Delete the metadata row for a service
+    async fn delete_meta(&self, service_id: &str) -> Result<()>;
 }
 
 /// Minimal summary for listing services
@@ -518,6 +532,10 @@ impl ControlPlane for NoopControlPlane {
         let (_tx, rx) = mpsc::channel(1);
         Ok(rx)
     }
+
+    async fn delete_meta(&self, _service_id: &str) -> Result<()> {
+        Err(IpcError::ProtocolError("deleteMeta not implemented".into()))
+    }
 }
 
 #[cfg(feature = "supervisor")]
@@ -532,6 +550,7 @@ pub mod supervisor_adapter {
     use tokio::sync::{broadcast, mpsc};
 
     /// Control plane adapter backed by a set of SupervisorHandles and a shared event bus
+    #[allow(missing_debug_implementations)]
     pub struct SupervisorControlPlane {
         handles: HashMap<String, SupervisorHandle>,
         event_tx: broadcast::Sender<ServiceEvent>,
@@ -753,7 +772,7 @@ pub mod supervisor_adapter {
                 return Ok(());
             }
 
-            let timeout_secs = (handle.spec.startup_timeout_secs as u64).saturating_add(5);
+            let timeout_secs = handle.spec.startup_timeout_secs.saturating_add(5);
             let wait = async {
                 loop {
                     if state_rx.changed().await.is_err() {
@@ -915,6 +934,13 @@ pub mod supervisor_adapter {
                 }
             });
             Ok(out_rx)
+        }
+
+        async fn delete_meta(&self, service_id: &str) -> Result<()> {
+            if let Some(meta) = &self.meta {
+                meta.delete(service_id).await?;
+            }
+            Ok(())
         }
     }
 }

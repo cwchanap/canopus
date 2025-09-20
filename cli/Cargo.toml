@@ -23,3 +23,8 @@ canopus-core = { workspace = true }
 [[bin]]
 name = "canopus"
 path = "src/main.rs"
+
+[dev-dependencies]
+daemon = { workspace = true }
+schema = { workspace = true }
+tempfile = "3"

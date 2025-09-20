@@ -9,7 +9,9 @@ use tokio::sync::Mutex;
 use ipc::Result as IpcResult;
 use ipc::IpcError;
 
+/// SQLite storage for runtime service metadata and state
 #[derive(Clone)]
+#[allow(missing_debug_implementations)]
 pub struct SqliteStorage {
     conn: Arc<Mutex<Connection>>,
 }
@@ -41,6 +43,13 @@ impl ipc::server::ServiceMetaStore for SqliteStorage {
             .await
             .map_err(|e| IpcError::ProtocolError(e.to_string()))
     }
+
+    async fn delete(&self, service_id: &str) -> IpcResult<()> {
+        self.delete_service(service_id)
+            .await
+            .map_err(|e| IpcError::ProtocolError(e.to_string()))?;
+        Ok(())
+    }
 }
 
 impl SqliteStorage {
@@ -55,7 +64,7 @@ impl SqliteStorage {
 
         let conn = Connection::open(db_path)?;
         // Enable WAL for better concurrency and durability
-        conn.pragma_update(None, "journal_mode", &"WAL")
+        conn.pragma_update(None, "journal_mode", "WAL")
             .ok();
         conn.execute_batch(
             r#"
@@ -78,6 +87,22 @@ impl SqliteStorage {
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
+    }
+
+    /// Delete a service row entirely
+    pub async fn delete_service(&self, id: &str) -> anyhow::Result<()> {
+        let id = id.to_string();
+        tokio::task::spawn_blocking({
+            let conn = self.conn.clone();
+            move || {
+                let conn = conn.blocking_lock();
+                conn.execute("DELETE FROM services WHERE id=?1", params![id])
+                    .map(|_| ())
+                    .map_err(|e| anyhow::anyhow!(e))
+            }
+        })
+        .await??;
+        Ok(())
     }
 
     /// Seed or upsert a service row

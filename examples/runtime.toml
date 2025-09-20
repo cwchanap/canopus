@@ -1,0 +1,11 @@
+# Example Simple Runtime TOML for CLI (--config) or daemon (--runtime-config)
+
+[web]
+# Optional alias for reverse proxy
+hostname = "web.local"
+# Fixed port; if omitted the system may allocate a free one on start
+port = 8000
+
+[api]
+hostname = "api.local"
+# port is optional

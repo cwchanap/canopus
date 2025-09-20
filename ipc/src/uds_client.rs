@@ -210,6 +210,15 @@ impl JsonRpcClient {
         Ok(rx)
     }
 
+    pub async fn delete_meta(&self, service_id: &str) -> Result<()> {
+        self.simple_ok(
+            "canopus.deleteMeta",
+            serde_json::json!({"serviceId": service_id}),
+            10,
+        )
+        .await
+    }
+
     async fn simple_ok(&self, method: &str, params: Value, id: u64) -> Result<()> {
         let (mut reader, mut writer) = self.connect_and_handshake().await?;
         let req = jsonrpc_req(method, params, id);

@@ -112,6 +112,30 @@ cargo run --bin canopus -- services stop <SERVICE_ID>
 cargo run --bin canopus -- services health <SERVICE_ID>
 ```
 
+## Configuration
+
+See detailed formats and usage in `docs/config.md`.
+
+Quick start:
+
+- Daemon with service spec:
+  ```bash
+  canopus-daemon --config services.toml
+  ```
+  See example: `examples/services.toml`
+
+- Daemon with runtime overrides (hostname/port):
+  ```bash
+  canopus-daemon --config services.toml --runtime-config runtime.toml
+  ```
+  See example: `examples/runtime.toml`
+
+- CLI apply runtime config and sync DB (start/skip/stop+delete):
+  ```bash
+  canopus start --config runtime.toml
+  ```
+  See example: `examples/runtime.toml`
+
 ## Testing
 
 Run all tests:

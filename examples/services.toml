@@ -1,0 +1,30 @@
+# Example Service Spec TOML for the daemon (--config)
+
+[[services]]
+# Unique service identifier
+id = "web"
+# Human-friendly name
+name = "Web Server"
+# Executable/command to run
+command = "python3"
+# Arguments for the command
+args = ["-m", "http.server", "8000"]
+# Optional working directory
+# workingDirectory = "."
+# Optional hostname alias for reverse proxy
+# route = "web.local"
+# Restart policy: "Always" | "OnFailure" | "Never"
+restartPolicy = "onFailure"
+# Timeouts (seconds)
+gracefulTimeoutSecs = 5
+startupTimeoutSecs = 15
+
+[[services]]
+id = "api"
+name = "API Server"
+command = "python3"
+args = ["-m", "http.server", "9000"]
+# route = "api.local"
+restartPolicy = "never"
+gracefulTimeoutSecs = 5
+startupTimeoutSecs = 10

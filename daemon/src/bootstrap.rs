@@ -4,7 +4,10 @@
 //! starts supervisors, spins up the IPC server with a supervisor control
 //! plane, and installs graceful shutdown handling primitives.
 
-use canopus_core::config::load_services_from_toml_path;
+use canopus_core::config::{
+    load_services_from_toml_path,
+    load_simple_services_from_toml_path,
+};
 use canopus_core::persistence::{
     default_snapshot_path, write_snapshot_atomic, RegistrySnapshot, ServiceSnapshot,
 };
@@ -48,6 +51,14 @@ impl BootstrapHandle {
 
 /// Bootstrap the daemon components
 pub async fn bootstrap(config_path: Option<PathBuf>) -> Result<BootstrapHandle> {
+    bootstrap_with_runtime(config_path, None).await
+}
+
+/// Bootstrap with an additional optional runtime config (simple per-service hostname/port)
+pub async fn bootstrap_with_runtime(
+    config_path: Option<PathBuf>,
+    runtime_config_path: Option<PathBuf>,
+) -> Result<BootstrapHandle> {
     // Load services from config if provided, otherwise start empty (no supervisors)
     let services: Vec<ServiceSpec> = if let Some(path) = config_path {
         let cfg = load_services_from_toml_path(&path)
@@ -140,6 +151,31 @@ pub async fn bootstrap(config_path: Option<PathBuf>) -> Result<BootstrapHandle> 
     // Write initial snapshot reflecting loaded specs and baseline states
     if let Err(e) = write_snapshot_atomic(&snapshot_path, &registry_snap) {
         warn!("Failed to write initial snapshot: {}", e);
+    }
+
+    // If a runtime config is provided, preload hostname/port into SQLite for known services
+    if let Some(rt_path) = runtime_config_path {
+        match load_simple_services_from_toml_path(&rt_path) {
+            Ok(simple) => {
+                for (id, scfg) in simple.services.iter() {
+                    if handles.contains_key(id) {
+                        if let Some(p) = scfg.port {
+                            if let Err(e) = storage.update_port(id, Some(p)).await {
+                                warn!("Failed to persist runtime port for {}: {}", id, e);
+                            }
+                        }
+                        if let Some(hn) = scfg.hostname.as_deref() {
+                            if let Err(e) = storage.update_hostname(id, Some(hn)).await {
+                                warn!("Failed to persist runtime hostname for {}: {}", id, e);
+                            }
+                        }
+                    } else {
+                        warn!("Runtime config references unknown service '{}'; ignoring", id);
+                    }
+                }
+            }
+            Err(e) => warn!("Failed to load runtime config {:?}: {}", rt_path, e),
+        }
     }
 
     // Start IPC server (UDS on Unix)

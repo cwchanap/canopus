@@ -10,6 +10,7 @@ use cli::Client;
 use ipc::uds_client::JsonRpcClient;
 use schema::ServiceEvent;
 use tracing::error;
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(name = "canopus")]
@@ -34,8 +35,12 @@ enum Commands {
     Status,
     /// Print daemon version
     Version,
-    /// Start the daemon
-    Start,
+    /// Start the daemon, optionally applying a simple services config
+    Start {
+        /// Path to a simple TOML config to manage services (tables per service id)
+        #[arg(long)]
+        config: Option<PathBuf>,
+    },
     /// Stop the daemon
     Stop,
     /// Restart the daemon
@@ -102,7 +107,7 @@ async fn main() -> canopus_core::Result<()> {
     let result = match &cli.command {
         Commands::Status => client.status().await.map_err(cli_to_core),
         Commands::Version => client.version().await.map_err(cli_to_core),
-        Commands::Start => client.start().await.map_err(cli_to_core),
+        Commands::Start { config } => client.start_with_config(config.clone()).await.map_err(cli_to_core),
         Commands::Stop => client.stop().await.map_err(cli_to_core),
         Commands::Restart => client.restart().await.map_err(cli_to_core),
         Commands::Custom { command } => client.custom(command).await.map_err(cli_to_core),
