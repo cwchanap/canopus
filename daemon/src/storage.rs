@@ -2,16 +2,14 @@
 //!
 //! Stores service state and PID persistently in $HOME/.canopus/canopus.db
 
+use ipc::IpcError;
+use ipc::Result as IpcResult;
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use ipc::Result as IpcResult;
-use ipc::IpcError;
 
-/// SQLite storage for runtime service metadata and state
 #[derive(Clone)]
-#[allow(missing_debug_implementations)]
 pub struct SqliteStorage {
     conn: Arc<Mutex<Connection>>,
 }
@@ -64,8 +62,7 @@ impl SqliteStorage {
 
         let conn = Connection::open(db_path)?;
         // Enable WAL for better concurrency and durability
-        conn.pragma_update(None, "journal_mode", "WAL")
-            .ok();
+        conn.pragma_update(None, "journal_mode", &"WAL").ok();
         conn.execute_batch(
             r#"
             CREATE TABLE IF NOT EXISTS services (
@@ -136,7 +133,15 @@ impl SqliteStorage {
                         hostname=excluded.hostname,
                         updated_at=excluded.updated_at
                     "#,
-                    params![id, name, state, pid.map(|p| p as i64), port.map(|p| p as i64), hostname, ts],
+                    params![
+                        id,
+                        name,
+                        state,
+                        pid.map(|p| p as i64),
+                        port.map(|p| p as i64),
+                        hostname,
+                        ts
+                    ],
                 )
                 .map(|_| ())
                 .map_err(|e| anyhow::anyhow!(e))
@@ -235,7 +240,9 @@ impl SqliteStorage {
             let conn = self.conn.clone();
             move || -> anyhow::Result<Option<u16>> {
                 let conn = conn.blocking_lock();
-                let mut stmt = conn.prepare("SELECT port FROM services WHERE id=?1").map_err(|e| anyhow::anyhow!(e))?;
+                let mut stmt = conn
+                    .prepare("SELECT port FROM services WHERE id=?1")
+                    .map_err(|e| anyhow::anyhow!(e))?;
                 let val: Option<Option<i64>> = stmt
                     .query_row(params![id], |row| row.get::<_, Option<i64>>(0))
                     .optional()
@@ -254,7 +261,9 @@ impl SqliteStorage {
             let conn = self.conn.clone();
             move || -> anyhow::Result<Option<String>> {
                 let conn = conn.blocking_lock();
-                let mut stmt = conn.prepare("SELECT hostname FROM services WHERE id=?1").map_err(|e| anyhow::anyhow!(e))?;
+                let mut stmt = conn
+                    .prepare("SELECT hostname FROM services WHERE id=?1")
+                    .map_err(|e| anyhow::anyhow!(e))?;
                 let val: Option<Option<String>> = stmt
                     .query_row(params![id], |row| row.get::<_, Option<String>>(0))
                     .optional()

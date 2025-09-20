@@ -1,0 +1,11 @@
+[profile.default]
+# Hard timeout for each test. Any test exceeding this will be terminated
+# and marked as failed instead of hanging.
+test-timeout = "60s"
+
+# Optional: mark tests as slow if they take too long (does not fail by itself)
+# slow-timeout = { period = "30s", terminate-after = 3 }
+
+[profile.ci]
+# Give CI a bit more headroom
+test-timeout = "120s"

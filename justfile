@@ -13,13 +13,17 @@ build:
 build-release:
     cargo build --release
 
-# Run all tests
+# Run all tests (prefer nextest for per-test timeouts; fall back to cargo test)
 test:
-    cargo test
+    cargo nextest run || cargo test
 
 # Run tests with nextest (if available)
 test-nextest:
     cargo nextest run || cargo test
+
+# Run tests in CI profile (longer timeout), falling back to cargo test
+test-ci:
+    cargo nextest run --profile ci || cargo test
 
 # Run tests with coverage
 test-coverage:
@@ -79,8 +83,9 @@ deny:
 install-deps:
     cargo install cargo-nextest cargo-deny cargo-audit
 
-# Full CI pipeline
-ci: build test lint-all deny gen-schemas
+# Full CI pipeline (use nextest CI profile with longer timeout, fall back to cargo test)
+ci: build lint-all deny gen-schemas
+    cargo nextest run --profile ci || cargo test
     @echo "✓ All CI checks passed"
 
 # Start the daemon
