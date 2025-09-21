@@ -295,7 +295,7 @@ mod tests {
         let guard1 = allocator.reserve(Some(preferred_port));
 
         match guard1 {
-            Ok(_guard1) => {
+            Ok(guard1) => {
                 // Verify it's properly reserved in our table
                 assert!(RESERVATIONS.contains_key(&preferred_port));
 
@@ -326,7 +326,9 @@ mod tests {
                         // This could happen if all ports in range are busy, which is ok
                     }
                 }
-                // _guard1 is dropped here, releasing the port
+                // Keep the first guard alive until the end of this block to ensure the
+                // reservation remains during collision assertions (avoid early drop under NLL)
+                let _keep_alive = &guard1;
             }
             Err(CoreError::PortInUse(_)) => {
                 // Port was already in use by the system - skip the test

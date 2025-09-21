@@ -10,7 +10,7 @@ use schema::ClientConfig;
 #[tokio::test]
 async fn test_cli_start_with_config_removes_unlisted_services() -> CliResult<()> {
     let timeout = Duration::from_secs(45);
-    tokio::time::timeout(timeout, async {
+    tokio::time::timeout(timeout, async move {
         // Isolate HOME for SQLite and CANOPUS_IPC_SOCKET for UDS
         let tmp = tempfile::tempdir().expect("tempdir");
         let home = tmp.path().join("home");
@@ -27,7 +27,7 @@ async fn test_cli_start_with_config_removes_unlisted_services() -> CliResult<()>
 
         // Create a runtime config that lists only an unknown service to force deletion of known ones
         let runtime_path = tmp.path().join("runtime.toml");
-        std::fs::write(&runtime_path, "[bogus]\\nhostname=\\\"x\\\"\\nport=5000\\n").unwrap();
+        std::fs::write(&runtime_path, "[bogus]\nhostname=\"x\"\nport=5000\n").unwrap();
 
         // Bootstrap supervisors + IPC server (UDS)
         let boot = bootstrap_with_runtime(Some(services_path.clone()), None)
@@ -64,7 +64,7 @@ async fn test_cli_start_with_config_removes_unlisted_services() -> CliResult<()>
         // Cleanup
         boot.shutdown().await;
         daemon_handle.abort();
-        Ok(())
+        Ok::<(), cli::CliError>(())
     })
     .await
     .expect("test timed out after 45s")?;

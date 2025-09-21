@@ -9,7 +9,7 @@ use schema::ClientConfig;
 #[tokio::test]
 async fn test_cli_start_with_config_reaches_ready() -> CliResult<()> {
     let timeout = Duration::from_secs(60);
-    tokio::time::timeout(timeout, async {
+    tokio::time::timeout(timeout, async move {
         // Isolate HOME for SQLite and CANOPUS_IPC_SOCKET for UDS
         let tmp = tempfile::tempdir().expect("tempdir");
         let home = tmp.path().join("home");
@@ -60,7 +60,7 @@ async fn test_cli_start_with_config_reaches_ready() -> CliResult<()> {
         // Cleanup
         boot.shutdown().await;
         daemon_handle.abort();
-        Ok(())
+        Ok::<(), cli::CliError>(())
     })
     .await
     .expect("test timed out after 60s")?;

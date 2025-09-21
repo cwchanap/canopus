@@ -528,7 +528,7 @@ impl ControlPlane for NoopControlPlane {
         &self,
         _service_id: &str,
         _from_seq: Option<u64>,
-    ) -> Result<mpsc::Receiver<schema::ServiceEvent>> {
+    ) -> Result<mpsc::Receiver<ServiceEvent>> {
         let (_tx, rx) = mpsc::channel(1);
         Ok(rx)
     }

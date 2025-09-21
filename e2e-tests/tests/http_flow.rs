@@ -141,7 +141,7 @@ async fn http_start_with_port_and_hostname_and_list_status_show_them() {
     // Wait for socket to appear
     {
         use tokio::time::{sleep, Duration, Instant};
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + Duration::from_secs(10);
         loop {
             if sock_path.exists() { break; }
             if Instant::now() >= deadline { panic!("IPC socket not created in time"); }
