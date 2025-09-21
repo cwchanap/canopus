@@ -1,3 +1,4 @@
+#![allow(unused_crate_dependencies)]
 //! Test utilities for CLI crate integration tests.
 
 use std::time::Duration;

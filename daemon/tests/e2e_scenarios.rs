@@ -31,6 +31,7 @@ fn toy_bin_path() -> PathBuf {
 
 // removed stray e2e_http helper (moved to e2e-tests crate)
 
+#[allow(dead_code)]
 fn make_e2e_http_services_toml(bin_path: &Path) -> String {
     // Placeholder ports; supervisor will override on start
     let placeholder_port = 1u16;
@@ -155,7 +156,8 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
 
         // Write services TOML
         let cfg_path = base.join("services.toml");
-        std::fs::write(&cfg_path, make_services_toml(&toy_path, port)).expect("write services.toml");
+        std::fs::write(&cfg_path, make_services_toml(&toy_path, port))
+            .expect("write services.toml");
 
         // Start bootstrap (supervisors + IPC server)
         let boot = daemon::bootstrap::bootstrap(Some(cfg_path.clone()))
@@ -200,7 +202,10 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
         assert_eq!(services[0].id, "toy-http");
 
         // Start service (no explicit port/hostname)
-        client.start("toy-http", None, None).await.expect("start ok");
+        client
+            .start("toy-http", None, None)
+            .await
+            .expect("start ok");
 
         // Tail logs and expect a "ready" line
         let mut log_rx = client.tail_logs("toy-http", None).await.expect("tail ok");

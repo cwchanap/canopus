@@ -273,18 +273,16 @@ impl SupervisorHandle {
     pub async fn get_pid(&self) -> Result<Option<u32>> {
         let (tx, rx) = oneshot::channel();
         self.send(ControlMsg::GetPid { response: tx })?;
-        rx.await.map_err(|_| {
-            crate::CoreError::ServiceError("Failed to get PID response".to_string())
-        })
+        rx.await
+            .map_err(|_| crate::CoreError::ServiceError("Failed to get PID response".to_string()))
     }
 
     /// Get the current effective service specification from the supervisor task
     pub async fn get_spec(&self) -> Result<ServiceSpec> {
         let (tx, rx) = oneshot::channel();
         self.send(ControlMsg::GetSpec { response: tx })?;
-        rx.await.map_err(|_| {
-            crate::CoreError::ServiceError("Failed to get spec response".to_string())
-        })
+        rx.await
+            .map_err(|_| crate::CoreError::ServiceError("Failed to get spec response".to_string()))
     }
 
     /// Check if the service is healthy based on current state and health checks

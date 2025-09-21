@@ -1,11 +1,12 @@
+#![allow(unused_crate_dependencies)]
 use std::env;
 use std::time::Duration;
 
-use schema::ServiceState;
 use cli::{Client, Result as CliResult};
 use daemon::bootstrap::bootstrap_with_runtime;
 use daemon::storage::SqliteStorage;
 use schema::ClientConfig;
+use schema::ServiceState;
 
 #[tokio::test]
 async fn test_cli_start_with_config_removes_unlisted_services() -> CliResult<()> {
@@ -35,15 +36,25 @@ async fn test_cli_start_with_config_removes_unlisted_services() -> CliResult<()>
             .expect("bootstrap_with_runtime");
 
         // Start a TCP daemon server on a test port so CLI.start() can succeed
-        let daemon_cfg = schema::DaemonConfig { host: "127.0.0.1".into(), port: 49384, ..Default::default() };
+        let daemon_cfg = schema::DaemonConfig {
+            host: "127.0.0.1".into(),
+            port: 49384,
+            ..Default::default()
+        };
         let daemon = daemon::Daemon::new(daemon_cfg);
-        let daemon_handle = tokio::spawn(async move { let _ = daemon.start().await; });
+        let daemon_handle = tokio::spawn(async move {
+            let _ = daemon.start().await;
+        });
 
         // Give servers a brief moment to bind
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         // Run CLI start_with_config which should stop and delete unlisted services
-        let client_cfg = ClientConfig { daemon_host: "127.0.0.1".into(), daemon_port: 49384, timeout_seconds: 5 };
+        let client_cfg = ClientConfig {
+            daemon_host: "127.0.0.1".into(),
+            daemon_port: 49384,
+            timeout_seconds: 5,
+        };
         let client = Client::new(client_cfg);
         client.start_with_config(Some(runtime_path.clone())).await?;
 

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Repo-local wrapper that runs the dev CLI with cargo run.
+# Usage: ./canopus <command>
+
+exec cargo run -q --bin canopus -- "$@"
+

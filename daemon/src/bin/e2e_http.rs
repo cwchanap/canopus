@@ -20,10 +20,7 @@ fn handle_client(mut stream: TcpStream) {
     // Naive path detection from the first line
     let req = String::from_utf8_lossy(&buf);
     let first_line = req.lines().next().unwrap_or("");
-    let path = first_line
-        .split_whitespace()
-        .nth(1)
-        .unwrap_or("/");
+    let path = first_line.split_whitespace().nth(1).unwrap_or("/");
 
     let (status_line, body) = if path == "/health" {
         ("HTTP/1.1 200 OK\r\n", "healthy")

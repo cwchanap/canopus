@@ -1,9 +1,12 @@
 use daemon::bootstrap;
 use std::time::Duration;
 // Silence unused crate dependency lints for workspace-wide dev deps
+use anyhow as _;
+use async_trait as _;
 use canopus_core as _;
 use clap as _;
 use ipc as _;
+use rusqlite as _;
 use schema as _;
 use serde_json as _;
 use thiserror as _;

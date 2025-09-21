@@ -9,9 +9,17 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+/// SQLite-backed storage adapter for daemon service metadata (port/hostname, etc.)
 #[derive(Clone)]
+#[allow(missing_debug_implementations)]
 pub struct SqliteStorage {
     conn: Arc<Mutex<Connection>>,
+}
+
+impl std::fmt::Debug for SqliteStorage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SqliteStorage").finish()
+    }
 }
 
 #[async_trait::async_trait]
@@ -62,7 +70,7 @@ impl SqliteStorage {
 
         let conn = Connection::open(db_path)?;
         // Enable WAL for better concurrency and durability
-        conn.pragma_update(None, "journal_mode", &"WAL").ok();
+        conn.pragma_update(None, "journal_mode", "WAL").ok();
         conn.execute_batch(
             r#"
             CREATE TABLE IF NOT EXISTS services (

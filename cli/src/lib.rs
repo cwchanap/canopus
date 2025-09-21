@@ -7,11 +7,11 @@ pub mod error;
 pub use error::{CliError, Result};
 use ipc::IpcClient;
 use schema::{ClientConfig, Message, Response};
-use tracing::error;
-use tokio::time::{sleep, Duration};
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::collections::HashSet;
+use tokio::time::{sleep, Duration};
+use tracing::error;
 
 use canopus_core::config::{load_simple_services_from_toml_path, SimpleServicesFile};
 use ipc::uds_client::JsonRpcClient;
@@ -37,14 +37,17 @@ impl Client {
         self.start().await?;
 
         // If no config provided, nothing more to do
-        let Some(cfg_path) = config else { return Ok(()); };
+        let Some(cfg_path) = config else {
+            return Ok(());
+        };
 
         // Parse simple config: tables per service id with optional hostname/port
         let simple: SimpleServicesFile = load_simple_services_from_toml_path(&cfg_path)
             .map_err(|e| CliError::DaemonError(format!("config error: {}", e)))?;
 
         // Connect to local UDS control plane
-        let socket = std::env::var("CANOPUS_IPC_SOCKET").unwrap_or_else(|_| "/tmp/canopus.sock".to_string());
+        let socket =
+            std::env::var("CANOPUS_IPC_SOCKET").unwrap_or_else(|_| "/tmp/canopus.sock".to_string());
         let uds = JsonRpcClient::new(socket, std::env::var("CANOPUS_IPC_TOKEN").ok());
 
         // Gather current services from daemon
@@ -88,9 +91,10 @@ impl Client {
             println!(
                 "Started '{}'{}{}",
                 id,
-                cfg.port.map(|p| format!(" on port {}", p)).unwrap_or_default(),
-                cfg
-                    .hostname
+                cfg.port
+                    .map(|p| format!(" on port {}", p))
+                    .unwrap_or_default(),
+                cfg.hostname
                     .as_ref()
                     .map(|h| format!(" with host {}", h))
                     .unwrap_or_default()
@@ -111,12 +115,19 @@ impl Client {
     /// Get daemon status
     pub async fn status(&self) -> Result<()> {
         match self.send_message(Message::Status).await {
-            Ok(Response::Status { running, uptime_seconds, pid, version }) => {
+            Ok(Response::Status {
+                running,
+                uptime_seconds,
+                pid,
+                version,
+            }) => {
                 println!("Daemon Status:");
                 println!("  Running: {}", running);
                 println!("  Uptime: {} seconds", uptime_seconds);
                 println!("  PID: {}", pid);
-                if let Some(v) = version { println!("  Version: {}", v); }
+                if let Some(v) = version {
+                    println!("  Version: {}", v);
+                }
             }
             Ok(Response::Error { message, code }) => {
                 error!("Error getting status: {}", message);
@@ -152,22 +163,25 @@ impl Client {
             Ok(resp) => match resp {
                 Response::Ok { message } => {
                     println!("✓ {}", message);
-                    return Ok(());
+                    Ok(())
                 }
                 Response::Error { message, code } => {
                     // Treat already running as success
                     if matches!(code.as_deref(), Some("DAEMON_ALREADY_RUNNING")) {
                         println!("✓ Daemon already running");
-                        return Ok(());
+                        Ok(())
+                    } else {
+                        error!("Failed to start daemon: {}", message);
+                        if let Some(c) = code {
+                            error!("Error code: {}", c);
+                        }
+                        Err(CliError::DaemonError(message))
                     }
-                    error!("Failed to start daemon: {}", message);
-                    if let Some(c) = code { error!("Error code: {}", c); }
-                    return Err(CliError::DaemonError(message));
                 }
                 _ => {
                     let err = "Unexpected response type".to_string();
                     error!("{}", err);
-                    return Err(CliError::DaemonError(err));
+                    Err(CliError::DaemonError(err))
                 }
             },
             Err(CliError::IpcError(ipc_err)) => {
@@ -189,7 +203,9 @@ impl Client {
                                 Ok(())
                             } else {
                                 error!("Failed to start daemon: {}", message);
-                                if let Some(c) = code { error!("Error code: {}", c); }
+                                if let Some(c) = code {
+                                    error!("Error code: {}", c);
+                                }
                                 Err(CliError::DaemonError(message))
                             }
                         }
@@ -284,15 +300,13 @@ impl Client {
     /// Get daemon semantic version via TCP Status response
     pub async fn version(&self) -> Result<()> {
         match self.send_message(Message::Status).await? {
-            Response::Status { version, .. } => {
-                match version {
-                    Some(v) => {
-                        println!("{}", v);
-                        Ok(())
-                    }
-                    None => Err(CliError::DaemonError("version unavailable".into())),
+            Response::Status { version, .. } => match version {
+                Some(v) => {
+                    println!("{}", v);
+                    Ok(())
                 }
-            }
+                None => Err(CliError::DaemonError("version unavailable".into())),
+            },
             Response::Error { message, .. } => Err(CliError::DaemonError(message)),
             _ => Err(CliError::DaemonError("Unexpected response".into())),
         }
@@ -306,14 +320,19 @@ impl Client {
         while start.elapsed() < timeout {
             match self.send_message(Message::Status).await {
                 Ok(Response::Status { running, .. }) => {
-                    if running { return Ok(()); }
+                    if running {
+                        return Ok(());
+                    }
                 }
                 Ok(_) => { /* keep trying */ }
-                Err(e) => { last_err = Some(e); }
+                Err(e) => {
+                    last_err = Some(e);
+                }
             }
             sleep(Duration::from_millis(200)).await;
         }
-        Err(last_err.unwrap_or_else(|| CliError::ConnectionFailed("Timed out waiting for daemon".into())))
+        Err(last_err
+            .unwrap_or_else(|| CliError::ConnectionFailed("Timed out waiting for daemon".into())))
     }
 
     fn spawn_daemon_background(&self) -> Result<()> {
@@ -321,12 +340,18 @@ impl Client {
         if let Ok(path) = std::env::current_exe() {
             if let Some(bin_dir) = path.parent() {
                 // Replace canopus with daemon, preserving .exe suffix on Windows if any
-                let file_name = if cfg!(windows) { "daemon.exe" } else { "daemon" };
+                let file_name = if cfg!(windows) {
+                    "daemon.exe"
+                } else {
+                    "daemon"
+                };
                 let daemon_path: PathBuf = bin_dir.join(file_name);
                 if daemon_path.exists() {
                     let _child = Command::new(&daemon_path)
-                        .arg("--host").arg(&self.config.daemon_host)
-                        .arg("--port").arg(self.config.daemon_port.to_string())
+                        .arg("--host")
+                        .arg(&self.config.daemon_host)
+                        .arg("--port")
+                        .arg(self.config.daemon_port.to_string())
                         .stdin(Stdio::null())
                         .stdout(Stdio::null())
                         .stderr(Stdio::null())
@@ -339,8 +364,10 @@ impl Client {
 
         // Fallback: rely on PATH to find a `daemon` binary
         let _child = Command::new("daemon")
-            .arg("--host").arg(&self.config.daemon_host)
-            .arg("--port").arg(self.config.daemon_port.to_string())
+            .arg("--host")
+            .arg(&self.config.daemon_host)
+            .arg("--port")
+            .arg(self.config.daemon_port.to_string())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())

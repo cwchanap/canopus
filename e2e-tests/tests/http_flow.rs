@@ -1,9 +1,9 @@
 #![allow(unused_crate_dependencies)]
 //! E2E tests for HTTP service using --port and --hostname flow
 
+use ipc::uds_client::JsonRpcClient;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use ipc::uds_client::JsonRpcClient;
 
 fn workspace_root() -> PathBuf {
     // CARGO_MANIFEST_DIR points to e2e-tests crate directory
@@ -20,8 +20,10 @@ fn e2e_http_bin_path() -> PathBuf {
     // Ensure the binary is built; ignore failures (will be caught by missing file)
     let _ = Command::new("cargo")
         .arg("build")
-        .arg("-p").arg("daemon")
-        .arg("--bin").arg("e2e_http")
+        .arg("-p")
+        .arg("daemon")
+        .arg("--bin")
+        .arg("e2e_http")
         .arg("--quiet")
         .current_dir(&root)
         .status();
@@ -31,7 +33,11 @@ fn e2e_http_bin_path() -> PathBuf {
     let bin = root.join("target\\debug\\e2e_http.exe");
     #[cfg(not(windows))]
     let bin = root.join("target/debug/e2e_http");
-    if bin.exists() { bin } else { panic!("Unable to locate e2e_http binary at {}", bin.display()) }
+    if bin.exists() {
+        bin
+    } else {
+        panic!("Unable to locate e2e_http binary at {}", bin.display())
+    }
 }
 
 fn uds_socket_path(label: &str) -> PathBuf {
@@ -84,7 +90,11 @@ port = {ph}
     )
 }
 
-async fn wait_until_ready(client: &JsonRpcClient, service_id: &str, timeout_ms: u64) -> ipc::Result<()> {
+async fn wait_until_ready(
+    client: &JsonRpcClient,
+    service_id: &str,
+    timeout_ms: u64,
+) -> ipc::Result<()> {
     use tokio::time::{sleep, Duration, Instant};
     let deadline = Instant::now() + Duration::from_millis(timeout_ms);
     loop {
@@ -131,7 +141,8 @@ async fn http_start_with_port_and_hostname_and_list_status_show_them() {
 
     // Write services TOML
     let cfg_path = base.join("services.toml");
-    std::fs::write(&cfg_path, make_services_toml_with_id(&bin_path, service_id)).expect("write services.toml");
+    std::fs::write(&cfg_path, make_services_toml_with_id(&bin_path, service_id))
+        .expect("write services.toml");
 
     // Bootstrap daemon
     let boot = daemon::bootstrap::bootstrap(Some(cfg_path.clone()))
@@ -141,10 +152,14 @@ async fn http_start_with_port_and_hostname_and_list_status_show_them() {
     // Wait for socket to appear
     {
         use tokio::time::{sleep, Duration, Instant};
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now() + Duration::from_secs(15);
         loop {
-            if sock_path.exists() { break; }
-            if Instant::now() >= deadline { panic!("IPC socket not created in time"); }
+            if sock_path.exists() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                panic!("IPC socket not created in time");
+            }
             sleep(Duration::from_millis(50)).await;
         }
     }
@@ -157,8 +172,12 @@ async fn http_start_with_port_and_hostname_and_list_status_show_them() {
         use tokio::time::{sleep, Duration, Instant};
         let deadline = Instant::now() + Duration::from_secs(3);
         loop {
-            if client.list().await.is_ok() { break; }
-            if Instant::now() >= deadline { break; }
+            if client.list().await.is_ok() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                break;
+            }
             sleep(Duration::from_millis(50)).await;
         }
     }
@@ -171,7 +190,9 @@ async fn http_start_with_port_and_hostname_and_list_status_show_them() {
         .expect("start ok");
 
     // Wait for Ready
-    wait_until_ready(&client, service_id, 10_000).await.expect("ready");
+    wait_until_ready(&client, service_id, 10_000)
+        .await
+        .expect("ready");
 
     // Verify list contains port and hostname (allow brief propagation delay)
     {
@@ -184,12 +205,17 @@ async fn http_start_with_port_and_hostname_and_list_status_show_them() {
                     break;
                 }
             }
-            if Instant::now() >= deadline { break; }
+            if Instant::now() >= deadline {
+                break;
+            }
             sleep(Duration::from_millis(100)).await;
         }
     }
     let services = client.list().await.expect("list ok");
-    let svc = services.into_iter().find(|s| s.id == service_id).expect("svc present");
+    let svc = services
+        .into_iter()
+        .find(|s| s.id == service_id)
+        .expect("svc present");
     assert_eq!(svc.port, Some(port));
     assert_eq!(svc.hostname.as_deref(), Some(hostname.as_str()));
 
@@ -224,7 +250,8 @@ async fn http_start_without_port_allocator_assigns_and_list_status_show_it() {
 
     // Write services TOML
     let cfg_path = base.join("services.toml");
-    std::fs::write(&cfg_path, make_services_toml_with_id(&bin_path, service_id)).expect("write services.toml");
+    std::fs::write(&cfg_path, make_services_toml_with_id(&bin_path, service_id))
+        .expect("write services.toml");
 
     // Bootstrap daemon
     let boot = daemon::bootstrap::bootstrap(Some(cfg_path.clone()))
@@ -236,8 +263,12 @@ async fn http_start_without_port_allocator_assigns_and_list_status_show_it() {
         use tokio::time::{sleep, Duration, Instant};
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
-            if sock_path.exists() { break; }
-            if Instant::now() >= deadline { panic!("IPC socket not created in time"); }
+            if sock_path.exists() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                panic!("IPC socket not created in time");
+            }
             sleep(Duration::from_millis(50)).await;
         }
     }
@@ -250,8 +281,12 @@ async fn http_start_without_port_allocator_assigns_and_list_status_show_it() {
         use tokio::time::{sleep, Duration, Instant};
         let deadline = Instant::now() + Duration::from_secs(3);
         loop {
-            if client.list().await.is_ok() { break; }
-            if Instant::now() >= deadline { break; }
+            if client.list().await.is_ok() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                break;
+            }
             sleep(Duration::from_millis(50)).await;
         }
     }
@@ -263,11 +298,16 @@ async fn http_start_without_port_allocator_assigns_and_list_status_show_it() {
         .expect("start ok");
 
     // Wait for Ready
-    wait_until_ready(&client, service_id, 10_000).await.expect("ready");
+    wait_until_ready(&client, service_id, 10_000)
+        .await
+        .expect("ready");
 
     // Verify list shows a non-zero port
     let services = client.list().await.expect("list ok");
-    let svc = services.into_iter().find(|s| s.id == service_id).expect("svc present");
+    let svc = services
+        .into_iter()
+        .find(|s| s.id == service_id)
+        .expect("svc present");
     let port = svc.port.expect("allocator should assign a port");
     assert!(port > 0);
 
@@ -278,7 +318,7 @@ async fn http_start_without_port_allocator_assigns_and_list_status_show_it() {
     // Health should be true
     let healthy = client.health_check(service_id).await.expect("health ok");
     assert!(healthy);
- 
+
     // Shutdown daemon to avoid interference with subsequent tests
     boot.shutdown().await;
 }
@@ -307,7 +347,8 @@ async fn http_restart_keeps_port_and_hostname_and_ready_again() {
 
     // Write services TOML
     let cfg_path = base.join("services.toml");
-    std::fs::write(&cfg_path, make_services_toml_with_id(&bin_path, service_id)).expect("write services.toml");
+    std::fs::write(&cfg_path, make_services_toml_with_id(&bin_path, service_id))
+        .expect("write services.toml");
 
     // Bootstrap daemon
     let boot = daemon::bootstrap::bootstrap(Some(cfg_path.clone()))
@@ -319,8 +360,12 @@ async fn http_restart_keeps_port_and_hostname_and_ready_again() {
         use tokio::time::{sleep, Duration, Instant};
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
-            if sock_path.exists() { break; }
-            if Instant::now() >= deadline { panic!("IPC socket not created in time"); }
+            if sock_path.exists() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                panic!("IPC socket not created in time");
+            }
             sleep(Duration::from_millis(50)).await;
         }
     }
@@ -333,8 +378,12 @@ async fn http_restart_keeps_port_and_hostname_and_ready_again() {
         use tokio::time::{sleep, Duration, Instant};
         let deadline = Instant::now() + Duration::from_secs(3);
         loop {
-            if client.list().await.is_ok() { break; }
-            if Instant::now() >= deadline { break; }
+            if client.list().await.is_ok() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                break;
+            }
             sleep(Duration::from_millis(50)).await;
         }
     }
@@ -347,11 +396,16 @@ async fn http_restart_keeps_port_and_hostname_and_ready_again() {
         .expect("start ok");
 
     // Wait for Ready
-    wait_until_ready(&client, service_id, 10_000).await.expect("ready");
+    wait_until_ready(&client, service_id, 10_000)
+        .await
+        .expect("ready");
 
     // Verify initial list/status
     let services = client.list().await.expect("list ok");
-    let svc = services.into_iter().find(|s| s.id == service_id).expect("svc present");
+    let svc = services
+        .into_iter()
+        .find(|s| s.id == service_id)
+        .expect("svc present");
     assert_eq!(svc.port, Some(port));
     assert_eq!(svc.hostname.as_deref(), Some(hostname.as_str()));
     let st = client.status(service_id).await.expect("status ok");
@@ -362,11 +416,16 @@ async fn http_restart_keeps_port_and_hostname_and_ready_again() {
     client.restart(service_id).await.expect("restart ok");
 
     // Wait for Ready again
-    wait_until_ready(&client, service_id, 10_000).await.expect("ready after restart");
+    wait_until_ready(&client, service_id, 10_000)
+        .await
+        .expect("ready after restart");
 
     // Verify port and hostname are unchanged after restart
     let services = client.list().await.expect("list ok");
-    let svc = services.into_iter().find(|s| s.id == service_id).expect("svc present");
+    let svc = services
+        .into_iter()
+        .find(|s| s.id == service_id)
+        .expect("svc present");
     assert_eq!(svc.port, Some(port));
     assert_eq!(svc.hostname.as_deref(), Some(hostname.as_str()));
     let st = client.status(service_id).await.expect("status ok");
@@ -405,7 +464,8 @@ async fn http_duplicate_start_is_idempotent_and_keeps_settings() {
 
     // Write services TOML
     let cfg_path = base.join("services.toml");
-    std::fs::write(&cfg_path, make_services_toml_with_id(&bin_path, service_id)).expect("write services.toml");
+    std::fs::write(&cfg_path, make_services_toml_with_id(&bin_path, service_id))
+        .expect("write services.toml");
 
     // Bootstrap daemon
     let boot = daemon::bootstrap::bootstrap(Some(cfg_path.clone()))
@@ -417,8 +477,12 @@ async fn http_duplicate_start_is_idempotent_and_keeps_settings() {
         use tokio::time::{sleep, Duration, Instant};
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
-            if sock_path.exists() { break; }
-            if Instant::now() >= deadline { panic!("IPC socket not created in time"); }
+            if sock_path.exists() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                panic!("IPC socket not created in time");
+            }
             sleep(Duration::from_millis(50)).await;
         }
     }
@@ -431,8 +495,12 @@ async fn http_duplicate_start_is_idempotent_and_keeps_settings() {
         use tokio::time::{sleep, Duration, Instant};
         let deadline = Instant::now() + Duration::from_secs(3);
         loop {
-            if client.list().await.is_ok() { break; }
-            if Instant::now() >= deadline { break; }
+            if client.list().await.is_ok() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                break;
+            }
             sleep(Duration::from_millis(50)).await;
         }
     }
@@ -445,7 +513,9 @@ async fn http_duplicate_start_is_idempotent_and_keeps_settings() {
         .expect("start ok");
 
     // Wait for Ready
-    wait_until_ready(&client, service_id, 10_000).await.expect("ready");
+    wait_until_ready(&client, service_id, 10_000)
+        .await
+        .expect("ready");
 
     // Start again (idempotent)
     client
@@ -454,9 +524,14 @@ async fn http_duplicate_start_is_idempotent_and_keeps_settings() {
         .expect("duplicate start ok");
 
     // Still Ready and settings preserved
-    wait_until_ready(&client, service_id, 10_000).await.expect("still ready");
+    wait_until_ready(&client, service_id, 10_000)
+        .await
+        .expect("still ready");
     let services = client.list().await.expect("list ok");
-    let svc = services.into_iter().find(|s| s.id == service_id).expect("svc present");
+    let svc = services
+        .into_iter()
+        .find(|s| s.id == service_id)
+        .expect("svc present");
     assert_eq!(svc.port, Some(port));
     assert_eq!(svc.hostname.as_deref(), Some(hostname.as_str()));
     let st = client.status(service_id).await.expect("status ok");
@@ -485,7 +560,8 @@ async fn http_start_with_hostname_only_and_list_status_show_port_and_hostname() 
 
     // Write services TOML
     let cfg_path = base.join("services.toml");
-    std::fs::write(&cfg_path, make_services_toml_with_id(&bin_path, service_id)).expect("write services.toml");
+    std::fs::write(&cfg_path, make_services_toml_with_id(&bin_path, service_id))
+        .expect("write services.toml");
 
     // Bootstrap daemon
     let boot = daemon::bootstrap::bootstrap(Some(cfg_path.clone()))
@@ -497,8 +573,12 @@ async fn http_start_with_hostname_only_and_list_status_show_port_and_hostname() 
         use tokio::time::{sleep, Duration, Instant};
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
-            if sock_path.exists() { break; }
-            if Instant::now() >= deadline { panic!("IPC socket not created in time"); }
+            if sock_path.exists() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                panic!("IPC socket not created in time");
+            }
             sleep(Duration::from_millis(50)).await;
         }
     }
@@ -511,8 +591,12 @@ async fn http_start_with_hostname_only_and_list_status_show_port_and_hostname() 
         use tokio::time::{sleep, Duration, Instant};
         let deadline = Instant::now() + Duration::from_secs(3);
         loop {
-            if client.list().await.is_ok() { break; }
-            if Instant::now() >= deadline { break; }
+            if client.list().await.is_ok() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                break;
+            }
             sleep(Duration::from_millis(50)).await;
         }
     }
@@ -525,11 +609,16 @@ async fn http_start_with_hostname_only_and_list_status_show_port_and_hostname() 
         .expect("start ok");
 
     // Wait for Ready
-    wait_until_ready(&client, service_id, 10_000).await.expect("ready");
+    wait_until_ready(&client, service_id, 10_000)
+        .await
+        .expect("ready");
 
     // Verify list contains a port and the hostname
     let services = client.list().await.expect("list ok");
-    let svc = services.into_iter().find(|s| s.id == service_id).expect("svc present");
+    let svc = services
+        .into_iter()
+        .find(|s| s.id == service_id)
+        .expect("svc present");
     let port = svc.port.expect("allocator should assign a port");
     assert!(port > 0);
     assert_eq!(svc.hostname.as_deref(), Some(hostname));

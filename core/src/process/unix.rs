@@ -63,7 +63,7 @@ pub fn spawn_with(
         command.current_dir(dir);
     }
     if !envs.is_empty() {
-        command.envs(envs.iter().map(|(k, v)| (k, v)));
+        command.envs(envs.iter());
     }
     // Detach stdin so services do not block waiting for terminal input
     command.stdin(Stdio::null());

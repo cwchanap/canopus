@@ -1,10 +1,11 @@
+#![allow(unused_crate_dependencies)]
 use std::env;
 use std::time::Duration;
 
-use schema::ServiceState;
 use cli::{Client, Result as CliResult};
 use daemon::bootstrap::bootstrap_with_runtime;
 use schema::ClientConfig;
+use schema::ServiceState;
 
 #[tokio::test]
 async fn test_cli_start_with_config_reaches_ready() -> CliResult<()> {
@@ -31,15 +32,25 @@ async fn test_cli_start_with_config_reaches_ready() -> CliResult<()> {
             .expect("bootstrap_with_runtime");
 
         // Start a TCP daemon server on a test port so CLI.start() can succeed
-        let daemon_cfg = schema::DaemonConfig { host: "127.0.0.1".into(), port: 49384, ..Default::default() };
+        let daemon_cfg = schema::DaemonConfig {
+            host: "127.0.0.1".into(),
+            port: 49384,
+            ..Default::default()
+        };
         let daemon = daemon::Daemon::new(daemon_cfg);
-        let daemon_handle = tokio::spawn(async move { let _ = daemon.start().await; });
+        let daemon_handle = tokio::spawn(async move {
+            let _ = daemon.start().await;
+        });
 
         // Give servers a brief moment to bind
         tokio::time::sleep(Duration::from_millis(150)).await;
 
         // Run CLI start_with_config which should start services per runtime.toml and wait for Ready
-        let client_cfg = ClientConfig { daemon_host: "127.0.0.1".into(), daemon_port: 49384, timeout_seconds: 15 };
+        let client_cfg = ClientConfig {
+            daemon_host: "127.0.0.1".into(),
+            daemon_port: 49384,
+            timeout_seconds: 15,
+        };
         let client = Client::new(client_cfg);
         client.start_with_config(Some(runtime_path.clone())).await?;
 
@@ -47,12 +58,20 @@ async fn test_cli_start_with_config_reaches_ready() -> CliResult<()> {
         let uds = ipc::uds_client::JsonRpcClient::new(&socket_path, None);
         for id in ["web", "api"] {
             let detail = uds.status(id).await.expect("status");
-            assert!(matches!(detail.state, ServiceState::Ready | ServiceState::Starting | ServiceState::Spawning));
+            assert!(matches!(
+                detail.state,
+                ServiceState::Ready | ServiceState::Starting | ServiceState::Spawning
+            ));
             // If not Ready yet, give it a little more time
             if detail.state != ServiceState::Ready {
                 tokio::time::sleep(Duration::from_millis(300)).await;
                 let detail2 = uds.status(id).await.expect("status2");
-                assert_eq!(detail2.state, ServiceState::Ready, "{} should become Ready", id);
+                assert_eq!(
+                    detail2.state,
+                    ServiceState::Ready,
+                    "{} should become Ready",
+                    id
+                );
             }
             assert!(detail.pid.is_some(), "{} should have a PID after start", id);
         }

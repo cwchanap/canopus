@@ -5,8 +5,8 @@
 #![allow(unused_crate_dependencies)]
 
 use clap::Parser;
-use daemon::Daemon;
 use daemon::bootstrap::bootstrap_with_runtime;
+use daemon::Daemon;
 use schema::DaemonConfig;
 use tracing::{error, info};
 
@@ -39,9 +39,11 @@ async fn main() -> daemon::Result<()> {
     info!("Starting Canopus Daemon");
 
     // Load configuration (in a real app, this might come from a config file)
-    let mut config = DaemonConfig::default();
-    config.host = opts.host.clone();
-    config.port = opts.port;
+    let config = DaemonConfig {
+        host: opts.host.clone(),
+        port: opts.port,
+        ..Default::default()
+    };
 
     // Create and start the daemon (TCP prototype server)
     let daemon = Daemon::new(config);

@@ -18,6 +18,7 @@
 //! - `canopus.version`
 
 use crate::{IpcError, Result};
+use schema::ServiceEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
@@ -25,7 +26,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
-use schema::ServiceEvent;
 
 /// Metadata store for per-service runtime info (e.g., port, hostname)
 #[async_trait::async_trait]
@@ -308,7 +308,10 @@ async fn route_method(
                 .get("serviceId")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
-            let port = params.get("port").and_then(|v| v.as_u64()).map(|n| n as u16);
+            let port = params
+                .get("port")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as u16);
             let hostname = params
                 .get("hostname")
                 .and_then(|v| v.as_str())
@@ -448,7 +451,12 @@ async fn write_notification_locked(
 #[allow(missing_docs)]
 pub trait ControlPlane: Send + Sync {
     async fn list(&self) -> Result<Vec<ServiceSummary>>;
-    async fn start(&self, service_id: &str, port: Option<u16>, hostname: Option<String>) -> Result<()>;
+    async fn start(
+        &self,
+        service_id: &str,
+        port: Option<u16>,
+        hostname: Option<String>,
+    ) -> Result<()>;
     async fn stop(&self, service_id: &str) -> Result<()>;
     async fn restart(&self, service_id: &str) -> Result<()>;
     async fn status(&self, service_id: &str) -> Result<ServiceDetail>;
@@ -501,7 +509,12 @@ impl ControlPlane for NoopControlPlane {
     async fn list(&self) -> Result<Vec<ServiceSummary>> {
         Ok(vec![])
     }
-    async fn start(&self, _service_id: &str, _port: Option<u16>, _hostname: Option<String>) -> Result<()> {
+    async fn start(
+        &self,
+        _service_id: &str,
+        _port: Option<u16>,
+        _hostname: Option<String>,
+    ) -> Result<()> {
         Err(IpcError::ProtocolError("start not implemented".into()))
     }
     async fn stop(&self, _service_id: &str) -> Result<()> {
@@ -549,14 +562,17 @@ pub mod supervisor_adapter {
     use std::sync::Arc;
     use tokio::sync::{broadcast, mpsc};
 
+    // Reduce type complexity for runtime metadata storage
+    type RuntimeMeta = HashMap<String, (Option<u16>, Option<String>)>;
+
     /// Control plane adapter backed by a set of SupervisorHandles and a shared event bus
     #[allow(missing_debug_implementations)]
     pub struct SupervisorControlPlane {
         handles: HashMap<String, SupervisorHandle>,
         event_tx: broadcast::Sender<ServiceEvent>,
-        meta: Option<Arc<dyn super::ServiceMetaStore>>, 
+        meta: Option<Arc<dyn super::ServiceMetaStore>>,
         // Volatile in-memory metadata to reflect values immediately during this process lifetime
-        runtime_meta: std::sync::Mutex<HashMap<String, (Option<u16>, Option<String>)>>,
+        runtime_meta: std::sync::Mutex<RuntimeMeta>,
     }
 
     impl SupervisorControlPlane {
@@ -564,11 +580,11 @@ pub mod supervisor_adapter {
             handles: HashMap<String, SupervisorHandle>,
             event_tx: broadcast::Sender<ServiceEvent>,
         ) -> Self {
-            Self { 
-                handles, 
-                event_tx, 
-                meta: None, 
-                runtime_meta: std::sync::Mutex::new(HashMap::new()) 
+            Self {
+                handles,
+                event_tx,
+                meta: None,
+                runtime_meta: std::sync::Mutex::new(HashMap::new()),
             }
         }
 
@@ -589,7 +605,10 @@ pub mod supervisor_adapter {
                 let _ = f.read_to_string(&mut contents);
             }
             // If already present, skip
-            if contents.lines().any(|l| l.contains(tag) && l.contains(hostname)) {
+            if contents
+                .lines()
+                .any(|l| l.contains(tag) && l.contains(hostname))
+            {
                 return;
             }
             let line = format!("127.0.0.1\t{} {}\n", hostname, tag);
@@ -600,7 +619,11 @@ pub mod supervisor_adapter {
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("Cannot open /etc/hosts for appending: {} (binding '{}' not installed)", e, hostname);
+                    tracing::warn!(
+                        "Cannot open /etc/hosts for appending: {} (binding '{}' not installed)",
+                        e,
+                        hostname
+                    );
                 }
             }
         }
@@ -613,15 +636,21 @@ pub mod supervisor_adapter {
             let mut contents = String::new();
             match std::fs::File::open(path) {
                 Ok(mut f) => {
-                    if f.read_to_string(&mut contents).is_err() { return; }
+                    if f.read_to_string(&mut contents).is_err() {
+                        return;
+                    }
                 }
                 Err(_) => return,
             }
-            let new_contents: String = contents
+            // Build new contents efficiently without intermediate String allocations per line
+            let mut new_contents = String::with_capacity(contents.len());
+            for s in contents
                 .lines()
                 .filter(|l| !(l.contains(tag) && l.contains(hostname)))
-                .map(|s| format!("{}\n", s))
-                .collect();
+            {
+                new_contents.push_str(s);
+                new_contents.push('\n');
+            }
             if new_contents != contents {
                 if let Ok(mut f) = std::fs::File::create(path) {
                     let _ = f.write_all(new_contents.as_bytes());
@@ -651,8 +680,12 @@ pub mod supervisor_adapter {
                 if port.is_none() || hostname.is_none() {
                     if let Ok(map) = self.runtime_meta.lock() {
                         if let Some((rp, rh)) = map.get(id) {
-                            if port.is_none() { port = *rp; }
-                            if hostname.is_none() { hostname = rh.clone(); }
+                            if port.is_none() {
+                                port = *rp;
+                            }
+                            if hostname.is_none() {
+                                hostname = rh.clone();
+                            }
                         }
                     }
                 }
@@ -688,7 +721,12 @@ pub mod supervisor_adapter {
             Ok(out)
         }
 
-        async fn start(&self, service_id: &str, port: Option<u16>, hostname: Option<String>) -> Result<()> {
+        async fn start(
+            &self,
+            service_id: &str,
+            port: Option<u16>,
+            hostname: Option<String>,
+        ) -> Result<()> {
             let handle = self
                 .handles
                 .get(service_id)
@@ -748,8 +786,12 @@ pub mod supervisor_adapter {
             {
                 if let Ok(mut map) = self.runtime_meta.lock() {
                     let entry = map.entry(service_id.to_string()).or_insert((None, None));
-                    if chosen_port.is_some() { entry.0 = chosen_port; }
-                    if let Some(hn) = &hostname { entry.1 = Some(hn.clone()); }
+                    if chosen_port.is_some() {
+                        entry.0 = chosen_port;
+                    }
+                    if let Some(hn) = &hostname {
+                        entry.1 = Some(hn.clone());
+                    }
                 }
             }
 
@@ -818,8 +860,12 @@ pub mod supervisor_adapter {
             if port.is_none() || hostname.is_none() {
                 if let Ok(map) = self.runtime_meta.lock() {
                     if let Some((rp, rh)) = map.get(service_id) {
-                        if port.is_none() { port = *rp; }
-                        if hostname.is_none() { hostname = rh.clone(); }
+                        if port.is_none() {
+                            port = *rp;
+                        }
+                        if hostname.is_none() {
+                            hostname = rh.clone();
+                        }
                     }
                 }
             }

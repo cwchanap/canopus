@@ -1,3 +1,4 @@
+#![allow(unused_crate_dependencies)]
 use std::env;
 use std::time::Duration;
 
@@ -43,18 +44,12 @@ async fn test_runtime_preload_and_ipc_list() {
         let store = SqliteStorage::open_default().expect("open sqlite");
 
         let web_port = store.fetch_port("web").await.expect("fetch web port");
-        let web_host = store
-            .fetch_hostname("web")
-            .await
-            .expect("fetch web host");
+        let web_host = store.fetch_hostname("web").await.expect("fetch web host");
         assert_eq!(web_port, Some(8000));
         assert_eq!(web_host.as_deref(), Some("web.local"));
 
         let _api_port = store.fetch_port("api").await.expect("fetch api port");
-        let api_host = store
-            .fetch_hostname("api")
-            .await
-            .expect("fetch api host");
+        let api_host = store.fetch_hostname("api").await.expect("fetch api host");
         // api port is optional in the example runtime.toml
         assert_eq!(api_host.as_deref(), Some("api.local"));
 

@@ -4,10 +4,7 @@
 //! starts supervisors, spins up the IPC server with a supervisor control
 //! plane, and installs graceful shutdown handling primitives.
 
-use canopus_core::config::{
-    load_services_from_toml_path,
-    load_simple_services_from_toml_path,
-};
+use canopus_core::config::{load_services_from_toml_path, load_simple_services_from_toml_path};
 use canopus_core::persistence::{
     default_snapshot_path, write_snapshot_atomic, RegistrySnapshot, ServiceSnapshot,
 };
@@ -21,8 +18,8 @@ use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
-use crate::{DaemonError, Result};
 use crate::storage::SqliteStorage;
+use crate::{DaemonError, Result};
 
 /// Handle to manage the running components
 #[allow(missing_debug_implementations)]
@@ -131,7 +128,14 @@ pub async fn bootstrap_with_runtime(
 
         // Seed persistent storage row for this service (Idle, no PID)
         if let Err(e) = storage
-            .upsert_service(&spec.id, &spec.name, &format!("{:?}", schema::ServiceState::Idle), None, None, None)
+            .upsert_service(
+                &spec.id,
+                &spec.name,
+                &format!("{:?}", schema::ServiceState::Idle),
+                None,
+                None,
+                None,
+            )
             .await
         {
             warn!("Failed to seed storage for service {}: {}", spec.id, e);
@@ -170,7 +174,10 @@ pub async fn bootstrap_with_runtime(
                             }
                         }
                     } else {
-                        warn!("Runtime config references unknown service '{}'; ignoring", id);
+                        warn!(
+                            "Runtime config references unknown service '{}'; ignoring",
+                            id
+                        );
                     }
                 }
             }
