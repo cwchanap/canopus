@@ -132,9 +132,18 @@ Quick start:
 
 - CLI apply runtime config and sync DB (start/skip/stop+delete):
   ```bash
+  # Legacy alias (still supported):
   canopus start --config runtime.toml
+
+  # Preferred flag name:
+  canopus start --runtime-config runtime.toml
   ```
   See example: `examples/runtime.toml`
+
+- CLI spawn daemon with services and apply runtime in one shot:
+  ```bash
+  canopus start --services-config examples/services.toml --runtime-config examples/runtime.toml
+  ```
 
 ## Testing
 

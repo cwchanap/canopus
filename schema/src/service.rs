@@ -47,7 +47,7 @@ pub struct ServiceSpec {
     pub environment: HashMap<String, String>,
 
     /// Working directory for the process
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", alias = "cwd")]
     pub working_directory: Option<String>,
 
     /// Optional external route/host to expose when service becomes ready

@@ -19,6 +19,23 @@ pub struct ServicesFile {
     pub services: Vec<ServiceSpec>,
 }
 
+/// Alternate services file format: top-level tables keyed by service id
+///
+/// This allows writing:
+/// [web]
+/// name = "Web"
+/// command = "npm"
+///
+/// [api]
+/// name = "API"
+/// command = "python3"
+#[derive(Debug, Deserialize)]
+struct ServicesMapFile {
+    /// Map of service_id -> table of ServiceSpec fields (without id)
+    #[serde(flatten)]
+    services: HashMap<String, toml::Value>,
+}
+
 /// Simple per-service runtime configuration (hostname/port)
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -268,10 +285,50 @@ pub fn load_services_from_toml_path(path: impl AsRef<Path>) -> Result<ServicesFi
 
 /// Load services from a TOML string
 pub fn load_services_from_toml_str(input: &str) -> Result<ServicesFile> {
-    let cfg: ServicesFile = toml::from_str(input)
-        .map_err(|e| CoreError::ConfigurationError(format!("TOML parse error: {}", e)))?;
-    cfg.validate()?;
-    Ok(cfg)
+    // First try the canonical [[services]] array format
+    match toml::from_str::<ServicesFile>(input) {
+        Ok(cfg) => {
+            cfg.validate()?;
+            Ok(cfg)
+        }
+        Err(_e) => {
+            // Fall back to keyed-by-id tables format
+            let map: ServicesMapFile = toml::from_str(input).map_err(|e| {
+                CoreError::ConfigurationError(format!("TOML parse error: {}", e))
+            })?;
+
+            // Convert each table into a ServiceSpec by injecting the id field
+            let mut services: Vec<ServiceSpec> = Vec::with_capacity(map.services.len());
+            for (id, value) in map.services.into_iter() {
+                let table = match value {
+                    toml::Value::Table(t) => t,
+                    other => {
+                        return Err(CoreError::ConfigurationError(format!(
+                            "Service '{}' must be a table, found {:?}",
+                            id, other.type_str()
+                        )));
+                    }
+                };
+
+                // Insert id into the table if not already present
+                let mut table_with_id = table;
+                table_with_id.entry("id".to_string()).or_insert(toml::Value::String(id.clone()));
+
+                // Deserialize into ServiceSpec using the schema serde config (handles defaults and aliases)
+                let spec: ServiceSpec = table_with_id
+                    .try_into()
+                    .map_err(|e| CoreError::ConfigurationError(format!(
+                        "Failed to parse service '{}': {}",
+                        id, e
+                    )))?;
+                services.push(spec);
+            }
+
+            let cfg = ServicesFile { services };
+            cfg.validate()?;
+            Ok(cfg)
+        }
+    }
 }
 
 #[cfg(test)]

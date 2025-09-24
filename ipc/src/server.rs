@@ -292,16 +292,20 @@ async fn route_method(
             JsonRpcResponse::ok(id, serde_json::json!({"version": config.version }))
         }
         "canopus.list" => {
-            let services = router.list().await?;
-            JsonRpcResponse::ok(id, serde_json::json!({"services": services}))
+            match router.list().await {
+                Ok(services) => JsonRpcResponse::ok(id, serde_json::json!({"services": services})),
+                Err(e) => JsonRpcResponse::err(id, -32000, format!("list failed: {}", e), None),
+            }
         }
         "canopus.status" => {
             let sid = params
                 .get("serviceId")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
-            let detail = router.status(sid).await?;
-            JsonRpcResponse::ok(id, serde_json::to_value(detail).unwrap())
+            match router.status(sid).await {
+                Ok(detail) => JsonRpcResponse::ok(id, serde_json::to_value(detail).unwrap()),
+                Err(e) => JsonRpcResponse::err(id, -32000, format!("status failed: {}", e), None),
+            }
         }
         "canopus.start" => {
             let sid = params
@@ -316,24 +320,30 @@ async fn route_method(
                 .get("hostname")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
-            router.start(sid, port, hostname).await?;
-            JsonRpcResponse::ok(id, serde_json::json!({"ok": true}))
+            match router.start(sid, port, hostname).await {
+                Ok(()) => JsonRpcResponse::ok(id, serde_json::json!({"ok": true})),
+                Err(e) => JsonRpcResponse::err(id, -32000, format!("start failed: {}", e), None),
+            }
         }
         "canopus.stop" => {
             let sid = params
                 .get("serviceId")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
-            router.stop(sid).await?;
-            JsonRpcResponse::ok(id, serde_json::json!({"ok": true}))
+            match router.stop(sid).await {
+                Ok(()) => JsonRpcResponse::ok(id, serde_json::json!({"ok": true})),
+                Err(e) => JsonRpcResponse::err(id, -32000, format!("stop failed: {}", e), None),
+            }
         }
         "canopus.restart" => {
             let sid = params
                 .get("serviceId")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
-            router.restart(sid).await?;
-            JsonRpcResponse::ok(id, serde_json::json!({"ok": true}))
+            match router.restart(sid).await {
+                Ok(()) => JsonRpcResponse::ok(id, serde_json::json!({"ok": true})),
+                Err(e) => JsonRpcResponse::err(id, -32000, format!("restart failed: {}", e), None),
+            }
         }
         "canopus.bindHost" => {
             let sid = params
@@ -344,8 +354,10 @@ async fn route_method(
                 .get("host")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| IpcError::ProtocolError("missing host".into()))?;
-            router.bind_host(sid, host).await?;
-            JsonRpcResponse::ok(id, serde_json::json!({"ok": true}))
+            match router.bind_host(sid, host).await {
+                Ok(()) => JsonRpcResponse::ok(id, serde_json::json!({"ok": true})),
+                Err(e) => JsonRpcResponse::err(id, -32000, format!("bindHost failed: {}", e), None),
+            }
         }
         "canopus.assignPort" => {
             let sid = params
@@ -356,16 +368,20 @@ async fn route_method(
                 .get("preferred")
                 .and_then(|v| v.as_u64())
                 .map(|n| n as u16);
-            let port = router.assign_port(sid, preferred).await?;
-            JsonRpcResponse::ok(id, serde_json::json!({"port": port}))
+            match router.assign_port(sid, preferred).await {
+                Ok(port) => JsonRpcResponse::ok(id, serde_json::json!({"port": port})),
+                Err(e) => JsonRpcResponse::err(id, -32000, format!("assignPort failed: {}", e), None),
+            }
         }
         "canopus.healthCheck" => {
             let sid = params
                 .get("serviceId")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
-            let healthy = router.health_check(sid).await?;
-            JsonRpcResponse::ok(id, serde_json::json!({"healthy": healthy}))
+            match router.health_check(sid).await {
+                Ok(healthy) => JsonRpcResponse::ok(id, serde_json::json!({"healthy": healthy})),
+                Err(e) => JsonRpcResponse::err(id, -32000, format!("healthCheck failed: {}", e), None),
+            }
         }
         "canopus.tailLogs" => {
             let sid = params

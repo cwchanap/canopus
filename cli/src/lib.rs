@@ -40,68 +40,8 @@ impl Client {
         let Some(cfg_path) = config else {
             return Ok(());
         };
-
-        // Parse simple config: tables per service id with optional hostname/port
-        let simple: SimpleServicesFile = load_simple_services_from_toml_path(&cfg_path)
-            .map_err(|e| CliError::DaemonError(format!("config error: {}", e)))?;
-
-        // Connect to local UDS control plane
-        let socket =
-            std::env::var("CANOPUS_IPC_SOCKET").unwrap_or_else(|_| "/tmp/canopus.sock".to_string());
-        let uds = JsonRpcClient::new(socket, std::env::var("CANOPUS_IPC_TOKEN").ok());
-
-        // Gather current services from daemon
-        let current = uds.list().await.map_err(CliError::IpcError)?;
-        let current_ids: HashSet<String> = current.iter().map(|s| s.id.clone()).collect();
-
-        // Compute desired set from config
-        let desired_ids: HashSet<String> = simple.services.keys().cloned().collect();
-
-        // Stop and delete services not in desired set
-        for s in &current {
-            if !desired_ids.contains(&s.id) {
-                // Best-effort stop
-                let _ = uds.stop(&s.id).await;
-                // Remove metadata row from SQLite
-                let _ = uds.delete_meta(&s.id).await;
-                println!("Removed service '{}' from DB (not in config)", s.id);
-            }
-        }
-
-        // For each desired service, start if idle; skip if already running
-        for (id, cfg) in &simple.services {
-            if !current_ids.contains(id) {
-                // Unknown service id to the daemon; skip with a warning
-                println!(
-                    "Warning: service '{}' not found in daemon; ensure it is defined in daemon's services config",
-                    id
-                );
-                continue;
-            }
-
-            let detail = uds.status(id).await.map_err(CliError::IpcError)?;
-            if detail.state != schema::ServiceState::Idle {
-                println!("Skipping '{}': already running ({:?})", id, detail.state);
-                continue;
-            }
-
-            uds.start(id, cfg.port, cfg.hostname.as_deref())
-                .await
-                .map_err(CliError::IpcError)?;
-            println!(
-                "Started '{}'{}{}",
-                id,
-                cfg.port
-                    .map(|p| format!(" on port {}", p))
-                    .unwrap_or_default(),
-                cfg.hostname
-                    .as_ref()
-                    .map(|h| format!(" with host {}", h))
-                    .unwrap_or_default()
-            );
-        }
-
-        Ok(())
+        // Apply the runtime config
+        return self.apply_runtime_config_path(&cfg_path).await;
     }
 
     /// Connect to the daemon and send a message
@@ -297,6 +237,140 @@ impl Client {
 }
 
 impl Client {
+    /// Apply a simple runtime config (hostname/port per service) from a file path
+    pub async fn apply_runtime_config_path(&self, cfg_path: &PathBuf) -> Result<()> {
+        // Parse simple config: tables per service id with optional hostname/port
+        let simple: SimpleServicesFile = load_simple_services_from_toml_path(cfg_path)
+            .map_err(|e| CliError::DaemonError(format!("config error: {}", e)))?;
+
+        // Connect to local UDS control plane
+        let socket =
+            std::env::var("CANOPUS_IPC_SOCKET").unwrap_or_else(|_| "/tmp/canopus.sock".to_string());
+        let uds = JsonRpcClient::new(socket, std::env::var("CANOPUS_IPC_TOKEN").ok());
+
+        // Gather current services from daemon
+        let current = uds.list().await.map_err(CliError::IpcError)?;
+        let current_ids: HashSet<String> = current.iter().map(|s| s.id.clone()).collect();
+
+        // Compute desired set from config
+        let desired_ids: HashSet<String> = simple.services.keys().cloned().collect();
+
+        // Stop and delete services not in desired set
+        for s in &current {
+            if !desired_ids.contains(&s.id) {
+                // Best-effort stop
+                let _ = uds.stop(&s.id).await;
+                // Remove metadata row from SQLite
+                let _ = uds.delete_meta(&s.id).await;
+                println!("Removed service '{}' from DB (not in config)", s.id);
+            }
+        }
+
+        // For each desired service, start if idle; skip if already running
+        for (id, cfg) in &simple.services {
+            if !current_ids.contains(id) {
+                // Unknown service id to the daemon; skip with a warning
+                println!(
+                    "Warning: service '{}' not found in daemon; ensure it is defined in daemon's services config",
+                    id
+                );
+                continue;
+            }
+
+            let detail = uds.status(id).await.map_err(CliError::IpcError)?;
+            if detail.state != schema::ServiceState::Idle {
+                println!("Skipping '{}': already running ({:?})", id, detail.state);
+                continue;
+            }
+
+            uds.start(id, cfg.port, cfg.hostname.as_deref())
+                .await
+                .map_err(CliError::IpcError)?;
+            println!(
+                "Started '{}'{}{}",
+                id,
+                cfg.port
+                    .map(|p| format!(" on port {}", p))
+                    .unwrap_or_default(),
+                cfg.hostname
+                    .as_ref()
+                    .map(|h| format!(" with host {}", h))
+                    .unwrap_or_default()
+            );
+        }
+
+        Ok(())
+    }
+}
+
+impl Client {
+    /// Start the daemon, optionally passing a full services config to the daemon when spawning,
+    /// and then apply a simple runtime config (hostname/port) via UDS.
+    pub async fn start_with_configs(
+        &self,
+        services_config: Option<PathBuf>,
+        runtime_config: Option<PathBuf>,
+    ) -> Result<()> {
+        // First try to talk to a running daemon
+        let mut need_spawn = false;
+        match self.send_message(Message::Status).await {
+            Ok(Response::Status { .. }) => {
+                // Daemon is reachable; continue
+            }
+            Ok(_) => {
+                need_spawn = true;
+            }
+            Err(CliError::IpcError(ipc_err)) => {
+                if let ipc::IpcError::ConnectionFailed(_) = ipc_err {
+                    need_spawn = true;
+                } else {
+                    return Err(CliError::IpcError(ipc_err));
+                }
+            }
+            Err(e) => return Err(e),
+        }
+
+        if need_spawn {
+            println!("Daemon not running; attempting to start it...");
+            self.spawn_daemon_background_with_configs(
+                services_config.as_ref(),
+                runtime_config.as_ref(),
+            )?;
+            // Wait up to 20s for the daemon to become reachable
+            self.wait_for_ready(Duration::from_secs(20)).await?;
+            // Send Start for symmetry
+            match self.send_message(Message::Start).await {
+                Ok(Response::Ok { message }) => {
+                    println!("✓ {}", message);
+                }
+                Ok(Response::Error { message, code }) => {
+                    if !matches!(code.as_deref(), Some("DAEMON_ALREADY_RUNNING")) {
+                        error!("Failed to start daemon: {}", message);
+                        if let Some(c) = code {
+                            error!("Error code: {}", c);
+                        }
+                        return Err(CliError::DaemonError(message));
+                    }
+                }
+                Ok(_) => {
+                    let err = "Unexpected response type".to_string();
+                    error!("{}", err);
+                    return Err(CliError::DaemonError(err));
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        // Apply runtime config if provided
+        if let Some(rt) = runtime_config.as_ref() {
+            self.apply_runtime_config_path(rt).await?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Client {
     /// Get daemon semantic version via TCP Status response
     pub async fn version(&self) -> Result<()> {
         match self.send_message(Message::Status).await? {
@@ -373,6 +447,67 @@ impl Client {
             .stderr(Stdio::null())
             .spawn()
             .map_err(CliError::IoError)?;
+        Ok(())
+    }
+
+    /// Spawn the daemon in the background, optionally passing a services config and runtime config.
+    fn spawn_daemon_background_with_configs(
+        &self,
+        services_config: Option<&PathBuf>,
+        runtime_config: Option<&PathBuf>,
+    ) -> Result<()> {
+        // Helper to append common args and optional configs
+        fn build_cmd<'a>(
+            mut cmd: Command,
+            host: &str,
+            port: u16,
+            services_config: Option<&'a PathBuf>,
+            runtime_config: Option<&'a PathBuf>,
+        ) -> Command {
+            cmd.arg("--host")
+                .arg(host)
+                .arg("--port")
+                .arg(port.to_string());
+            if let Some(p) = services_config {
+                cmd.arg("--config").arg(p);
+            }
+            if let Some(p) = runtime_config {
+                cmd.arg("--runtime-config").arg(p);
+            }
+            cmd.stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+            cmd
+        }
+
+        // Prefer spawning the daemon binary from the same target directory as this CLI binary
+        if let Ok(path) = std::env::current_exe() {
+            if let Some(bin_dir) = path.parent() {
+                let file_name = if cfg!(windows) { "daemon.exe" } else { "daemon" };
+                let daemon_path: PathBuf = bin_dir.join(file_name);
+                if daemon_path.exists() {
+                    let mut cmd = build_cmd(
+                        Command::new(&daemon_path),
+                        &self.config.daemon_host,
+                        self.config.daemon_port,
+                        services_config,
+                        runtime_config,
+                    );
+                    let _child = cmd.spawn().map_err(CliError::IoError)?;
+                    return Ok(());
+                }
+            }
+        }
+
+        // Fallback: rely on PATH to find a `daemon` binary
+        let mut cmd = build_cmd(
+            Command::new("daemon"),
+            &self.config.daemon_host,
+            self.config.daemon_port,
+            services_config,
+            runtime_config,
+        );
+        let _child = cmd.spawn().map_err(CliError::IoError)?;
         Ok(())
     }
 }

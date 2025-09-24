@@ -9,7 +9,9 @@ name = "Web Server"
 command = "python3"
 # Arguments for the command
 args = ["-m", "http.server", "8000"]
-# Optional working directory
+# Optional working directory (alias: `cwd`)
+# You can use either of the following forms:
+# cwd = "."
 # workingDirectory = "."
 # Optional hostname alias for reverse proxy
 # route = "web.local"

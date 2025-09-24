@@ -7,16 +7,22 @@ This document describes the two configuration formats supported by Canopus and h
 
 ## Service Spec TOML (daemon --config)
 
-The daemon accepts a full service specification file to define services, commands, health checks, and restart policies. The file schema is a top-level `services` array of `ServiceSpec` objects.
+The daemon accepts a full service specification file to define services, commands, health checks, and restart policies.
 
-Example `services.toml`:
+Two equivalent formats are supported:
+
+- Array-of-tables (canonical): top-level `[[services]]` array of `ServiceSpec` objects
+- Keyed-by-id tables (shorthand): each top-level table is a service identified by the section name
+
+Example (array-of-tables):
 ```toml
 [[services]]
 id = "web"
 name = "Web Server"
 command = "python3"
 args = ["-m", "http.server"]
-# Optional working directory
+# Optional working directory (alias: `cwd`)
+# cwd = "/path/to/app"
 # workingDirectory = "/path/to/app"
 # Optional hostname alias for reverse proxy
 # route = "web.local"
@@ -47,12 +53,43 @@ gracefulTimeoutSecs = 5
 startupTimeoutSecs = 15
 ```
 
+Example (keyed-by-id tables):
+```toml
+[web]
+name = "Web Server"
+command = "python3"
+args = ["-m", "http.server"]
+# Optional working directory (alias: `cwd`)
+cwd = "/path/to/app"
+# route = "web.local"
+restartPolicy = "OnFailure"
+gracefulTimeoutSecs = 5
+startupTimeoutSecs = 15
+
+[web.readinessCheck]
+checkType = { type = "tcp", port = 8000 }
+intervalSecs = 2
+timeoutSecs = 3
+successThreshold = 1
+
+[api]
+name = "API Server"
+command = "python3"
+args = ["-m", "http.server", "9000"]
+restartPolicy = "Never"
+```
+
 Run the daemon with a service spec file:
 ```bash
 canopus-daemon --config services.toml
 ```
 
 This defines which services the daemon manages. Each service becomes a supervisor with its own lifecycle, health monitoring, and restart policy.
+
+Notes for keyed-by-id format:
+- Top-level tables must all be service definitions (no unrelated top-level keys)
+- Nested tables like `[web.backoffConfig]`, `[web.healthCheck]`, `[web.readinessCheck]` are supported
+- Field names use camelCase per schema (e.g., `workingDirectory`, `restartPolicy`, `backoffConfig`)
 
 ## Simple Runtime TOML (CLI --config or daemon --runtime-config)
 
@@ -75,12 +112,11 @@ hostname = "api.local"
 
 ### Using the CLI to apply runtime config
 
-Use the CLI to start the daemon if needed and synchronize runtime state with the config:
+Use the CLI's services subcommand to synchronize runtime state with the config (starts idle services, stops and deletes unlisted services):
 ```bash
-canopus start --config runtime.toml
+canopus services start --config runtime.toml
 ```
 Behavior:
-- Starts the daemon if not running
 - Loads `runtime.toml`
 - For each service in the file:
   - If the service is known to the daemon and idle, the CLI starts it and applies the hostname/port
@@ -115,17 +151,23 @@ Behavior:
   ```bash
   canopus-daemon --config services.toml
   ```
-- Apply runtime settings and keep DB in sync:
+  See example: `examples/services.toml`
+- Apply runtime settings and keep DB in sync (after daemon has loaded your services):
   ```bash
-  canopus start --config runtime.toml
+  canopus services start --config runtime.toml
   ```
+  See example: `examples/runtime.toml`
 - Optionally preload runtime settings on daemon startup:
   ```bash
   canopus-daemon --config services.toml --runtime-config runtime.toml
   ```
 
+Notes:
+- The runtime config only controls per-service hostname/port; service definitions must exist in the daemon's `services.toml`
+- Removing a service from the runtime config is treated as a signal to stop it and delete its DB row when you use the CLI `canopus services start --config` workflow.
+
 ## Notes
 
 - The CLI’s `--config` file is the simple runtime format. The daemon’s `--config` is the full Service Spec TOML.
-- Removing a service from the runtime config is treated as a signal to stop it and delete its DB row when you use the CLI `canopus start --config` workflow.
+- Removing a service from the runtime config is treated as a signal to stop it and delete its DB row when you use the CLI `canopus services start --config` workflow.
 - Future extensions could allow creating fully new services directly from a config file that includes the entire `ServiceSpec` per service ID.
