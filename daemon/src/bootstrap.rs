@@ -8,13 +8,14 @@ use canopus_core::config::{load_services_from_toml_path, load_simple_services_fr
 use canopus_core::persistence::{
     default_snapshot_path, write_snapshot_atomic, RegistrySnapshot, ServiceSnapshot,
 };
-use canopus_core::proxy::NullProxyAdapter as ProxyAdapterNull;
-use canopus_core::proxy_api::NullProxy;
+use canopus_core::proxy::ApiProxyAdapter;
+use canopus_core::proxy_api::LocalReverseProxy;
 use canopus_core::supervisor::{spawn_supervisor, SupervisorConfig, UnixProcessAdapter};
 use schema::ServiceSpec;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::process::Command as StdCommand;
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
@@ -27,9 +28,58 @@ pub struct BootstrapHandle {
     #[allow(missing_docs)]
     pub services: Vec<ServiceSpec>,
     #[allow(missing_docs)]
-    pub proxy: Arc<NullProxy>,
+    pub proxy: Arc<LocalReverseProxy>,
     server_task: Option<JoinHandle<ipc::Result<()>>>,
     handles: HashMap<String, canopus_core::supervisor::SupervisorHandle>,
+}
+
+/// Attempt to retrieve a login shell PATH suitable for user-level tools (npm, nvm shims, etc.)
+///
+/// Precedence:
+/// - CANOPUS_LOGIN_PATH env var if set (explicit override)
+/// - /bin/zsh -lc 'echo -n $PATH'
+/// - /bin/bash -lc 'echo -n $PATH'
+/// - Fallback: std::env::var("PATH")
+fn resolve_login_path() -> Option<String> {
+    if let Ok(v) = std::env::var("CANOPUS_LOGIN_PATH") {
+        let t = v.trim();
+        if !t.is_empty() {
+            return Some(t.to_string());
+        }
+    }
+
+    // Try zsh interactive login shell (covers ~/.zprofile and ~/.zshrc where nvm is usually set)
+    if let Ok(out) = StdCommand::new("/bin/zsh").args(["-lic", "echo -n $PATH"]).output() {
+        if out.status.success() {
+            let s = String::from_utf8_lossy(&out.stdout).to_string();
+            if !s.trim().is_empty() {
+                return Some(s);
+            }
+        }
+    }
+
+    // Fallback: zsh login-only
+    if let Ok(out) = StdCommand::new("/bin/zsh").args(["-lc", "echo -n $PATH"]).output() {
+        if out.status.success() {
+            let s = String::from_utf8_lossy(&out.stdout).to_string();
+            if !s.trim().is_empty() {
+                return Some(s);
+            }
+        }
+    }
+
+    // Try bash login shell
+    if let Ok(out) = StdCommand::new("/bin/bash").args(["-lc", "echo -n $PATH"]).output() {
+        if out.status.success() {
+            let s = String::from_utf8_lossy(&out.stdout).to_string();
+            if !s.trim().is_empty() {
+                return Some(s);
+            }
+        }
+    }
+
+    // Fallback to current process PATH
+    std::env::var("PATH").ok()
 }
 
 impl BootstrapHandle {
@@ -65,7 +115,10 @@ pub async fn bootstrap_with_runtime(
         vec![]
     };
 
-    let proxy = Arc::new(NullProxy::new());
+    // Initialize local reverse proxy (user-level, listens on 127.0.0.1:9080 by default)
+    let proxy_listen = std::env::var("CANOPUS_PROXY_LISTEN")
+        .unwrap_or_else(|_| "127.0.0.1:9080".to_string());
+    let proxy = Arc::new(LocalReverseProxy::new(&proxy_listen));
 
     // Initialize persistent storage (SQLite in $HOME/.canopus/canopus.db)
     let storage = SqliteStorage::open_default()
@@ -112,7 +165,7 @@ pub async fn bootstrap_with_runtime(
             spec: spec.clone(),
             process_adapter: adapter.clone(),
             event_tx: event_tx.clone(),
-            proxy_adapter: Arc::new(ProxyAdapterNull::new(proxy.clone())),
+            proxy_adapter: Arc::new(ApiProxyAdapter::new(proxy.clone())),
         };
         let handle = spawn_supervisor(cfg);
         // Recovery workflow: auto-start only services with Always policy
@@ -201,8 +254,11 @@ pub async fn bootstrap_with_runtime(
                 windows_pipe_name: None,
             };
             use std::sync::Arc as StdArc;
+            // Resolve a login PATH so spawned services can resolve user-level binaries like npm
+            let login_path = resolve_login_path();
             let router = SupervisorControlPlane::new(handles.clone(), event_tx.clone())
-                .with_meta_store(StdArc::new(storage.clone()));
+                .with_meta_store(StdArc::new(storage.clone()))
+                .with_login_path(login_path);
             let server = IpcServer::with_router(cfg, Arc::new(router));
             Some(tokio::spawn(async move { server.serve().await }))
         }

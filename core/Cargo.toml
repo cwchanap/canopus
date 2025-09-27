@@ -24,6 +24,8 @@ tokio = { workspace = true, features = ["net", "time", "process", "io-util"] }
 async-trait = "0.1"
 humantime = "2.1"
 dirs-next = "2.0"
+hyper = { version = "0.14", features = ["full"] }
+http = "0.2"
 
 # Unix process management
 [target.'cfg(unix)'.dependencies]

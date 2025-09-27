@@ -7,8 +7,16 @@
 //! with the same parameters should be safe and not cause errors.
 
 use crate::Result;
-use std::sync::Mutex;
-use tracing::{debug, info};
+use std::convert::Infallible;
+use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
+use tracing::{debug, info, warn};
+
+use dashmap::DashMap;
+use http::header::{HeaderName, HeaderValue, HOST};
+use hyper::client::HttpConnector;
+use hyper::service::{make_service_fn, service_fn};
+use hyper::{Body, Client, Request, Response, Server, Uri};
 
 /// Proxy API trait defining the interface for proxy operations
 ///
@@ -160,6 +168,150 @@ impl ProxyApi for NullProxy {
         }
 
         debug!("NullProxy: Successfully detached proxy for {}", host);
+        Ok(())
+    }
+}
+
+/// Lightweight local HTTP reverse proxy that listens on a configurable address
+/// (default 127.0.0.1:9080) and routes requests by Host header to a backend
+/// on 127.0.0.1:<port> as registered via `attach`.
+#[derive(Debug)]
+pub struct LocalReverseProxy {
+    routes: Arc<DashMap<String, u16>>, // hostname (lowercased, no port) -> backend port
+    listen_addr: SocketAddr,
+}
+
+impl LocalReverseProxy {
+    /// Create and start a local reverse proxy bound to `listen` (e.g., "127.0.0.1:9080").
+    /// If parsing fails, falls back to 127.0.0.1:9080.
+    pub fn new(listen: &str) -> Self {
+        let listen_addr: SocketAddr = listen
+            .parse()
+            .unwrap_or_else(|_| SocketAddr::from(([127, 0, 0, 1], 9080)));
+        let routes: Arc<DashMap<String, u16>> = Arc::new(DashMap::new());
+
+        let routes_clone = routes.clone();
+        let make_svc = make_service_fn(move |_conn| {
+            let routes = routes_clone.clone();
+            async move {
+                Ok::<_, Infallible>(service_fn(move |req| {
+                    let routes = routes.clone();
+                    async move { Self::handle_request(req, routes).await }
+                }))
+            }
+        });
+
+        // Spawn the HTTP server in the background
+        tokio::spawn(async move {
+            if let Err(e) = Server::bind(&listen_addr).serve(make_svc).await {
+                warn!("LocalReverseProxy server error on {}: {}", listen_addr, e);
+            }
+        });
+
+        info!("LocalReverseProxy listening on {}", listen_addr);
+        Self {
+            routes,
+            listen_addr,
+        }
+    }
+
+    fn normalize_host(host: &str) -> String {
+        // Lowercase, strip trailing dot, and strip port suffix
+        let mut h = host.trim().trim_end_matches('.').to_ascii_lowercase();
+        if let Some(idx) = h.rfind(':') {
+            // Split only if the suffix is a valid u16 (port)
+            if h[idx + 1..].parse::<u16>().is_ok() {
+                h.truncate(idx);
+            }
+        }
+        h
+    }
+
+    async fn handle_request(
+        req: Request<Body>,
+        routes: Arc<DashMap<String, u16>>,
+    ) -> Result<Response<Body>> {
+        // Determine host
+        let host = match req.headers().get(HOST).and_then(|v| v.to_str().ok()) {
+            Some(h) => h,
+            None => {
+                let mut resp = Response::new(Body::from("missing Host header"));
+                *resp.status_mut() = http::StatusCode::BAD_REQUEST;
+                return Ok(resp);
+            }
+        };
+        let host_key = Self::normalize_host(host);
+        let port = match routes.get(&host_key) {
+            Some(entry) => *entry.value(),
+            None => {
+                let mut resp = Response::new(Body::from(format!(
+                    "no route for host: {}",
+                    host_key
+                )));
+                *resp.status_mut() = http::StatusCode::BAD_GATEWAY;
+                return Ok(resp);
+            }
+        };
+
+        // Build backend URI: http://127.0.0.1:<port><path_and_query>
+        let path_q = req
+            .uri()
+            .path_and_query()
+            .map(|pq| pq.as_str())
+            .unwrap_or("/");
+        let target = format!("http://127.0.0.1:{}{}", port, path_q);
+        let uri: Uri = match target.parse() {
+            Ok(u) => u,
+            Err(e) => {
+                let mut resp = Response::new(Body::from(format!("bad target uri: {}", e)));
+                *resp.status_mut() = http::StatusCode::BAD_GATEWAY;
+                return Ok(resp);
+            }
+        };
+
+        // Construct new request preserving method, version, and most headers
+        let (mut parts, body) = req.into_parts();
+        parts.uri = uri;
+
+        // Add/override some forwarding headers
+        parts.headers.insert(
+            HeaderName::from_static("x-forwarded-host"),
+            HeaderValue::from_str(host).unwrap_or_else(|_| HeaderValue::from_static("")),
+        );
+        parts.headers.insert(
+            HeaderName::from_static("x-forwarded-proto"),
+            HeaderValue::from_static("http"),
+        );
+
+        let out_req = Request::from_parts(parts, body);
+
+        let client: Client<HttpConnector, Body> = Client::new();
+        match client.request(out_req).await {
+            Ok(resp) => Ok(resp),
+            Err(e) => {
+                let mut resp = Response::new(Body::from(format!(
+                    "upstream request failed: {}",
+                    e
+                )));
+                *resp.status_mut() = http::StatusCode::BAD_GATEWAY;
+                Ok(resp)
+            }
+        }
+    }
+}
+
+impl ProxyApi for LocalReverseProxy {
+    fn attach(&self, host: &str, port: u16) -> Result<()> {
+        let key = Self::normalize_host(host);
+        self.routes.insert(key.clone(), port);
+        info!("LocalReverseProxy: attach {} -> {}", key, port);
+        Ok(())
+    }
+
+    fn detach(&self, host: &str) -> Result<()> {
+        let key = Self::normalize_host(host);
+        self.routes.remove(&key);
+        info!("LocalReverseProxy: detach {}", key);
         Ok(())
     }
 }

@@ -1,9 +1,9 @@
 [cetus]
 # Human-friendly name
 name = "Web Server"
-# Executable/command to run (use Bun since npm/node are not available)
-command = "/opt/homebrew/bin/bun"
-# Arguments for the command (use only web:dev to avoid turso CLI dependency)
+# Executable/command to run (use npm; daemon injects login PATH so this resolves)
+command = "npm"
+# Arguments for the command (only web:dev to avoid turso CLI dependency)
 args = ["run", "web:dev"]
 # Working directory (alias supported: `workingDirectory`)
 cwd = "/Users/chanwaichan/workspace/cetus"

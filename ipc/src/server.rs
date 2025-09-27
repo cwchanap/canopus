@@ -589,6 +589,8 @@ pub mod supervisor_adapter {
         meta: Option<Arc<dyn super::ServiceMetaStore>>,
         // Volatile in-memory metadata to reflect values immediately during this process lifetime
         runtime_meta: std::sync::Mutex<RuntimeMeta>,
+        // Login shell PATH captured at bootstrap to allow commands like 'npm'
+        login_path: Option<String>,
     }
 
     impl SupervisorControlPlane {
@@ -601,11 +603,19 @@ pub mod supervisor_adapter {
                 event_tx,
                 meta: None,
                 runtime_meta: std::sync::Mutex::new(HashMap::new()),
+                login_path: None,
             }
         }
 
         pub fn with_meta_store(mut self, meta: Arc<dyn super::ServiceMetaStore>) -> Self {
             self.meta = Some(meta);
+            self
+        }
+
+        /// Provide a precomputed login PATH to inject into service environments when
+        /// they don't explicitly set PATH. This helps resolve commands like `npm`.
+        pub fn with_login_path(mut self, path: Option<String>) -> Self {
+            self.login_path = path;
             self
         }
 
@@ -759,9 +769,11 @@ pub mod supervisor_adapter {
                 }
             };
 
-            // If we have a port/hostname, update spec before starting
-            if chosen_port.is_some() || hostname.is_some() {
+            // Possibly update spec with port/hostname and ensure PATH if configured
+            {
                 let mut spec = handle.spec.clone();
+                let mut need_update = false;
+
                 if let Some(p) = chosen_port {
                     spec.environment.insert("PORT".to_string(), p.to_string());
                     // If readiness check is TCP, align port
@@ -770,22 +782,35 @@ pub mod supervisor_adapter {
                             *rp = p;
                         }
                     }
+                    need_update = true;
                 }
+
                 if let Some(hn) = hostname.clone() {
                     // Use route field to carry hostname for proxy integration
                     spec.route = Some(hn.clone());
+                    need_update = true;
                 }
-                handle
-                    .update_spec(spec)
-                    .map_err(|e| super::IpcError::ProtocolError(e.to_string()))?;
 
-                // Important: wait until the supervisor task applies the spec update
-                // to avoid racing Start with the previous spec (missing PORT or hostname).
-                // We don't need to use the returned value here; the await ensures ordering.
-                let _ = handle
-                    .get_spec()
-                    .await
-                    .map_err(|e| super::IpcError::ProtocolError(e.to_string()))?;
+                // Inject login PATH if available and not explicitly set in the spec
+                if let Some(lp) = &self.login_path {
+                    if !spec.environment.contains_key("PATH") {
+                        spec.environment.insert("PATH".to_string(), lp.clone());
+                        need_update = true;
+                    }
+                }
+
+                if need_update {
+                    handle
+                        .update_spec(spec)
+                        .map_err(|e| super::IpcError::ProtocolError(e.to_string()))?;
+
+                    // Important: wait until the supervisor task applies the spec update
+                    // to avoid racing Start with the previous spec (missing PORT/hostname/PATH).
+                    let _ = handle
+                        .get_spec()
+                        .await
+                        .map_err(|e| super::IpcError::ProtocolError(e.to_string()))?;
+                }
             }
 
             // Persist metadata if store present
@@ -812,9 +837,92 @@ pub mod supervisor_adapter {
             }
 
             // Best-effort bind hostname via /etc/hosts for local development
+            // Determine the effective hostname in order of precedence:
+            // 1) Start parameter `hostname`
+            // 2) Persisted metadata store
+            // 3) Volatile runtime metadata (this process lifetime)
+            // 4) Service spec `route`
             #[cfg(unix)]
-            if let Some(hn) = &hostname {
-                self.ensure_hostname_binding(hn).await;
+            {
+                let mut eff_hostname = hostname.clone();
+
+                if eff_hostname.is_none() {
+                    if let Some(meta) = &self.meta {
+                        if let Ok(Some(hn)) = meta.get_hostname(service_id).await {
+                            eff_hostname = Some(hn);
+                        }
+                    }
+                }
+
+                if eff_hostname.is_none() {
+                    if let Ok(map) = self.runtime_meta.lock() {
+                        if let Some((_rp, rh)) = map.get(service_id) {
+                            if let Some(hn) = rh.clone() {
+                                eff_hostname = Some(hn);
+                            }
+                        }
+                    }
+                }
+
+                if eff_hostname.is_none() {
+                    if let Ok(spec) = handle.get_spec().await {
+                        if let Some(route) = spec.route {
+                            if !route.is_empty() {
+                                eff_hostname = Some(route);
+                            }
+                        }
+                    }
+                }
+
+                if let Some(hn) = eff_hostname.as_deref() {
+                    self.ensure_hostname_binding(hn).await;
+                }
+            }
+
+            // Persist the effective hostname to the metadata store and update runtime metadata
+            // This mirrors the same precedence as above but runs on all platforms.
+            {
+                let mut persist_hostname = hostname.clone();
+
+                if persist_hostname.is_none() {
+                    if let Some(meta) = &self.meta {
+                        if let Ok(hn) = meta.get_hostname(service_id).await {
+                            if hn.is_some() {
+                                persist_hostname = hn;
+                            }
+                        }
+                    }
+                }
+
+                if persist_hostname.is_none() {
+                    if let Ok(map) = self.runtime_meta.lock() {
+                        if let Some((_rp, rh)) = map.get(service_id) {
+                            if let Some(hn) = rh.clone() {
+                                persist_hostname = Some(hn);
+                            }
+                        }
+                    }
+                }
+
+                if persist_hostname.is_none() {
+                    if let Ok(spec) = handle.get_spec().await {
+                        if let Some(route) = spec.route {
+                            if !route.is_empty() {
+                                persist_hostname = Some(route);
+                            }
+                        }
+                    }
+                }
+
+                if let Some(hn) = persist_hostname {
+                    if let Some(meta) = &self.meta {
+                        let _ = meta.set_hostname(service_id, Some(hn.as_str())).await;
+                    }
+                    if let Ok(mut map) = self.runtime_meta.lock() {
+                        let entry = map.entry(service_id.to_string()).or_insert((None, None));
+                        entry.1 = Some(hn);
+                    }
+                }
             }
 
             // Subscribe to state changes before starting to avoid missing Ready transition
@@ -917,13 +1025,45 @@ pub mod supervisor_adapter {
         }
 
         async fn stop(&self, service_id: &str) -> Result<()> {
-            // Best-effort unbind hostname if previously bound
-            if let Some(meta) = &self.meta {
-                if let Ok(Some(hn_string)) = meta.get_hostname(service_id).await {
-                    #[cfg(unix)]
-                    {
-                        self.remove_hostname_binding(hn_string.as_str()).await;
+            // Best-effort unbind hostname via /etc/hosts for local development
+            // Determine the effective hostname in order of precedence:
+            // 1) Persisted metadata store
+            // 2) Volatile runtime metadata
+            // 3) Service spec `route`
+            #[cfg(unix)]
+            {
+                let mut eff_hostname: Option<String> = None;
+
+                if let Some(meta) = &self.meta {
+                    if let Ok(hn) = meta.get_hostname(service_id).await {
+                        eff_hostname = hn;
                     }
+                }
+
+                if eff_hostname.is_none() {
+                    if let Ok(map) = self.runtime_meta.lock() {
+                        if let Some((_rp, rh)) = map.get(service_id) {
+                            if let Some(hn) = rh.clone() {
+                                eff_hostname = Some(hn);
+                            }
+                        }
+                    }
+                }
+
+                if eff_hostname.is_none() {
+                    if let Some(handle) = self.handles.get(service_id) {
+                        if let Ok(spec) = handle.get_spec().await {
+                            if let Some(route) = spec.route {
+                                if !route.is_empty() {
+                                    eff_hostname = Some(route);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if let Some(hn) = eff_hostname {
+                    self.remove_hostname_binding(hn.as_str()).await;
                 }
             }
 

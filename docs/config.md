@@ -155,16 +155,41 @@ Behavior:
 - Apply runtime settings and keep DB in sync (after daemon has loaded your services):
   ```bash
   canopus services start --config runtime.toml
-  ```
   See example: `examples/runtime.toml`
 - Optionally preload runtime settings on daemon startup:
   ```bash
   canopus-daemon --config services.toml --runtime-config runtime.toml
   ```
 
-Notes:
-- The runtime config only controls per-service hostname/port; service definitions must exist in the daemon's `services.toml`
-- Removing a service from the runtime config is treated as a signal to stop it and delete its DB row when you use the CLI `canopus services start --config` workflow.
+## Hostname aliases and local DNS (Unix)
+
+- The daemon attempts to bind a hostname to 127.0.0.1 by appending a line to `/etc/hosts` (tagged with `# canopus`) when a service is started via the UDS control plane.
+- The effective hostname is resolved in this precedence order:
+  1) Start parameter `--hostname`
+  2) Persisted runtime metadata (SQLite)
+  3) Volatile in-memory metadata (current daemon process)
+  4) Service spec `route` field (e.g., `route = "cetus.local.dev"`)
+- On service stop, the daemon attempts to remove the corresponding `/etc/hosts` line using the same precedence (best-effort cleanup).
+- Editing `/etc/hosts` requires elevated privileges on macOS/Linux. If the daemon does not have permission, it will log a warning and the alias will not be installed. In that case, add an entry manually:
+  ```bash
+  echo "127.0.0.1 cetus.local.dev # canopus" | sudo tee -a /etc/hosts
+  ```
+- Built-in local reverse proxy: the daemon starts a lightweight HTTP reverse proxy on `127.0.0.1:9080` and routes by Host header to the service's backend port when the service becomes Ready. You can override the listen address with `CANOPUS_PROXY_LISTEN` (e.g., `CANOPUS_PROXY_LISTEN=127.0.0.1:9090`).
+  - With this proxy, you can access services using the alias and the proxy port (e.g., `http://cetus.local.dev:9080`).
+- Without any reverse proxy, you must include the service port in the URL (the OS will default to port 80/443 otherwise):
+  ```bash
+  curl http://cetus.local.dev:4325
+  ```
+- To use aliases without specifying a port, run a local reverse proxy (e.g., Caddy, Nginx, Traefik) that listens on :80/:443 and routes by Host header. Example Caddyfile:
+  ```
+  cetus.local.dev {
+    reverse_proxy 127.0.0.1:4325
+  }
+  ```
+
+Troubleshooting:
+- If `curl http://<alias>` says "Could not resolve host", check that `/etc/hosts` has the alias and that it wasn't removed by a previous stop.
+- If the alias resolves but you get a connection error on `http://<alias>`, try `http://<alias>:<port>` or configure a reverse proxy.
 
 ## Notes
 
