@@ -27,3 +27,6 @@ tempfile = "3"
 [features]
 default = []
 supervisor = ["canopus-core"]
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.28", default-features = false, features = ["fs", "user"] }

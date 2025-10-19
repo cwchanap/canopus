@@ -483,7 +483,11 @@ impl Client {
         // Prefer spawning the daemon binary from the same target directory as this CLI binary
         if let Ok(path) = std::env::current_exe() {
             if let Some(bin_dir) = path.parent() {
-                let file_name = if cfg!(windows) { "daemon.exe" } else { "daemon" };
+                let file_name = if cfg!(windows) {
+                    "daemon.exe"
+                } else {
+                    "daemon"
+                };
                 let daemon_path: PathBuf = bin_dir.join(file_name);
                 if daemon_path.exists() {
                     let mut cmd = build_cmd(

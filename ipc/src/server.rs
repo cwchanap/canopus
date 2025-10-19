@@ -27,9 +27,11 @@ use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
+#[cfg(unix)]
+use nix::unistd::{chown, Group};
+
 /// Metadata store for per-service runtime info (e.g., port, hostname)
 #[async_trait::async_trait]
-#[allow(missing_docs)]
 pub trait ServiceMetaStore: Send + Sync {
     async fn set_port(&self, service_id: &str, port: Option<u16>) -> Result<()>;
     async fn set_hostname(&self, service_id: &str, hostname: Option<&str>) -> Result<()>;
@@ -37,6 +39,56 @@ pub trait ServiceMetaStore: Send + Sync {
     async fn get_hostname(&self, service_id: &str) -> Result<Option<String>>;
     /// Delete the metadata row for a service
     async fn delete(&self, service_id: &str) -> Result<()>;
+}
+
+#[cfg(unix)]
+fn configure_socket_permissions(path: &std::path::Path) -> Result<()> {
+    use std::env;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    let group_name = env::var("CANOPUS_SOCKET_GROUP")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "canopus".to_string());
+
+    let group = match Group::from_name(&group_name) {
+        Ok(Some(group)) => group,
+        Ok(None) => {
+            warn!(
+                "Socket group '{}' not found; leaving permissions as default",
+                group_name
+            );
+            return Ok(());
+        }
+        Err(e) => {
+            warn!(
+                "Failed to resolve socket group '{}': {}; leaving permissions as default",
+                group_name, e
+            );
+            return Ok(());
+        }
+    };
+
+    chown(path, None, Some(group.gid)).map_err(|e| {
+        IpcError::ProtocolError(format!("Failed to chown socket {:?}: {}", path, e))
+    })?;
+
+    let metadata = fs::metadata(path).map_err(|e| {
+        IpcError::ProtocolError(format!("Failed to stat socket {:?}: {}", path, e))
+    })?;
+    let mut perms = metadata.permissions();
+    perms.set_mode(0o660);
+    fs::set_permissions(path, perms).map_err(|e| {
+        IpcError::ProtocolError(format!("Failed to set permissions on {:?}: {}", path, e))
+    })?;
+
+    info!(
+        "Configured IPC socket {:?} with group '{}' and mode 660",
+        path, group_name
+    );
+
+    Ok(())
 }
 
 /// JSON-RPC 2.0 request
@@ -185,6 +237,13 @@ impl IpcServer {
         })?;
         info!("IPC server (UDS) listening at {:?}", path);
 
+        if let Err(e) = configure_socket_permissions(&path) {
+            warn!(
+                "Unable to configure socket permissions for {:?}: {}",
+                path, e
+            );
+        }
+
         loop {
             match listener.accept().await {
                 Ok((stream, _addr)) => {
@@ -291,12 +350,10 @@ async fn route_method(
         "canopus.version" => {
             JsonRpcResponse::ok(id, serde_json::json!({"version": config.version }))
         }
-        "canopus.list" => {
-            match router.list().await {
-                Ok(services) => JsonRpcResponse::ok(id, serde_json::json!({"services": services})),
-                Err(e) => JsonRpcResponse::err(id, -32000, format!("list failed: {}", e), None),
-            }
-        }
+        "canopus.list" => match router.list().await {
+            Ok(services) => JsonRpcResponse::ok(id, serde_json::json!({"services": services})),
+            Err(e) => JsonRpcResponse::err(id, -32000, format!("list failed: {}", e), None),
+        },
         "canopus.status" => {
             let sid = params
                 .get("serviceId")
@@ -370,7 +427,9 @@ async fn route_method(
                 .map(|n| n as u16);
             match router.assign_port(sid, preferred).await {
                 Ok(port) => JsonRpcResponse::ok(id, serde_json::json!({"port": port})),
-                Err(e) => JsonRpcResponse::err(id, -32000, format!("assignPort failed: {}", e), None),
+                Err(e) => {
+                    JsonRpcResponse::err(id, -32000, format!("assignPort failed: {}", e), None)
+                }
             }
         }
         "canopus.healthCheck" => {
@@ -380,7 +439,9 @@ async fn route_method(
                 .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
             match router.health_check(sid).await {
                 Ok(healthy) => JsonRpcResponse::ok(id, serde_json::json!({"healthy": healthy})),
-                Err(e) => JsonRpcResponse::err(id, -32000, format!("healthCheck failed: {}", e), None),
+                Err(e) => {
+                    JsonRpcResponse::err(id, -32000, format!("healthCheck failed: {}", e), None)
+                }
             }
         }
         "canopus.tailLogs" => {

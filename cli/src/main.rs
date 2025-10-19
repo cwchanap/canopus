@@ -4,10 +4,8 @@
 
 #![allow(unused_crate_dependencies)]
 
+use canopus_core::config::{load_services_from_toml_path, load_simple_services_from_toml_path};
 use canopus_core::ClientConfig;
-use canopus_core::config::{
-    load_services_from_toml_path, load_simple_services_from_toml_path,
-};
 use clap::{Parser, Subcommand};
 use cli::Client;
 use ipc::uds_client::JsonRpcClient;
@@ -166,7 +164,12 @@ async fn main() -> canopus_core::Result<()> {
                     }
                     Ok(())
                 }
-                ServicesCmd::Start { config, service_id, port, hostname } => {
+                ServicesCmd::Start {
+                    config,
+                    service_id,
+                    port,
+                    hostname,
+                } => {
                     if let Some(cfg_path) = config {
                         // Try simple runtime config first
                         match load_simple_services_from_toml_path(cfg_path) {
@@ -174,15 +177,20 @@ async fn main() -> canopus_core::Result<()> {
                                 // Apply runtime config semantics using the provided UDS socket
                                 // Gather current services from daemon
                                 let current = uds.list().await.map_err(anyhow_to_core)?;
-                                let current_ids: std::collections::HashSet<String> = current.iter().map(|s| s.id.clone()).collect();
-                                let desired_ids: std::collections::HashSet<String> = simple.services.keys().cloned().collect();
+                                let current_ids: std::collections::HashSet<String> =
+                                    current.iter().map(|s| s.id.clone()).collect();
+                                let desired_ids: std::collections::HashSet<String> =
+                                    simple.services.keys().cloned().collect();
 
                                 // Stop and delete services not in desired set
                                 for s in &current {
                                     if !desired_ids.contains(&s.id) {
                                         let _ = uds.stop(&s.id).await;
                                         let _ = uds.delete_meta(&s.id).await;
-                                        println!("Removed service '{}' from DB (not in config)", s.id);
+                                        println!(
+                                            "Removed service '{}' from DB (not in config)",
+                                            s.id
+                                        );
                                     }
                                 }
 
@@ -197,7 +205,10 @@ async fn main() -> canopus_core::Result<()> {
                                     }
                                     let detail = uds.status(id).await.map_err(anyhow_to_core)?;
                                     if detail.state != schema::ServiceState::Idle {
-                                        println!("Skipping '{}': already running ({:?})", id, detail.state);
+                                        println!(
+                                            "Skipping '{}': already running ({:?})",
+                                            id, detail.state
+                                        );
                                         continue;
                                     }
                                     uds.start(id, cfg.port, cfg.hostname.as_deref())
@@ -206,8 +217,13 @@ async fn main() -> canopus_core::Result<()> {
                                     println!(
                                         "Started '{}'{}{}",
                                         id,
-                                        cfg.port.map(|p| format!(" on port {}", p)).unwrap_or_default(),
-                                        cfg.hostname.as_ref().map(|h| format!(" with host {}", h)).unwrap_or_default()
+                                        cfg.port
+                                            .map(|p| format!(" on port {}", p))
+                                            .unwrap_or_default(),
+                                        cfg.hostname
+                                            .as_ref()
+                                            .map(|h| format!(" with host {}", h))
+                                            .unwrap_or_default()
                                     );
                                 }
                                 Ok(())
@@ -227,10 +243,15 @@ async fn main() -> canopus_core::Result<()> {
                                             match uds.status(&id).await {
                                                 Ok(detail) => {
                                                     if detail.state != schema::ServiceState::Idle {
-                                                        println!("Skipping '{}': already running ({:?})", id, detail.state);
+                                                        println!(
+                                                            "Skipping '{}': already running ({:?})",
+                                                            id, detail.state
+                                                        );
                                                         continue;
                                                     }
-                                                    uds.start(&id, None, None).await.map_err(anyhow_to_core)?;
+                                                    uds.start(&id, None, None)
+                                                        .await
+                                                        .map_err(anyhow_to_core)?;
                                                     println!("Started '{}'", id);
                                                 }
                                                 Err(_) => {
@@ -243,17 +264,20 @@ async fn main() -> canopus_core::Result<()> {
                                         }
                                         Ok(())
                                     }
-                                    Err(e) => Err(anyhow_to_core(ipc::IpcError::ProtocolError(format!(
-                                        "failed to parse config: {}",
-                                        e
-                                    )))),
+                                    Err(e) => Err(anyhow_to_core(ipc::IpcError::ProtocolError(
+                                        format!("failed to parse config: {}", e),
+                                    ))),
                                 }
                             }
                         }
                     } else {
                         // Single service start path
-                        let id = service_id.as_deref().expect("SERVICE_ID required unless --config is provided");
-                        uds.start(id, *port, hostname.as_deref()).await.map_err(anyhow_to_core)
+                        let id = service_id
+                            .as_deref()
+                            .expect("SERVICE_ID required unless --config is provided");
+                        uds.start(id, *port, hostname.as_deref())
+                            .await
+                            .map_err(anyhow_to_core)
                     }
                 }
                 ServicesCmd::Stop { service_id } => {

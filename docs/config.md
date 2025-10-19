@@ -174,8 +174,19 @@ Behavior:
   ```bash
   echo "127.0.0.1 cetus.local.dev # canopus" | sudo tee -a /etc/hosts
   ```
-- Built-in local reverse proxy: the daemon starts a lightweight HTTP reverse proxy on `127.0.0.1:9080` and routes by Host header to the service's backend port when the service becomes Ready. You can override the listen address with `CANOPUS_PROXY_LISTEN` (e.g., `CANOPUS_PROXY_LISTEN=127.0.0.1:9090`).
-  - With this proxy, you can access services using the alias and the proxy port (e.g., `http://cetus.local.dev:9080`).
+- Built-in local reverse proxy: the daemon starts a lightweight HTTP reverse proxy bound to `127.0.0.1:80`. This requires elevated privileges on most systems. Run the daemon under sudo, but you can keep CLI service commands unprivileged by adopting a "docker-style" socket group:
+  - `sudo groupadd canopus` (Linux) or `sudo dscl . -create /Groups/canopus` (macOS) the first time.
+  - Add your user to the group (`sudo usermod -aG canopus $USER` on Linux, or `sudo dscl . -append /Groups/canopus GroupMembership $USER` on macOS) and re-login so group membership applies.
+  - Start the daemon normally under sudo:
+    ```bash
+    sudo ./canopus start
+    ```
+    The daemon automatically sets `/tmp/canopus.sock` to group `canopus` with mode `660`. If the group does not exist, it logs a warning and leaves default permissions.
+  - Once the socket is group-accessible, you can run CLI service commands without sudo:
+    ```bash
+    ./canopus services start cetus --port 4325
+    ```
+  When the daemon runs with permission to bind port 80, you can use `http://service.localhost` with no explicit port.
 - Without any reverse proxy, you must include the service port in the URL (the OS will default to port 80/443 otherwise):
   ```bash
   curl http://cetus.local.dev:4325

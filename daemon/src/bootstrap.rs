@@ -14,8 +14,8 @@ use canopus_core::supervisor::{spawn_supervisor, SupervisorConfig, UnixProcessAd
 use schema::ServiceSpec;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::process::Command as StdCommand;
+use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
@@ -49,7 +49,10 @@ fn resolve_login_path() -> Option<String> {
     }
 
     // Try zsh interactive login shell (covers ~/.zprofile and ~/.zshrc where nvm is usually set)
-    if let Ok(out) = StdCommand::new("/bin/zsh").args(["-lic", "echo -n $PATH"]).output() {
+    if let Ok(out) = StdCommand::new("/bin/zsh")
+        .args(["-lic", "echo -n $PATH"])
+        .output()
+    {
         if out.status.success() {
             let s = String::from_utf8_lossy(&out.stdout).to_string();
             if !s.trim().is_empty() {
@@ -59,7 +62,10 @@ fn resolve_login_path() -> Option<String> {
     }
 
     // Fallback: zsh login-only
-    if let Ok(out) = StdCommand::new("/bin/zsh").args(["-lc", "echo -n $PATH"]).output() {
+    if let Ok(out) = StdCommand::new("/bin/zsh")
+        .args(["-lc", "echo -n $PATH"])
+        .output()
+    {
         if out.status.success() {
             let s = String::from_utf8_lossy(&out.stdout).to_string();
             if !s.trim().is_empty() {
@@ -69,7 +75,10 @@ fn resolve_login_path() -> Option<String> {
     }
 
     // Try bash login shell
-    if let Ok(out) = StdCommand::new("/bin/bash").args(["-lc", "echo -n $PATH"]).output() {
+    if let Ok(out) = StdCommand::new("/bin/bash")
+        .args(["-lc", "echo -n $PATH"])
+        .output()
+    {
         if out.status.success() {
             let s = String::from_utf8_lossy(&out.stdout).to_string();
             if !s.trim().is_empty() {
@@ -115,10 +124,13 @@ pub async fn bootstrap_with_runtime(
         vec![]
     };
 
-    // Initialize local reverse proxy (user-level, listens on 127.0.0.1:9080 by default)
-    let proxy_listen = std::env::var("CANOPUS_PROXY_LISTEN")
-        .unwrap_or_else(|_| "127.0.0.1:9080".to_string());
-    let proxy = Arc::new(LocalReverseProxy::new(&proxy_listen));
+    // Initialize local reverse proxy on 127.0.0.1:80 for friendly URLs like
+    // http://service.localhost. Binding this port typically requires elevated
+    // privileges (sudo/root).
+    let proxy = Arc::new(
+        LocalReverseProxy::new("127.0.0.1:80")
+            .map_err(|e| DaemonError::ServerError(format!("proxy init failed: {}", e)))?,
+    );
 
     // Initialize persistent storage (SQLite in $HOME/.canopus/canopus.db)
     let storage = SqliteStorage::open_default()

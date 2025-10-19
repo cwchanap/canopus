@@ -293,9 +293,8 @@ pub fn load_services_from_toml_str(input: &str) -> Result<ServicesFile> {
         }
         Err(_e) => {
             // Fall back to keyed-by-id tables format
-            let map: ServicesMapFile = toml::from_str(input).map_err(|e| {
-                CoreError::ConfigurationError(format!("TOML parse error: {}", e))
-            })?;
+            let map: ServicesMapFile = toml::from_str(input)
+                .map_err(|e| CoreError::ConfigurationError(format!("TOML parse error: {}", e)))?;
 
             // Convert each table into a ServiceSpec by injecting the id field
             let mut services: Vec<ServiceSpec> = Vec::with_capacity(map.services.len());
@@ -305,22 +304,25 @@ pub fn load_services_from_toml_str(input: &str) -> Result<ServicesFile> {
                     other => {
                         return Err(CoreError::ConfigurationError(format!(
                             "Service '{}' must be a table, found {:?}",
-                            id, other.type_str()
+                            id,
+                            other.type_str()
                         )));
                     }
                 };
 
                 // Insert id into the table if not already present
                 let mut table_with_id = table;
-                table_with_id.entry("id".to_string()).or_insert(toml::Value::String(id.clone()));
+                table_with_id
+                    .entry("id".to_string())
+                    .or_insert(toml::Value::String(id.clone()));
 
                 // Deserialize into ServiceSpec using the schema serde config (handles defaults and aliases)
-                let spec: ServiceSpec = table_with_id
-                    .try_into()
-                    .map_err(|e| CoreError::ConfigurationError(format!(
+                let spec: ServiceSpec = table_with_id.try_into().map_err(|e| {
+                    CoreError::ConfigurationError(format!(
                         "Failed to parse service '{}': {}",
                         id, e
-                    )))?;
+                    ))
+                })?;
                 services.push(spec);
             }
 

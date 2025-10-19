@@ -8,7 +8,7 @@ args = ["run", "web:dev"]
 # Working directory (alias supported: `workingDirectory`)
 cwd = "/Users/chanwaichan/workspace/cetus"
 # Optional hostname alias for reverse proxy
-route = "cetus.local.dev"
+route = "cetus.localhost"
 # Restart policy: "Always" | "OnFailure" | "Never"
 restartPolicy = "onFailure"
 # Timeouts (seconds)
