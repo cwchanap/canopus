@@ -6,10 +6,12 @@
 
 use canopus_core::config::{load_services_from_toml_path, load_simple_services_from_toml_path};
 use canopus_core::ClientConfig;
-use clap::{Parser, Subcommand};
+use canopus_inbox::{InboxFilter, InboxStatus, InboxStore, NewInboxItem, SourceAgent, SqliteStore};
+use clap::{Parser, Subcommand, ValueEnum};
 use cli::Client;
 use ipc::uds_client::JsonRpcClient;
 use schema::ServiceEvent;
+use serde_json;
 use std::path::PathBuf;
 use tracing::error;
 
@@ -57,6 +59,123 @@ enum Commands {
         /// Optional bearer token
         #[arg(long)]
         token: Option<String>,
+    },
+    /// Manage AI agent inbox notifications
+    Inbox {
+        #[command(subcommand)]
+        cmd: InboxCmd,
+    },
+}
+
+/// CLI-friendly source agent enum
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum SourceAgentArg {
+    /// Claude Code by Anthropic
+    ClaudeCode,
+    /// OpenAI Codex CLI
+    Codex,
+    /// Windsurf IDE
+    Windsurf,
+    /// OpenCode AI CLI
+    OpenCode,
+    /// Other/unknown agent
+    Other,
+}
+
+impl From<SourceAgentArg> for SourceAgent {
+    fn from(arg: SourceAgentArg) -> Self {
+        match arg {
+            SourceAgentArg::ClaudeCode => Self::ClaudeCode,
+            SourceAgentArg::Codex => Self::Codex,
+            SourceAgentArg::Windsurf => Self::Windsurf,
+            SourceAgentArg::OpenCode => Self::OpenCode,
+            SourceAgentArg::Other => Self::Other,
+        }
+    }
+}
+
+/// CLI-friendly inbox status enum
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum InboxStatusArg {
+    /// Unread items
+    Unread,
+    /// Read items
+    Read,
+    /// Dismissed items
+    Dismissed,
+}
+
+impl From<InboxStatusArg> for InboxStatus {
+    fn from(arg: InboxStatusArg) -> Self {
+        match arg {
+            InboxStatusArg::Unread => Self::Unread,
+            InboxStatusArg::Read => Self::Read,
+            InboxStatusArg::Dismissed => Self::Dismissed,
+        }
+    }
+}
+
+#[derive(Subcommand)]
+enum InboxCmd {
+    /// List inbox items
+    List {
+        /// Filter by status
+        #[arg(long, value_enum)]
+        status: Option<InboxStatusArg>,
+        /// Filter by source agent
+        #[arg(long, value_enum)]
+        agent: Option<SourceAgentArg>,
+        /// Filter by project name (partial match)
+        #[arg(long)]
+        project: Option<String>,
+        /// Maximum number of items to show
+        #[arg(long, default_value = "20")]
+        limit: u32,
+        /// Show only count
+        #[arg(long)]
+        count: bool,
+    },
+    /// View a specific inbox item (marks as read)
+    View {
+        /// Item ID
+        id: String,
+    },
+    /// Add a new inbox item (used by agent hooks)
+    Add {
+        /// Project name
+        #[arg(long)]
+        project: String,
+        /// Status summary
+        #[arg(long)]
+        status: String,
+        /// Action required
+        #[arg(long)]
+        action: String,
+        /// Source agent
+        #[arg(long, value_enum)]
+        agent: SourceAgentArg,
+    },
+    /// Mark items as read
+    Read {
+        /// Item ID(s) to mark as read
+        ids: Vec<String>,
+    },
+    /// Dismiss items
+    Dismiss {
+        /// Item ID(s) to dismiss
+        ids: Vec<String>,
+    },
+    /// Check for new items and show desktop notification
+    Check {
+        /// Suppress desktop notification
+        #[arg(long)]
+        quiet: bool,
+    },
+    /// Clean up old items (older than 7 days)
+    Cleanup {
+        /// Number of days to keep (default: 7)
+        #[arg(long, default_value = "7")]
+        days: i64,
     },
 }
 
@@ -307,6 +426,7 @@ async fn main() -> canopus_core::Result<()> {
                 }
             }
         }
+        Commands::Inbox { cmd } => handle_inbox_command(cmd).await,
     };
 
     if let Err(e) = result {
@@ -347,5 +467,186 @@ fn print_event(evt: &ServiceEvent) {
         other => {
             println!("EVENT: {:?}", other);
         }
+    }
+}
+
+/// Handle inbox subcommands.
+async fn handle_inbox_command(cmd: &InboxCmd) -> canopus_core::Result<()> {
+    let store = SqliteStore::open_default().map_err(inbox_to_core)?;
+
+    match cmd {
+        InboxCmd::List {
+            status,
+            agent,
+            project,
+            limit,
+            count,
+        } => {
+            let filter = InboxFilter {
+                status: status.map(Into::into),
+                source_agent: agent.map(Into::into),
+                project: project.clone(),
+                limit: Some(*limit),
+            };
+
+            if *count {
+                let n = store.count(filter).await.map_err(inbox_to_core)?;
+                println!("{n}");
+            } else {
+                let items = store.list(filter).await.map_err(inbox_to_core)?;
+                if items.is_empty() {
+                    println!("No inbox items");
+                } else {
+                    println!(
+                        "{:<36} {:<15} {:<12} {:<10} {}",
+                        "ID", "PROJECT", "AGENT", "AGE", "ACTION"
+                    );
+                    println!("{}", "-".repeat(100));
+                    for item in items {
+                        let status_marker = match item.status {
+                            InboxStatus::Unread => "*",
+                            InboxStatus::Read => " ",
+                            InboxStatus::Dismissed => "x",
+                        };
+                        println!(
+                            "{}{:<35} {:<15} {:<12} {:<10} {}",
+                            status_marker,
+                            truncate(&item.id, 35),
+                            truncate(&item.project_name, 15),
+                            item.source_agent.display_name(),
+                            item.age_display(),
+                            truncate(&item.action_required, 40)
+                        );
+                    }
+                }
+            }
+            Ok(())
+        }
+        InboxCmd::View { id } => {
+            let item = store.get(id).await.map_err(inbox_to_core)?.ok_or_else(|| {
+                canopus_core::CoreError::ServiceError(format!("Item not found: {id}"))
+            })?;
+
+            // Mark as read
+            store.mark_read(id).await.map_err(inbox_to_core)?;
+
+            println!("Inbox Item: {}", item.id);
+            println!("{}", "=".repeat(60));
+            println!("Project:    {}", item.project_name);
+            println!("Agent:      {}", item.source_agent.display_name());
+            println!("Status:     {}", item.status);
+            println!("Created:    {} ({})", item.created_at, item.age_display());
+            println!();
+            println!("Status Summary:");
+            println!("  {}", item.status_summary);
+            println!();
+            println!("Action Required:");
+            println!("  {}", item.action_required);
+
+            if let Some(details) = &item.details {
+                println!();
+                println!("Details:");
+                println!(
+                    "  {}",
+                    serde_json::to_string_pretty(details).unwrap_or_default()
+                );
+            }
+            Ok(())
+        }
+        InboxCmd::Add {
+            project,
+            status,
+            action,
+            agent,
+        } => {
+            let new_item = NewInboxItem::new(project, status, action, (*agent).into());
+            let item = store.insert(new_item).await.map_err(inbox_to_core)?;
+
+            // Send desktop notification
+            if let Err(e) = canopus_inbox::notify::send_notification(&item) {
+                tracing::warn!("Failed to send notification: {}", e);
+            }
+
+            // Mark as notified
+            let _ = store.mark_notified(&item.id).await;
+
+            println!("Added inbox item: {}", item.id);
+            Ok(())
+        }
+        InboxCmd::Read { ids } => {
+            for id in ids {
+                store.mark_read(id).await.map_err(inbox_to_core)?;
+                println!("Marked as read: {id}");
+            }
+            Ok(())
+        }
+        InboxCmd::Dismiss { ids } => {
+            for id in ids {
+                store.dismiss(id).await.map_err(inbox_to_core)?;
+                println!("Dismissed: {id}");
+            }
+            Ok(())
+        }
+        InboxCmd::Check { quiet } => {
+            let filter = InboxFilter {
+                status: Some(InboxStatus::Unread),
+                ..Default::default()
+            };
+            let items = store.list(filter).await.map_err(inbox_to_core)?;
+            let count = items.len();
+
+            if count == 0 {
+                if !*quiet {
+                    println!("No new inbox items");
+                }
+                return Ok(());
+            }
+
+            println!("{} new inbox item(s)", count);
+            for item in items.iter().take(5) {
+                println!(
+                    "  * [{}] {}: {}",
+                    item.source_agent.display_name(),
+                    item.project_name,
+                    truncate(&item.action_required, 50)
+                );
+            }
+            if count > 5 {
+                println!("  ... and {} more", count.saturating_sub(5));
+            }
+
+            // Send desktop notification
+            if !*quiet {
+                if let Err(e) = canopus_inbox::notify::send_summary_notification(count, &items) {
+                    tracing::warn!("Failed to send notification: {}", e);
+                }
+            }
+
+            Ok(())
+        }
+        InboxCmd::Cleanup { days } => {
+            let deleted = store
+                .cleanup_older_than(*days)
+                .await
+                .map_err(inbox_to_core)?;
+            println!("Cleaned up {deleted} old inbox items");
+            Ok(())
+        }
+    }
+}
+
+fn inbox_to_core(e: canopus_inbox::InboxError) -> canopus_core::CoreError {
+    canopus_core::CoreError::ServiceError(e.to_string())
+}
+
+/// Truncates a string to a maximum length, adding "..." if truncated.
+/// Handles Unicode correctly by respecting character boundaries.
+fn truncate(s: &str, max_len: usize) -> String {
+    if s.chars().count() <= max_len {
+        s.to_string()
+    } else {
+        let truncate_at = max_len.saturating_sub(3);
+        let truncated: String = s.chars().take(truncate_at).collect();
+        format!("{truncated}...")
     }
 }

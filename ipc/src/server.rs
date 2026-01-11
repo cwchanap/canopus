@@ -74,9 +74,8 @@ fn configure_socket_permissions(path: &std::path::Path) -> Result<()> {
         IpcError::ProtocolError(format!("Failed to chown socket {:?}: {}", path, e))
     })?;
 
-    let metadata = fs::metadata(path).map_err(|e| {
-        IpcError::ProtocolError(format!("Failed to stat socket {:?}: {}", path, e))
-    })?;
+    let metadata = fs::metadata(path)
+        .map_err(|e| IpcError::ProtocolError(format!("Failed to stat socket {:?}: {}", path, e)))?;
     let mut perms = metadata.permissions();
     perms.set_mode(0o660);
     fs::set_permissions(path, perms).map_err(|e| {

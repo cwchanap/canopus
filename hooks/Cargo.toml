@@ -1,0 +1,15 @@
+[package]
+name = "hooks"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "AI agent hook scripts for integrating with Canopus inbox"
+readme = "README.md"
+keywords = ["hooks", "ai", "automation", "inbox"]
+categories = ["development-tools"]
+
+[dependencies]
+
+[dev-dependencies]

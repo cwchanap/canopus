@@ -1,0 +1,38 @@
+[package]
+name = "canopus-inbox"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Unified inbox system for AI agent notifications"
+readme = "../README.md"
+keywords = ["inbox", "notifications", "ai-agents", "daemon"]
+categories = ["development-tools", "system"]
+
+[dependencies]
+# Workspace dependencies
+serde = { workspace = true, features = ["derive"] }
+schemars = { workspace = true, features = ["derive", "chrono"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true, features = ["sync", "time"] }
+
+
+# Database
+rusqlite = { version = "0.30", features = ["bundled"] }
+
+# Utilities
+uuid = { version = "1.0", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+async-trait = "0.1"
+
+# Desktop notifications
+notify-rust = "4"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+
+[lints]
+workspace = true
