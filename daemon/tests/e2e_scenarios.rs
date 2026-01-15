@@ -159,8 +159,8 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
         std::fs::write(&cfg_path, make_services_toml(&toy_path, port))
             .expect("write services.toml");
 
-        // Start bootstrap (supervisors + IPC server)
-        let boot = daemon::bootstrap::bootstrap(Some(cfg_path.clone()))
+        // Start bootstrap (supervisors + IPC server) without binding port 80
+        let boot = daemon::bootstrap::bootstrap_with_runtime(Some(cfg_path.clone()), None, None)
             .await
             .expect("bootstrap ok");
 
@@ -274,8 +274,8 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
 
         // Simulate daemon restart: shutdown bootstrap, then bootstrap again with same config
         boot.shutdown().await;
-        // New bootstrap on same socket/state paths
-        let _boot2 = daemon::bootstrap::bootstrap(Some(cfg_path.clone()))
+        // New bootstrap on same socket/state paths without binding port 80
+        let _boot2 = daemon::bootstrap::bootstrap_with_runtime(Some(cfg_path.clone()), None, None)
             .await
             .expect("bootstrap2 ok");
 

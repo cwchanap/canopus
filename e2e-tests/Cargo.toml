@@ -5,6 +5,10 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "End-to-end integration tests for Canopus daemon and CLI"
+readme = "README.md"
+keywords = ["testing", "integration", "e2e"]
+categories = ["development-tools::testing"]
 
 [dependencies]
 tokio = { workspace = true }

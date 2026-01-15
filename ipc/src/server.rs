@@ -33,9 +33,13 @@ use nix::unistd::{chown, Group};
 /// Metadata store for per-service runtime info (e.g., port, hostname)
 #[async_trait::async_trait]
 pub trait ServiceMetaStore: Send + Sync {
+    /// Set or remove the port for a service
     async fn set_port(&self, service_id: &str, port: Option<u16>) -> Result<()>;
+    /// Set or remove the hostname for a service
     async fn set_hostname(&self, service_id: &str, hostname: Option<&str>) -> Result<()>;
+    /// Retrieve the port for a service
     async fn get_port(&self, service_id: &str) -> Result<Option<u16>>;
+    /// Retrieve the hostname for a service
     async fn get_hostname(&self, service_id: &str) -> Result<Option<String>>;
     /// Delete the metadata row for a service
     async fn delete(&self, service_id: &str) -> Result<()>;

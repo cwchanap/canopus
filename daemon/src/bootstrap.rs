@@ -107,13 +107,14 @@ impl BootstrapHandle {
 
 /// Bootstrap the daemon components
 pub async fn bootstrap(config_path: Option<PathBuf>) -> Result<BootstrapHandle> {
-    bootstrap_with_runtime(config_path, None).await
+    bootstrap_with_runtime(config_path, None, Some("127.0.0.1:80")).await
 }
 
 /// Bootstrap with an additional optional runtime config (simple per-service hostname/port)
 pub async fn bootstrap_with_runtime(
     config_path: Option<PathBuf>,
     runtime_config_path: Option<PathBuf>,
+    proxy_address: Option<&'static str>,
 ) -> Result<BootstrapHandle> {
     // Load services from config if provided, otherwise start empty (no supervisors)
     let services: Vec<ServiceSpec> = if let Some(path) = config_path {
@@ -124,11 +125,13 @@ pub async fn bootstrap_with_runtime(
         vec![]
     };
 
-    // Initialize local reverse proxy on 127.0.0.1:80 for friendly URLs like
-    // http://service.localhost. Binding this port typically requires elevated
-    // privileges (sudo/root).
+    // Initialize local reverse proxy on provided address for friendly URLs like
+    // http://service.localhost. Binding port 80 typically requires elevated
+    // privileges (sudo/root). For testing, proxy_address can be set to None
+    // to use an OS-assigned port.
+    let proxy_addr = proxy_address.unwrap_or("127.0.0.1:0");
     let proxy = Arc::new(
-        LocalReverseProxy::new("127.0.0.1:80")
+        LocalReverseProxy::new(proxy_addr)
             .map_err(|e| DaemonError::ServerError(format!("proxy init failed: {}", e)))?,
     );
 

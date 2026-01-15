@@ -17,8 +17,10 @@ async fn e2e_ipc_bind_assign() {
         std::env::set_var("CANOPUS_IPC_SOCKET", &sock_path);
         std::env::set_var("CANOPUS_STATE_FILE", &state_path);
 
-        // Minimal bootstrap with no services is fine
-        let boot = daemon::bootstrap::bootstrap(None).await.expect("bootstrap");
+        // Minimal bootstrap with no services without binding port 80
+        let boot = daemon::bootstrap::bootstrap_with_runtime(None, None, None)
+            .await
+            .expect("bootstrap");
 
         // Wait for IPC socket
         {

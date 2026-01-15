@@ -26,8 +26,8 @@ async fn test_cli_start_with_config_reaches_ready() -> CliResult<()> {
         let services_path = workspace_root.join("examples/services.toml");
         let runtime_path = workspace_root.join("examples/runtime.toml");
 
-        // Bootstrap supervisors + IPC server (UDS)
-        let boot = bootstrap_with_runtime(Some(services_path.clone()), None)
+        // Bootstrap supervisors + IPC server (UDS) without binding port 80
+        let boot = bootstrap_with_runtime(Some(services_path.clone()), None, None)
             .await
             .expect("bootstrap_with_runtime");
 

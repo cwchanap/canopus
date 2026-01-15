@@ -1,4 +1,7 @@
 #![allow(unused_crate_dependencies)]
+
+//! Integration tests for daemon runtime configuration
+
 use std::env;
 use std::time::Duration;
 
@@ -25,10 +28,14 @@ async fn test_runtime_preload_and_ipc_list() {
         let services_path = workspace_root.join("examples/services.toml");
         let runtime_path = workspace_root.join("examples/runtime.toml");
 
-        // Bootstrap daemon components with both configs
-        let boot = bootstrap_with_runtime(Some(services_path.clone()), Some(runtime_path.clone()))
-            .await
-            .expect("bootstrap_with_runtime");
+        // Bootstrap daemon components with both configs (without binding port 80)
+        let boot = bootstrap_with_runtime(
+            Some(services_path.clone()),
+            Some(runtime_path.clone()),
+            None,
+        )
+        .await
+        .expect("bootstrap_with_runtime");
 
         // Give the IPC server a brief moment to bind
         tokio::time::sleep(Duration::from_millis(100)).await;

@@ -30,8 +30,8 @@ async fn test_cli_start_with_config_removes_unlisted_services() -> CliResult<()>
         let runtime_path = tmp.path().join("runtime.toml");
         std::fs::write(&runtime_path, "[bogus]\nhostname=\"x\"\nport=5000\n").unwrap();
 
-        // Bootstrap supervisors + IPC server (UDS)
-        let boot = bootstrap_with_runtime(Some(services_path.clone()), None)
+        // Bootstrap supervisors + IPC server (UDS) without binding port 80
+        let boot = bootstrap_with_runtime(Some(services_path.clone()), None, None)
             .await
             .expect("bootstrap_with_runtime");
 
