@@ -14,9 +14,6 @@
 #          - session_complete
 #          - input_required
 #
-# Or create a TypeScript plugin (opencode supports 25+ event hooks):
-#    See docs/hooks/opencode-plugin.ts for TypeScript example
-
 set -euo pipefail
 
 # Get project name from environment or current directory
