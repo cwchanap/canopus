@@ -94,8 +94,13 @@ fn resolve_login_path() -> Option<String> {
 impl BootstrapHandle {
     /// Initiate graceful shutdown: stop supervisors and abort IPC server task
     pub async fn shutdown(mut self) {
-        for h in self.handles.values() {
-            let _ = h.shutdown();
+        for (id, h) in self.handles.iter() {
+            if let Err(e) = h.shutdown() {
+                warn!(
+                    "Failed to shutdown service '{}': {}. Process may still be running.",
+                    id, e
+                );
+            }
         }
         if let Some(task) = self.server_task.take() {
             // IPC server runs accept loop; aborting is acceptable for now
@@ -185,7 +190,12 @@ pub async fn bootstrap_with_runtime(
         let handle = spawn_supervisor(cfg);
         // Recovery workflow: auto-start only services with Always policy
         if spec.restart_policy == schema::RestartPolicy::Always {
-            let _ = handle.start();
+            if let Err(e) = handle.start() {
+                warn!(
+                    "Failed to auto-start service '{}' with Always restart policy: {}",
+                    spec.id, e
+                );
+            }
         } else {
             debug!(
                 "Service '{}' not auto-started (policy: {:?})",

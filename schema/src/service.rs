@@ -524,11 +524,6 @@ mod tests {
     }
 
     #[test]
-    fn test_health_check_type_http_defaults_removed() {
-        // HTTP check type removed; nothing to test here
-    }
-
-    #[test]
     fn test_health_check_type_exec() {
         let exec_check = HealthCheckType::Exec {
             command: "curl".to_string(),

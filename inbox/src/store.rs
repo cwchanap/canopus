@@ -10,7 +10,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{debug, info};
+use tracing::{debug, error, info, warn};
 
 /// SQL schema for the inbox database.
 const SCHEMA: &str = r"
@@ -401,22 +401,46 @@ pub fn escape_like_pattern(s: &str) -> String {
 /// Helper function to convert a database row to an `InboxItem`.
 fn row_to_inbox_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<InboxItem> {
     let details_str: Option<String> = row.get(5)?;
-    let details = details_str.and_then(|s| serde_json::from_str(&s).ok());
+    let details = details_str.and_then(|s| {
+        serde_json::from_str(&s)
+            .map_err(|e| {
+                warn!(
+                    "Failed to deserialize inbox item details: {}. Raw JSON: {:?}",
+                    e, s
+                );
+                e
+            })
+            .ok()
+    });
 
     let created_ts: i64 = row.get(7)?;
     let updated_ts: i64 = row.get(8)?;
     let dismissed_ts: Option<i64> = row.get(9)?;
 
+    let item_id: String = row.get(0)?;
+
     Ok(InboxItem {
-        id: row.get(0)?,
+        id: item_id.clone(),
         project_name: row.get(1)?,
         status_summary: row.get(2)?,
         action_required: row.get(3)?,
         source_agent: SourceAgent::from_str(&row.get::<_, String>(4)?),
         details,
         status: InboxStatus::from_str(&row.get::<_, String>(6)?),
-        created_at: DateTime::from_timestamp(created_ts, 0).unwrap_or_else(Utc::now),
-        updated_at: DateTime::from_timestamp(updated_ts, 0).unwrap_or_else(Utc::now),
+        created_at: DateTime::from_timestamp(created_ts, 0).unwrap_or_else(|| {
+            error!(
+                "Invalid created_at timestamp {} for inbox item {}, using current time",
+                created_ts, item_id
+            );
+            Utc::now()
+        }),
+        updated_at: DateTime::from_timestamp(updated_ts, 0).unwrap_or_else(|| {
+            error!(
+                "Invalid updated_at timestamp {} for inbox item {}, using current time",
+                updated_ts, item_id
+            );
+            Utc::now()
+        }),
         dismissed_at: dismissed_ts.and_then(|ts| DateTime::from_timestamp(ts, 0)),
         notified: row.get::<_, i32>(10)? != 0,
     })

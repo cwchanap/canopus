@@ -6,7 +6,7 @@
 
 use canopus_core::config::{load_services_from_toml_path, load_simple_services_from_toml_path};
 use canopus_core::ClientConfig;
-use canopus_inbox::{InboxFilter, InboxStatus, InboxStore, NewInboxItem, SourceAgent, SqliteStore};
+use canopus_inbox::{truncate, InboxFilter, InboxStatus, InboxStore, NewInboxItem, SourceAgent, SqliteStore};
 use clap::{Parser, Subcommand, ValueEnum};
 use cli::Client;
 use ipc::uds_client::JsonRpcClient;
@@ -568,7 +568,12 @@ async fn handle_inbox_command(cmd: &InboxCmd) -> canopus_core::Result<()> {
             }
 
             // Mark as notified
-            let _ = store.mark_notified(&item.id).await;
+            if let Err(e) = store.mark_notified(&item.id).await {
+                tracing::warn!(
+                    "Failed to mark item {} as notified: {}. User may receive duplicate notifications.",
+                    item.id, e
+                );
+            }
 
             println!("Added inbox item: {}", item.id);
             Ok(())
@@ -637,16 +642,4 @@ async fn handle_inbox_command(cmd: &InboxCmd) -> canopus_core::Result<()> {
 
 fn inbox_to_core(e: canopus_inbox::InboxError) -> canopus_core::CoreError {
     canopus_core::CoreError::ServiceError(e.to_string())
-}
-
-/// Truncates a string to a maximum length, adding "..." if truncated.
-/// Handles Unicode correctly by respecting character boundaries.
-fn truncate(s: &str, max_len: usize) -> String {
-    if s.chars().count() <= max_len {
-        s.to_string()
-    } else {
-        let truncate_at = max_len.saturating_sub(3);
-        let truncated: String = s.chars().take(truncate_at).collect();
-        format!("{truncated}...")
-    }
 }
