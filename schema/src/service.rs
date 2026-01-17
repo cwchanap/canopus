@@ -385,13 +385,13 @@ pub struct ServiceExit {
 impl ServiceExit {
     /// Check if this represents a successful exit (code 0)
     #[must_use]
-    pub const fn is_success(&self) -> bool {
+    pub fn is_success(&self) -> bool {
         self.exit_code == Some(0)
     }
 
     /// Check if this represents a failure (non-zero exit code or signal)
     #[must_use]
-    pub const fn is_failure(&self) -> bool {
+    pub fn is_failure(&self) -> bool {
         !self.is_success()
     }
 }
