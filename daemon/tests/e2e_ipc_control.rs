@@ -3,7 +3,7 @@
 
 use ipc::uds_client::JsonRpcClient;
 use std::time::Duration;
-mod common;
+pub mod common;
 
 #[tokio::test]
 async fn e2e_ipc_bind_assign() {
@@ -27,9 +27,7 @@ async fn e2e_ipc_bind_assign() {
             use tokio::time::{sleep, Duration, Instant};
             let deadline = Instant::now() + Duration::from_secs(3);
             while !sock_path.exists() {
-                if Instant::now() >= deadline {
-                    panic!("uds not ready");
-                }
+                assert!(Instant::now() < deadline, "uds not ready");
                 sleep(Duration::from_millis(25)).await;
             }
         }
@@ -50,11 +48,10 @@ async fn e2e_ipc_bind_assign() {
             .expect("assignPort");
         assert!(
             p == 0 || (30000..=60000).contains(&p),
-            "port {} should be in default range or 0 on failure",
-            p
+            "port {p} should be in default range or 0 on failure"
         );
 
-        boot.shutdown().await;
+        boot.shutdown();
     })
     .await;
 }

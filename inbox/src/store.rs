@@ -384,6 +384,7 @@ impl InboxStore for SqliteStore {
 }
 
 /// Escapes SQL LIKE pattern special characters (%, _, \).
+#[must_use]
 pub fn escape_like_pattern(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     for c in s.chars() {

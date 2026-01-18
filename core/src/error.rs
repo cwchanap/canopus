@@ -59,20 +59,21 @@ pub enum CoreError {
 
 impl CoreError {
     /// Get error code for this error type
-    pub fn code(&self) -> &'static str {
+    #[must_use]
+    pub const fn code(&self) -> &'static str {
         match self {
-            CoreError::ConfigurationError(_) => "CORE001",
-            CoreError::ValidationError(_) => "CORE002",
-            CoreError::InitializationError(_) => "CORE003",
-            CoreError::ServiceError(_) => "CORE004",
-            CoreError::IoError(_) => "CORE005",
-            CoreError::SerializationError(_) => "CORE006",
-            CoreError::PortInUse(_) => "CORE007",
-            CoreError::NoAvailablePort { .. } => "CORE008",
-            CoreError::ProcessSpawn(_) => "CORE009",
-            CoreError::ProcessSignal(_) => "CORE010",
-            CoreError::ProcessWait(_) => "CORE011",
-            CoreError::Other(_) => "CORE999",
+            Self::ConfigurationError(_) => "CORE001",
+            Self::ValidationError(_) => "CORE002",
+            Self::InitializationError(_) => "CORE003",
+            Self::ServiceError(_) => "CORE004",
+            Self::IoError(_) => "CORE005",
+            Self::SerializationError(_) => "CORE006",
+            Self::PortInUse(_) => "CORE007",
+            Self::NoAvailablePort { .. } => "CORE008",
+            Self::ProcessSpawn(_) => "CORE009",
+            Self::ProcessSignal(_) => "CORE010",
+            Self::ProcessWait(_) => "CORE011",
+            Self::Other(_) => "CORE999",
         }
     }
 }
@@ -83,13 +84,13 @@ pub type Result<T> = std::result::Result<T, CoreError>;
 // Convenience implementations
 impl From<&str> for CoreError {
     fn from(s: &str) -> Self {
-        CoreError::Other(s.to_string())
+        Self::Other(s.to_string())
     }
 }
 
 impl From<String> for CoreError {
     fn from(s: String) -> Self {
-        CoreError::Other(s)
+        Self::Other(s)
     }
 }
 

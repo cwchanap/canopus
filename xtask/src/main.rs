@@ -2,7 +2,7 @@
 //!
 //! This tool provides various development automation tasks like schema generation.
 
-mod gen_schemas;
+pub(crate) mod gen_schemas;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};

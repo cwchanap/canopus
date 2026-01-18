@@ -36,10 +36,14 @@ pub trait ProxyApi {
     ///
     /// # Returns
     /// * `Ok(())` on success or if already attached
-    /// * `Err(_)` if attachment fails due to an unrecoverable error
+    /// * `Err(_)` if the proxy fails to register the host.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the proxy fails to register the host.
     fn attach(&self, host: &str, port: u16) -> Result<()>;
 
-    /// Detach the proxy for the given host
+    /// Detach a host from the backend port
     ///
     /// This operation should be idempotent - calling it multiple times with the same
     /// host should either succeed or be safely ignored.
@@ -49,7 +53,11 @@ pub trait ProxyApi {
     ///
     /// # Returns
     /// * `Ok(())` on success or if not currently attached
-    /// * `Err(_)` if detachment fails due to an unrecoverable error
+    /// * `Err(_)` if the proxy fails to unregister the host.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the proxy fails to unregister the host.
     fn detach(&self, host: &str) -> Result<()>;
 }
 
@@ -81,7 +89,8 @@ pub struct NullProxy {
 }
 
 impl NullProxy {
-    /// Create a new NullProxy instance
+    /// Create a new `NullProxy` instance
+    #[must_use]
     pub fn new() -> Self {
         Self {
             calls: Mutex::new(Vec::new()),
@@ -92,12 +101,20 @@ impl NullProxy {
     /// Get a copy of all recorded calls
     ///
     /// This method is available for testing to verify the sequence of operations.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal calls lock is poisoned.
     #[cfg(test)]
     pub fn get_calls(&self) -> Vec<CallLog> {
         self.calls.lock().unwrap().clone()
     }
 
     /// Get the count of recorded calls
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal calls lock is poisoned.
     pub fn call_count(&self) -> usize {
         self.calls.lock().unwrap().len()
     }
@@ -105,6 +122,10 @@ impl NullProxy {
     /// Clear all recorded calls and reset state
     ///
     /// This is useful for testing to ensure clean state between test cases.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal calls or attachments lock is poisoned.
     #[cfg(test)]
     pub fn reset(&self) {
         self.calls.lock().unwrap().clear();
@@ -112,12 +133,20 @@ impl NullProxy {
     }
 
     /// Check if a host is currently attached
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal attachments lock is poisoned.
     #[cfg(test)]
     pub fn is_attached(&self, host: &str) -> bool {
         self.attachments.lock().unwrap().contains(host)
     }
 
     /// Get all currently attached hosts
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal attachments lock is poisoned.
     #[cfg(test)]
     pub fn get_attachments(&self) -> Vec<String> {
         self.attachments.lock().unwrap().iter().cloned().collect()
@@ -186,19 +215,21 @@ impl LocalReverseProxy {
     /// string (e.g., "127.0.0.1:80"). The proxy must bind successfully or it
     /// returns an `InitializationError` so the caller can surface a clear failure
     /// message (e.g., instructing the user to run with elevated privileges).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the proxy fails to bind or start listening.
     pub fn new(listen: &str) -> Result<Self> {
         let routes: Arc<DashMap<String, u16>> = Arc::new(DashMap::new());
         let listen_addr: SocketAddr = listen.trim().parse().map_err(|e| {
             crate::CoreError::InitializationError(format!(
-                "LocalReverseProxy: invalid listen address '{}': {}",
-                listen, e
+                "LocalReverseProxy: invalid listen address '{listen}': {e}"
             ))
         })?;
 
         let builder = Server::try_bind(&listen_addr).map_err(|e| {
             crate::CoreError::InitializationError(format!(
-                "LocalReverseProxy failed to bind {} (binding port 80 usually requires sudo/root): {}",
-                listen_addr, e
+                "LocalReverseProxy failed to bind {listen_addr} (binding port 80 usually requires sudo/root): {e}"
             ))
         })?;
 
@@ -216,11 +247,11 @@ impl LocalReverseProxy {
 
         tokio::spawn(async move {
             if let Err(e) = builder.serve(make_svc).await {
-                warn!("LocalReverseProxy server error on {}: {}", actual_addr, e);
+                warn!("LocalReverseProxy server error on {actual_addr}: {e}");
             }
         });
 
-        info!("LocalReverseProxy listening on {}", actual_addr);
+        info!("LocalReverseProxy listening on {actual_addr}");
         Ok(Self {
             routes,
             listen_addr: actual_addr,
@@ -228,7 +259,8 @@ impl LocalReverseProxy {
     }
 
     /// The address the proxy is listening on.
-    pub fn listen_addr(&self) -> SocketAddr {
+    #[must_use]
+    pub const fn listen_addr(&self) -> SocketAddr {
         self.listen_addr
     }
 
@@ -249,37 +281,31 @@ impl LocalReverseProxy {
         routes: Arc<DashMap<String, u16>>,
     ) -> Result<Response<Body>> {
         // Determine host
-        let host = match req.headers().get(HOST).and_then(|v| v.to_str().ok()) {
-            Some(h) => h,
-            None => {
-                let mut resp = Response::new(Body::from("missing Host header"));
-                *resp.status_mut() = http::StatusCode::BAD_REQUEST;
-                return Ok(resp);
-            }
+        let Some(host) = req.headers().get(HOST).and_then(|v| v.to_str().ok()) else {
+            let mut resp = Response::new(Body::from("missing Host header"));
+            *resp.status_mut() = http::StatusCode::BAD_REQUEST;
+            return Ok(resp);
         };
         let host_key = Self::normalize_host(host);
         let host_owned = host.to_owned();
-        let port = match routes.get(&host_key) {
-            Some(entry) => *entry.value(),
-            None => {
-                let mut resp =
-                    Response::new(Body::from(format!("no route for host: {}", host_key)));
-                *resp.status_mut() = http::StatusCode::BAD_GATEWAY;
-                return Ok(resp);
-            }
+        let port = if let Some(entry) = routes.get(&host_key) {
+            *entry.value()
+        } else {
+            let mut resp = Response::new(Body::from(format!("no route for host: {host_key}")));
+            *resp.status_mut() = http::StatusCode::BAD_GATEWAY;
+            return Ok(resp);
         };
 
         // Build backend URI: http://127.0.0.1:<port><path_and_query>
         let path_q = req
             .uri()
             .path_and_query()
-            .map(|pq| pq.as_str())
-            .unwrap_or("/");
-        let target = format!("http://127.0.0.1:{}{}", port, path_q);
+            .map_or("/", http::uri::PathAndQuery::as_str);
+        let target = format!("http://127.0.0.1:{port}{path_q}");
         let uri: Uri = match target.parse() {
             Ok(u) => u,
             Err(e) => {
-                let mut resp = Response::new(Body::from(format!("bad target uri: {}", e)));
+                let mut resp = Response::new(Body::from(format!("bad target uri: {e}")));
                 *resp.status_mut() = http::StatusCode::BAD_GATEWAY;
                 return Ok(resp);
             }
@@ -305,7 +331,7 @@ impl LocalReverseProxy {
         match client.request(out_req).await {
             Ok(resp) => Ok(resp),
             Err(e) => {
-                let mut resp = Response::new(Body::from(format!("upstream request failed: {}", e)));
+                let mut resp = Response::new(Body::from(format!("upstream request failed: {e}")));
                 *resp.status_mut() = http::StatusCode::BAD_GATEWAY;
                 Ok(resp)
             }
@@ -357,7 +383,7 @@ mod tests {
                 assert_eq!(host, "example.com");
                 assert_eq!(*port, 8080);
             }
-            _ => panic!("Expected Attach call"),
+            CallLog::Detach { .. } => panic!("Expected Attach call"),
         }
 
         assert!(proxy.is_attached("example.com"));
@@ -384,7 +410,7 @@ mod tests {
             CallLog::Detach { host } => {
                 assert_eq!(host, "example.com");
             }
-            _ => panic!("Expected Detach call"),
+            CallLog::Attach { .. } => panic!("Expected Detach call"),
         }
 
         assert!(!proxy.is_attached("example.com"));
@@ -416,7 +442,7 @@ mod tests {
                     assert_eq!(host, "example.com");
                     assert_eq!(port, 8080);
                 }
-                _ => panic!("Expected only Attach calls"),
+                CallLog::Detach { .. } => panic!("Expected only Attach calls"),
             }
         }
     }
@@ -451,7 +477,7 @@ mod tests {
                 assert_eq!(host, "example.com");
                 assert_eq!(*port, 8080);
             }
-            _ => panic!("Expected Attach call"),
+            CallLog::Detach { .. } => panic!("Expected Attach call"),
         }
 
         // Rest should be detach
@@ -460,7 +486,7 @@ mod tests {
                 CallLog::Detach { host } => {
                     assert_eq!(host, "example.com");
                 }
-                _ => panic!("Expected Detach call"),
+                CallLog::Attach { .. } => panic!("Expected Detach call"),
             }
         }
     }
@@ -579,7 +605,7 @@ mod tests {
         };
 
         // Just verify that Debug formatting works without panicking
-        let _attach_debug = format!("{:?}", attach_log);
-        let _detach_debug = format!("{:?}", detach_log);
+        let _attach_debug = format!("{attach_log:?}");
+        let _detach_debug = format!("{detach_log:?}");
     }
 }

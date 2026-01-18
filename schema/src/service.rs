@@ -125,13 +125,13 @@ impl ServiceState {
     /// Check if the service is in a running state (not Idle)
     #[must_use]
     pub const fn is_running(&self) -> bool {
-        !matches!(self, ServiceState::Idle)
+        !matches!(self, Self::Idle)
     }
 
     /// Check if the service is ready to handle requests
     #[must_use]
     pub const fn is_ready(&self) -> bool {
-        matches!(self, ServiceState::Ready)
+        matches!(self, Self::Ready)
     }
 
     /// Check if the service is transitioning between states
@@ -139,7 +139,7 @@ impl ServiceState {
     pub const fn is_transitional(&self) -> bool {
         matches!(
             self,
-            ServiceState::Spawning | ServiceState::Starting | ServiceState::Stopping
+            Self::Spawning | Self::Starting | Self::Stopping
         )
     }
 }
@@ -519,7 +519,7 @@ mod tests {
         let tcp_check = HealthCheckType::Tcp { port: 8080 };
         match tcp_check {
             HealthCheckType::Tcp { port } => assert_eq!(port, 8080),
-            _ => panic!("Expected TCP check"),
+            HealthCheckType::Exec { .. } => panic!("Expected TCP check"),
         }
     }
 
@@ -535,7 +535,7 @@ mod tests {
                 assert_eq!(command, "curl");
                 assert_eq!(args.len(), 2);
             }
-            _ => panic!("Expected Exec check"),
+            HealthCheckType::Tcp { .. } => panic!("Expected Exec check"),
         }
     }
 }

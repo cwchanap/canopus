@@ -67,7 +67,7 @@ pub struct ServiceSupervisor {
 
 impl ServiceSupervisor {
     /// Spawn a background task to read lines from the given async reader,
-    /// push them into the log ring, and emit LogOutput events.
+    /// push them into the log ring, and emit `LogOutput` events.
     fn spawn_log_reader(
         &self,
         reader: std::pin::Pin<Box<dyn AsyncRead + Send + Unpin>>,
@@ -115,7 +115,7 @@ impl ServiceSupervisor {
                         // Emit a warning and stop this reader
                         let _ = event_tx.send(ServiceEvent::Warning {
                             service_id: service_id.clone(),
-                            message: format!("Error reading log stream {:?}: {}", stream, e),
+                            message: format!("Error reading log stream {stream:?}: {e}"),
                             timestamp: ServiceEvent::current_timestamp(),
                             code: Some("LOG_READ_ERROR".to_string()),
                         });
@@ -166,6 +166,11 @@ impl ServiceSupervisor {
     }
 
     /// Run the supervisor task loop
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the supervisor encounters an unrecoverable failure
+    /// while processing control messages or service lifecycle events.
     pub async fn run(&mut self, mut control_rx: mpsc::UnboundedReceiver<ControlMsg>) -> Result<()> {
         info!("Starting supervisor for service '{}'", self.spec.id);
         // Periodic tick to ensure timers are checked regularly regardless of other events
@@ -176,17 +181,14 @@ impl ServiceSupervisor {
             tokio::select! {
                 // Handle control messages
                 msg = control_rx.recv() => {
-                    match msg {
-                        Some(msg) => {
-                            debug!("Received control message: {:?}", msg);
-                            if let Err(e) = self.handle_control_message(msg).await {
-                                error!("Error handling control message: {}", e);
-                            }
+                    if let Some(msg) = msg {
+                        debug!("Received control message: {:?}", msg);
+                        if let Err(e) = self.handle_control_message(msg).await {
+                            error!("Error handling control message: {}", e);
                         }
-                        None => {
-                            info!("Control channel closed, shutting down supervisor");
-                            break;
-                        }
+                    } else {
+                        info!("Control channel closed, shutting down supervisor");
+                        break;
                     }
                 }
 
@@ -395,7 +397,7 @@ impl ServiceSupervisor {
         .await;
 
         // If the service is running and critical fields changed, restart it
-        if !matches!(self.state, InternalState::Idle) && self.needs_restart_for_spec_change() {
+        if !matches!(self.state, InternalState::Idle) && Self::needs_restart_for_spec_change() {
             warn!(
                 "Restarting service '{}' due to specification changes",
                 self.spec.id
@@ -585,7 +587,7 @@ impl ServiceSupervisor {
                 success_threshold: readiness_check.success_threshold,
             })
             .await;
-            let duration_ms = start_time.elapsed().as_millis() as u64;
+            let duration_ms = u64::try_from(start_time.elapsed().as_millis()).unwrap_or(u64::MAX);
 
             let success = result.is_ok();
             let error = result.err().map(|e| e.to_string());
@@ -625,7 +627,7 @@ impl ServiceSupervisor {
                     // Determine port for proxy attach before announcing Ready
                     let attach_port = match &readiness_check.check_type {
                         schema::HealthCheckType::Tcp { port } => Some(*port),
-                        _ => None,
+                        schema::HealthCheckType::Exec { .. } => None,
                     };
                     // Attach to proxy before announcing Ready (gate exposure on readiness)
                     if let Some(port) = attach_port {
@@ -702,6 +704,7 @@ impl ServiceSupervisor {
     }
 
     /// Emit a service event
+    #[allow(clippy::unused_async)]
     async fn emit_event(&self, event: ServiceEvent) {
         if let Err(e) = self.event_tx.send(event) {
             warn!("Failed to emit event: {}", e);
@@ -753,7 +756,7 @@ impl ServiceSupervisor {
     }
 
     /// Check if the service needs to be restarted due to spec changes
-    fn needs_restart_for_spec_change(&self) -> bool {
+    const fn needs_restart_for_spec_change() -> bool {
         // For now, assume any change requires restart
         // In a more sophisticated implementation, we might only restart for
         // certain types of changes (e.g., command/args but not health check config)
@@ -761,6 +764,7 @@ impl ServiceSupervisor {
     }
 
     /// Handle all timers (readiness, health, startup timeout)
+    #[allow(clippy::cognitive_complexity)]
     async fn handle_timers(&mut self) -> Result<()> {
         let now = Instant::now();
         debug!(
@@ -948,7 +952,7 @@ impl ServiceSupervisor {
                 success,
                 timestamp: ServiceEvent::current_timestamp(),
                 error: error.clone(),
-                duration_ms: duration.as_millis() as u64,
+                duration_ms: u64::try_from(duration.as_millis()).unwrap_or(u64::MAX),
             })
             .await;
 
@@ -996,7 +1000,7 @@ impl ServiceSupervisor {
                 success,
                 timestamp: ServiceEvent::current_timestamp(),
                 error: error.clone(),
-                duration_ms: duration.as_millis() as u64,
+                duration_ms: u64::try_from(duration.as_millis()).unwrap_or(u64::MAX),
             })
             .await;
 
@@ -1022,7 +1026,7 @@ impl ServiceSupervisor {
                 success_threshold: health_check.success_threshold,
             })
             .await;
-            let duration_ms = start_time.elapsed().as_millis() as u64;
+            let duration_ms = u64::try_from(start_time.elapsed().as_millis()).unwrap_or(u64::MAX);
 
             let success = result.is_ok();
             let error = result.err().map(|e| e.to_string());
@@ -1138,7 +1142,7 @@ impl ServiceSupervisor {
                 route: route.clone(),
                 route_host: if is_path { None } else { Some(route.clone()) },
                 route_path: if is_path { Some(route.clone()) } else { None },
-                backend_address: format!("127.0.0.1:{}", port),
+                backend_address: format!("127.0.0.1:{port}"),
                 timestamp: ServiceEvent::current_timestamp(),
             })
             .await;
@@ -1178,7 +1182,8 @@ impl ServiceSupervisor {
 mod tests {
     use super::*;
     use crate::supervisor::adapters::MockProcessAdapter;
-    use schema::RestartPolicy;
+    use schema::{BackoffConfig, RestartPolicy};
+    use std::collections::HashMap;
     use std::time::Duration;
     use tokio::time::timeout;
 
@@ -1188,11 +1193,11 @@ mod tests {
             name: "Test Service".to_string(),
             command: "echo".to_string(),
             args: vec!["hello".to_string()],
-            environment: Default::default(),
+            environment: HashMap::default(),
             working_directory: None,
             route: None,
             restart_policy: RestartPolicy::Never,
-            backoff_config: Default::default(),
+            backoff_config: BackoffConfig::default(),
             health_check: None,
             readiness_check: None,
             graceful_timeout_secs: 1,
@@ -1200,7 +1205,7 @@ mod tests {
         }
     }
 
-    async fn create_supervisor() -> (
+    fn create_supervisor() -> (
         ServiceSupervisor,
         mpsc::UnboundedSender<ControlMsg>,
         broadcast::Receiver<ServiceEvent>,
@@ -1225,7 +1230,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_supervisor_basic_lifecycle() {
-        let (mut supervisor, control_tx, mut event_rx, control_rx) = create_supervisor().await;
+        let (mut supervisor, control_tx, mut event_rx, control_rx) = create_supervisor();
 
         // Start the supervisor task
         tokio::spawn(async move {
@@ -1245,7 +1250,7 @@ mod tests {
                     to_state: ServiceState::Spawning,
                     ..
                 } => {}
-                other => panic!("Expected Spawning state change, got: {:?}", other),
+                other => panic!("Expected Spawning state change, got: {other:?}"),
             }
         }
 
@@ -1253,7 +1258,7 @@ mod tests {
         if let Ok(event) = timeout(Duration::from_millis(500), event_rx.recv()).await {
             match event.unwrap() {
                 ServiceEvent::ProcessStarted { .. } => {}
-                other => panic!("Expected ProcessStarted event, got: {:?}", other),
+                other => panic!("Expected ProcessStarted event, got: {other:?}"),
             }
         }
 
@@ -1269,7 +1274,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_supervisor_stop_service() {
-        let (mut supervisor, control_tx, mut event_rx, control_rx) = create_supervisor().await;
+        let (mut supervisor, control_tx, mut event_rx, control_rx) = create_supervisor();
 
         tokio::spawn(async move {
             if let Err(e) = supervisor.run(control_rx).await {
@@ -1288,15 +1293,13 @@ mod tests {
         let mut found_stopping = false;
         for _ in 0..10 {
             if let Ok(event) = timeout(Duration::from_millis(100), event_rx.recv()).await {
-                match event.unwrap() {
-                    ServiceEvent::StateChanged {
-                        to_state: ServiceState::Stopping,
-                        ..
-                    } => {
-                        found_stopping = true;
-                        break;
-                    }
-                    _ => continue,
+                if let ServiceEvent::StateChanged {
+                    to_state: ServiceState::Stopping,
+                    ..
+                } = event.unwrap()
+                {
+                    found_stopping = true;
+                    break;
                 }
             }
         }
@@ -1312,7 +1315,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_supervisor_restart_service() {
-        let (mut supervisor, control_tx, mut event_rx, control_rx) = create_supervisor().await;
+        let (mut supervisor, control_tx, mut event_rx, control_rx) = create_supervisor();
 
         tokio::spawn(async move {
             if let Err(e) = supervisor.run(control_rx).await {
@@ -1345,7 +1348,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_supervisor_update_spec() {
-        let (mut supervisor, control_tx, mut event_rx, control_rx) = create_supervisor().await;
+        let (mut supervisor, control_tx, mut event_rx, control_rx) = create_supervisor();
 
         tokio::spawn(async move {
             if let Err(e) = supervisor.run(control_rx).await {
@@ -1364,7 +1367,7 @@ mod tests {
                 ServiceEvent::ConfigurationUpdated { changed_fields, .. } => {
                     assert!(changed_fields.contains(&"command".to_string()));
                 }
-                other => panic!("Expected ConfigurationUpdated event, got: {:?}", other),
+                other => panic!("Expected ConfigurationUpdated event, got: {other:?}"),
             }
         }
 

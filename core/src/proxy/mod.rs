@@ -55,7 +55,8 @@ pub struct MockProxyAdapter {
 }
 
 impl MockProxyAdapter {
-    /// Create a new mock adapter that records operations
+    /// Create a new empty registry
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -93,8 +94,8 @@ pub struct ApiProxyAdapter<T: crate::proxy_api::ProxyApi + Send + Sync + 'static
 }
 
 impl<T: crate::proxy_api::ProxyApi + Send + Sync + 'static> ApiProxyAdapter<T> {
-    /// Create a new adapter from an existing `ProxyApi` instance
-    pub fn new(inner: Arc<T>) -> Self {
+    /// Create a new wrapper around a proxy adapter implementation
+    pub const fn new(inner: Arc<T>) -> Self {
         Self { inner }
     }
 }
@@ -109,5 +110,5 @@ impl<T: crate::proxy_api::ProxyApi + Send + Sync + 'static> ProxyAdapter for Api
     }
 }
 
-/// Type alias for the built-in NullProxy adapter
+/// Type alias for the built-in `NullProxy` adapter
 pub type NullProxyAdapter = ApiProxyAdapter<crate::proxy_api::NullProxy>;

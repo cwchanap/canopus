@@ -48,6 +48,7 @@ mod tests {
 
     #[test]
     fn test_result_type_alias() {
+        #[allow(clippy::unnecessary_wraps)]
         fn returns_result() -> Result<String> {
             Ok("success".to_string())
         }

@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[allow(clippy::unnecessary_wraps)]
 mod tests {
     use crate::{IpcError, Result};
     use std::error::Error;

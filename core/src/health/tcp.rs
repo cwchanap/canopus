@@ -57,6 +57,7 @@ impl TcpProbe {
     }
 
     /// Get the target address as a string
+    #[must_use]
     pub fn address(&self) -> String {
         format!("{}:{}", self.host, self.port)
     }
@@ -112,7 +113,7 @@ mod tests {
 
         let probe = TcpProbe::new("127.0.0.1", addr.port(), Duration::from_secs(1));
         let result = probe.check().await;
-        assert!(result.is_ok(), "TCP probe should succeed: {:?}", result);
+        assert!(result.is_ok(), "TCP probe should succeed: {result:?}");
     }
 
     #[tokio::test]
@@ -127,7 +128,7 @@ mod tests {
         );
         match result.unwrap_err() {
             HealthError::Tcp(_) => {} // Expected
-            other => panic!("Expected HealthError::Tcp, got {:?}", other),
+            other => panic!("Expected HealthError::Tcp, got {other:?}"),
         }
     }
 
@@ -141,7 +142,7 @@ mod tests {
         assert!(result.is_err(), "TCP probe should timeout");
         match result.unwrap_err() {
             HealthError::Timeout(d) => assert_eq!(d, Duration::from_millis(100)),
-            other => panic!("Expected HealthError::Timeout, got {:?}", other),
+            other => panic!("Expected HealthError::Timeout, got {other:?}"),
         }
     }
 

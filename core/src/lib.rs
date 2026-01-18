@@ -1,3 +1,4 @@
+#![allow(unused_crate_dependencies)]
 //! Core functionality for the Canopus project
 //!
 //! This crate contains shared types, utilities, and business logic
@@ -32,6 +33,10 @@ pub mod utils {
     use tracing::{debug, info};
 
     /// Initialize tracing for the application
+    ///
+    /// # Errors
+    ///
+    /// Returns an initialization error if the tracing subscriber fails to set up.
     pub fn init_tracing(level: &str) -> crate::Result<()> {
         use tracing_subscriber::{fmt, EnvFilter};
 
@@ -47,6 +52,10 @@ pub mod utils {
     }
 
     /// Validate configuration values
+    ///
+    /// # Errors
+    ///
+    /// Returns a configuration error if any required values are invalid.
     pub fn validate_config(config: &crate::DaemonConfig) -> crate::Result<()> {
         if config.port == 0 {
             return Err(crate::CoreError::ConfigurationError(
@@ -84,7 +93,7 @@ mod tests {
         assert!(utils::validate_config(&config).is_err());
 
         config.port = 8080;
-        config.host = "".to_string();
+        config.host = String::new();
         assert!(utils::validate_config(&config).is_err());
 
         config.host = "localhost".to_string();

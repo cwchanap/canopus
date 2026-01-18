@@ -37,7 +37,7 @@ async fn bootstrap_start_stop() {
         assert_eq!(handle.services.len(), 1);
 
         // Trigger shutdown
-        handle.shutdown().await;
+        handle.shutdown();
     })
     .await
     .expect("test timed out after 30s");

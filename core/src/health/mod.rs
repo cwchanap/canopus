@@ -32,6 +32,10 @@ use std::time::Duration;
 ///
 /// This function translates between the schema types and the concrete probe implementations.
 /// It extracts the timeout from the health check configuration and applies it to the probe.
+///
+/// # Errors
+///
+/// Returns an error if the health check type is not supported.
 pub fn create_probe(
     check_type: &HealthCheckType,
     timeout: Duration,
@@ -52,6 +56,10 @@ pub fn create_probe(
 /// This is a convenience function that creates a probe from a health check configuration
 /// and immediately executes it. This is the main entry point for the supervisor to
 /// execute health checks.
+///
+/// # Errors
+///
+/// Returns an error if the probe cannot be created or if the check fails.
 pub async fn run_probe(health_check: &HealthCheck) -> Result<(), HealthError> {
     let timeout = health_check.timeout();
     let probe = create_probe(&health_check.check_type, timeout)?;

@@ -44,8 +44,8 @@ async fn test_runtime_preload_and_ipc_list() {
         let uds = JsonRpcClient::new(&socket_path, None);
         let services = uds.list().await.expect("uds list");
         let ids: std::collections::HashSet<_> = services.iter().map(|s| s.id.as_str()).collect();
-        assert!(ids.contains("web"), "expected 'web' in services: {:?}", ids);
-        assert!(ids.contains("api"), "expected 'api' in services: {:?}", ids);
+        assert!(ids.contains("web"), "expected 'web' in services: {ids:?}");
+        assert!(ids.contains("api"), "expected 'api' in services: {ids:?}");
 
         // Verify runtime preload persisted hostname/port for known services
         let store = SqliteStorage::open_default().expect("open sqlite");
@@ -61,7 +61,7 @@ async fn test_runtime_preload_and_ipc_list() {
         assert_eq!(api_host.as_deref(), Some("api.local"));
 
         // Cleanup
-        boot.shutdown().await;
+        boot.shutdown();
     })
     .await
     .expect("test timed out after 30s");

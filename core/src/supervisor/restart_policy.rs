@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::debug;
 
 /// Action to take when a service exits
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RestartAction {
     /// Restart the service after the specified delay
     Restart {
@@ -31,7 +31,8 @@ pub struct FailureTracker {
 
 impl FailureTracker {
     /// Create a new failure tracker
-    pub fn new(window_duration: Duration) -> Self {
+    #[must_use]
+    pub const fn new(window_duration: Duration) -> Self {
         Self {
             failures: Vec::new(),
             window_duration,
@@ -65,6 +66,7 @@ impl FailureTracker {
     }
 
     /// Get the number of failures in the current window
+    #[must_use]
     pub fn failure_count(&self, current_time: SystemTime) -> usize {
         let mut tracker = self.clone();
         tracker.cleanup_old_failures(current_time);
@@ -95,6 +97,8 @@ pub struct RestartPolicyEngine {
 
 impl RestartPolicyEngine {
     /// Create a new restart policy engine
+    #[must_use]
+    #[allow(clippy::missing_const_for_fn)]
     pub fn new(policy: RestartPolicy, backoff_config: BackoffConfig) -> Self {
         Self {
             policy,
@@ -146,6 +150,11 @@ impl RestartPolicyEngine {
     }
 
     /// Calculate the backoff delay based on failure history
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::suboptimal_flops
+    )]
     fn calculate_backoff_delay(&self, current_time: SystemTime) -> Duration {
         let failure_count = self.failure_tracker.failure_count(current_time);
 
@@ -166,10 +175,15 @@ impl RestartPolicyEngine {
         let capped_delay_ms = calculated_delay_ms.min(max_delay_ms);
 
         // Apply jitter
-        let jitter_factor = 1.0 + (self.backoff_config.jitter * (2.0 * random_f64() - 1.0));
+        let jitter_factor = self
+            .backoff_config
+            .jitter
+            .mul_add(2.0 * random_f64() - 1.0, 1.0);
         let final_delay_ms = (capped_delay_ms * jitter_factor).max(0.0);
 
-        let delay = Duration::from_millis(final_delay_ms as u64);
+        let delay = Duration::from_millis(
+            u64::try_from(final_delay_ms.round() as i128).unwrap_or(u64::MAX),
+        );
 
         debug!("Calculated backoff delay: {} failures -> {}ms (base={}ms, multiplier={}, max={}ms, jitter={})",
                failure_count, final_delay_ms, base_delay_ms, multiplier, max_delay_ms, self.backoff_config.jitter);
@@ -183,6 +197,7 @@ impl RestartPolicyEngine {
     }
 
     /// Get the current failure count
+    #[must_use]
     pub fn current_failure_count(&self) -> usize {
         self.failure_tracker.failure_count(SystemTime::now())
     }
@@ -197,11 +212,14 @@ fn random_f64() -> f64 {
 
     // Linear congruential generator
     let prev = SEED.load(Ordering::Relaxed);
-    let next = prev.wrapping_mul(1103515245).wrapping_add(12345);
+    let next = prev.wrapping_mul(1_103_515_245).wrapping_add(12_345);
     SEED.store(next, Ordering::Relaxed);
 
     // Convert to [0, 1) range
-    (next as f64) / (u64::MAX as f64)
+    #[allow(clippy::cast_precision_loss)]
+    {
+        (next as f64) / (u64::MAX as f64)
+    }
 }
 
 #[cfg(test)]
@@ -412,8 +430,7 @@ mod tests {
             // With 50% jitter, delay should be between 1s and 3s
             assert!(
                 (1000..=3000).contains(&delay_ms),
-                "Delay {} outside expected range",
-                delay_ms
+                "Delay {delay_ms} outside expected range"
             );
         }
 

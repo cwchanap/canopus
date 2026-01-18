@@ -8,12 +8,12 @@ The Canopus inbox provides a unified queue for notifications from AI coding agen
 
 ## Supported Agents
 
-| Agent | Hook Type | Configuration |
-|-------|-----------|---------------|
-| Claude Code | Shell script | `~/.claude/settings.json` hooks |
-| Codex CLI | Shell script | `config.toml` notify setting |
-| Windsurf | JSON config | `.windsurf/cascade-hooks.json` |
-| OpenCode | Shell/TypeScript plugin | `~/.config/opencode/plugins/` |
+| Agent       | Hook Type               | Configuration                   |
+| ----------- | ----------------------- | ------------------------------- |
+| Claude Code | Shell script            | `~/.claude/settings.json` hooks |
+| Codex CLI   | Shell script            | `config.toml` notify setting    |
+| Windsurf    | JSON config             | `.windsurf/cascade-hooks.json`  |
+| `OpenCode`  | Shell/TypeScript plugin | `~/.config/opencode/plugins/`   |
 
 ## Quick Start
 
@@ -39,9 +39,9 @@ canopus inbox check
 See the individual hook files in this directory:
 
 - `claude-code.sh` - Claude Code notification hook
-- `codex.sh` - OpenAI Codex CLI hook
+- `codex.sh` - `OpenAI` Codex CLI hook
 - `windsurf.json` - Windsurf Cascade Hooks config
-- `opencode.sh` - OpenCode AI CLI hook
+- `opencode.sh` - `OpenCode` AI CLI hook
 
 ## CLI Commands
 
@@ -120,11 +120,11 @@ notify = ["~/.config/codex/hooks/canopus-notify.sh"]
 1. Copy `windsurf.json` to your workspace: `.windsurf/cascade-hooks.json`
 2. Restart Windsurf to apply hooks
 
-### OpenCode
+### `OpenCode`
 
 1. Copy `opencode.sh` to `~/.config/opencode/plugins/canopus-notify.sh`
 2. Make executable: `chmod +x ~/.config/opencode/plugins/canopus-notify.sh`
-3. Add to OpenCode config.yaml:
+3. Add to `OpenCode` config.yaml:
 
 ```yaml
 plugins:
@@ -137,10 +137,12 @@ plugins:
 ## Desktop Notifications
 
 The inbox automatically sends desktop notifications when:
+
 - A new item is added via `canopus inbox add`
 - Running `canopus inbox check` finds unread items
 
 Notifications use:
+
 - **macOS**: Native Notification Center via `osascript`
 - **Linux**: `notify-send` (libnotify)
 - **Windows**: Windows Toast notifications

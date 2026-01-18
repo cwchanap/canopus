@@ -5,7 +5,7 @@
 //! strict validation with field-path error messages.
 
 use crate::{CoreError, Result};
-use schema::*;
+use schema::{HealthCheckType, ServiceSpec};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -31,7 +31,7 @@ pub struct ServicesFile {
 /// command = "python3"
 #[derive(Debug, Deserialize)]
 struct ServicesMapFile {
-    /// Map of service_id -> table of ServiceSpec fields (without id)
+    /// Map of `service_id` -> table of `ServiceSpec` fields (without id)
     #[serde(flatten)]
     services: HashMap<String, toml::Value>,
 }
@@ -51,13 +51,17 @@ pub struct SimpleServiceConfig {
 /// Top-level wrapper that flattens service IDs into a map
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
 pub struct SimpleServicesFile {
-    /// Map of service_id -> runtime config
+    /// Map of `service_id` -> runtime config
     #[serde(flatten)]
     pub services: HashMap<String, SimpleServiceConfig>,
 }
 
 impl SimpleServicesFile {
     /// Validate the simple configuration
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any service configuration value is invalid.
     pub fn validate(&self) -> Result<()> {
         if self.services.is_empty() {
             return Err(CoreError::ValidationError(
@@ -73,16 +77,14 @@ impl SimpleServicesFile {
             if let Some(hn) = &cfg.hostname {
                 if hn.trim().is_empty() {
                     return Err(CoreError::ValidationError(format!(
-                        "service '{}': hostname cannot be empty",
-                        id
+                        "service '{id}': hostname cannot be empty"
                     )));
                 }
             }
             if let Some(p) = cfg.port {
                 if p == 0 {
                     return Err(CoreError::ValidationError(format!(
-                        "service '{}': port must be 1..=65535",
-                        id
+                        "service '{id}': port must be 1..=65535"
                     )));
                 }
             }
@@ -92,23 +94,38 @@ impl SimpleServicesFile {
 }
 
 /// Load simple services config from TOML file path
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read or parsed.
 pub fn load_simple_services_from_toml_path(path: impl AsRef<Path>) -> Result<SimpleServicesFile> {
     let data = fs::read_to_string(&path).map_err(|e| {
-        CoreError::ConfigurationError(format!("Failed to read config {:?}: {}", path.as_ref(), e))
+        CoreError::ConfigurationError(format!(
+            "Failed to read config {}: {e}",
+            path.as_ref().display()
+        ))
     })?;
     load_simple_services_from_toml_str(&data)
 }
 
 /// Load simple services config from a TOML string
+///
+/// # Errors
+///
+/// Returns an error if the input cannot be parsed or validated.
 pub fn load_simple_services_from_toml_str(input: &str) -> Result<SimpleServicesFile> {
     let cfg: SimpleServicesFile = toml::from_str(input)
-        .map_err(|e| CoreError::ConfigurationError(format!("TOML parse error: {}", e)))?;
+        .map_err(|e| CoreError::ConfigurationError(format!("TOML parse error: {e}")))?;
     cfg.validate()?;
     Ok(cfg)
 }
 
 impl ServicesFile {
     /// Validate the configuration and return `Result<()>` with field-path errors
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any service configuration value is invalid.
     pub fn validate(&self) -> Result<()> {
         if self.services.is_empty() {
             return Err(CoreError::ValidationError(
@@ -122,37 +139,33 @@ impl ServicesFile {
             // id
             if svc.id.trim().is_empty() {
                 return Err(CoreError::ValidationError(format!(
-                    "services[{}].id: cannot be empty",
-                    i
+                    "services[{i}].id: cannot be empty"
                 )));
             }
             if !seen.insert(svc.id.clone()) {
                 return Err(CoreError::ValidationError(format!(
-                    "services[{}].id: duplicate id '{}'",
-                    i, svc.id
+                    "services[{i}].id: duplicate id '{}'",
+                    svc.id
                 )));
             }
             // name
             if svc.name.trim().is_empty() {
                 return Err(CoreError::ValidationError(format!(
-                    "services[{}].name: cannot be empty",
-                    i
+                    "services[{i}].name: cannot be empty"
                 )));
             }
             // command
             if svc.command.trim().is_empty() {
                 return Err(CoreError::ValidationError(format!(
-                    "services[{}].command: cannot be empty",
-                    i
+                    "services[{i}].command: cannot be empty"
                 )));
             }
 
             // environment keys should be non-empty
-            for (k, _v) in svc.environment.iter() {
+            for k in svc.environment.keys() {
                 if k.trim().is_empty() {
                     return Err(CoreError::ValidationError(format!(
-                        "services[{}].environment: keys cannot be empty",
-                        i
+                        "services[{i}].environment: keys cannot be empty"
                     )));
                 }
             }
@@ -161,34 +174,29 @@ impl ServicesFile {
             let b = &svc.backoff_config;
             if b.base_delay_secs == 0 {
                 return Err(CoreError::ValidationError(format!(
-                    "services[{}].backoffConfig.baseDelaySecs: must be > 0",
-                    i
+                    "services[{i}].backoffConfig.baseDelaySecs: must be > 0"
                 )));
             }
             if !(b.jitter >= 0.0 && b.jitter <= 1.0) {
                 return Err(CoreError::ValidationError(format!(
-                    "services[{}].backoffConfig.jitter: must be between 0.0 and 1.0",
-                    i
+                    "services[{i}].backoffConfig.jitter: must be between 0.0 and 1.0"
                 )));
             }
             if b.multiplier <= 0.0 {
                 return Err(CoreError::ValidationError(format!(
-                    "services[{}].backoffConfig.multiplier: must be > 0",
-                    i
+                    "services[{i}].backoffConfig.multiplier: must be > 0"
                 )));
             }
 
             // timeouts
             if svc.graceful_timeout_secs == 0 {
                 return Err(CoreError::ValidationError(format!(
-                    "services[{}].gracefulTimeoutSecs: must be > 0",
-                    i
+                    "services[{i}].gracefulTimeoutSecs: must be > 0"
                 )));
             }
             if svc.startup_timeout_secs == 0 {
                 return Err(CoreError::ValidationError(format!(
-                    "services[{}].startupTimeoutSecs: must be > 0",
-                    i
+                    "services[{i}].startupTimeoutSecs: must be > 0"
                 )));
             }
 
@@ -228,27 +236,23 @@ fn validate_probe(
 ) -> Result<()> {
     if interval_secs == 0 {
         return Err(CoreError::ValidationError(format!(
-            "services[{}].{}.intervalSecs: must be > 0",
-            index, field
+            "services[{index}].{field}.intervalSecs: must be > 0"
         )));
     }
     if timeout_secs == 0 {
         return Err(CoreError::ValidationError(format!(
-            "services[{}].{}.timeoutSecs: must be > 0",
-            index, field
+            "services[{index}].{field}.timeoutSecs: must be > 0"
         )));
     }
     if let Some((fail, succ)) = thresholds {
         if fail == 0 {
             return Err(CoreError::ValidationError(format!(
-                "services[{}].{}.failureThreshold: must be > 0",
-                index, field
+                "services[{index}].{field}.failureThreshold: must be > 0"
             )));
         }
         if succ == 0 {
             return Err(CoreError::ValidationError(format!(
-                "services[{}].{}.successThreshold: must be > 0",
-                index, field
+                "services[{index}].{field}.successThreshold: must be > 0"
             )));
         }
     }
@@ -257,16 +261,14 @@ fn validate_probe(
         HealthCheckType::Tcp { port } => {
             if *port == 0 {
                 return Err(CoreError::ValidationError(format!(
-                    "services[{}].{}.type[Tcp].port: must be 1..=65535",
-                    index, field
+                    "services[{index}].{field}.type[Tcp].port: must be 1..=65535"
                 )));
             }
         }
         HealthCheckType::Exec { command, .. } => {
             if command.trim().is_empty() {
                 return Err(CoreError::ValidationError(format!(
-                    "services[{}].{}.type[Exec].command: cannot be empty",
-                    index, field
+                    "services[{index}].{field}.type[Exec].command: cannot be empty"
                 )));
             }
         }
@@ -276,14 +278,25 @@ fn validate_probe(
 }
 
 /// Load services from a TOML file path
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read or parsed.
 pub fn load_services_from_toml_path(path: impl AsRef<Path>) -> Result<ServicesFile> {
     let data = fs::read_to_string(&path).map_err(|e| {
-        CoreError::ConfigurationError(format!("Failed to read config {:?}: {}", path.as_ref(), e))
+        CoreError::ConfigurationError(format!(
+            "Failed to read config {}: {e}",
+            path.as_ref().display()
+        ))
     })?;
     load_services_from_toml_str(&data)
 }
 
 /// Load services from a TOML string
+///
+/// # Errors
+///
+/// Returns an error if the input cannot be parsed or validated.
 pub fn load_services_from_toml_str(input: &str) -> Result<ServicesFile> {
     // First try the canonical [[services]] array format
     match toml::from_str::<ServicesFile>(input) {
@@ -294,17 +307,16 @@ pub fn load_services_from_toml_str(input: &str) -> Result<ServicesFile> {
         Err(_e) => {
             // Fall back to keyed-by-id tables format
             let map: ServicesMapFile = toml::from_str(input)
-                .map_err(|e| CoreError::ConfigurationError(format!("TOML parse error: {}", e)))?;
+                .map_err(|e| CoreError::ConfigurationError(format!("TOML parse error: {e}")))?;
 
             // Convert each table into a ServiceSpec by injecting the id field
             let mut services: Vec<ServiceSpec> = Vec::with_capacity(map.services.len());
-            for (id, value) in map.services.into_iter() {
+            for (id, value) in map.services {
                 let table = match value {
                     toml::Value::Table(t) => t,
                     other => {
                         return Err(CoreError::ConfigurationError(format!(
-                            "Service '{}' must be a table, found {:?}",
-                            id,
+                            "Service '{id}' must be a table, found {:?}",
                             other.type_str()
                         )));
                     }
@@ -319,8 +331,7 @@ pub fn load_services_from_toml_str(input: &str) -> Result<ServicesFile> {
                 // Deserialize into ServiceSpec using the schema serde config (handles defaults and aliases)
                 let spec: ServiceSpec = table_with_id.try_into().map_err(|e| {
                     CoreError::ConfigurationError(format!(
-                        "Failed to parse service '{}': {}",
-                        id, e
+                        "Failed to parse service '{id}': {e}"
                     ))
                 })?;
                 services.push(spec);
@@ -369,7 +380,7 @@ mod tests {
     #[test]
     fn errors_on_empty_services() {
         let err = load_services_from_toml_str("services = []").unwrap_err();
-        assert!(format!("{}", err).contains("services: must contain at least one service"));
+        assert!(format!("{err}").contains("services: must contain at least one service"));
     }
 
     #[test]
@@ -385,7 +396,7 @@ mod tests {
         command = "echo"
         "#;
         let err = load_services_from_toml_str(input).unwrap_err();
-        assert!(format!("{}", err).contains("duplicate id"));
+        assert!(format!("{err}").contains("duplicate id"));
     }
 
     #[test]
@@ -400,6 +411,6 @@ mod tests {
         port = 0
         "#;
         let err = load_services_from_toml_str(input).unwrap_err();
-        assert!(format!("{}", err).contains("type[Tcp].port"));
+        assert!(format!("{err}").contains("type[Tcp].port"));
     }
 }

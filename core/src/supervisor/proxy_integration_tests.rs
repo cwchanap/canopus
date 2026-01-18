@@ -7,6 +7,7 @@ use schema::{
     BackoffConfig, HealthCheck, HealthCheckType, ReadinessCheck, RestartPolicy, ServiceEvent,
     ServiceSpec,
 };
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::time::{timeout, Duration};
@@ -17,7 +18,7 @@ fn service_with_readiness(port: u16) -> ServiceSpec {
         name: "Svc Proxy Test".to_string(),
         command: "sleep".to_string(),
         args: vec!["30".to_string()],
-        environment: Default::default(),
+        environment: HashMap::default(),
         working_directory: None,
         restart_policy: RestartPolicy::Never,
         backoff_config: BackoffConfig::default(),
@@ -150,6 +151,7 @@ async fn test_attach_on_ready_detach_on_stop() {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn test_detach_on_unhealthy_restart() {
     // Start a TCP listener to satisfy readiness and initial health
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -171,7 +173,7 @@ async fn test_detach_on_unhealthy_restart() {
         name: "Svc Proxy Unhealthy".to_string(),
         command: "sleep".to_string(),
         args: vec!["30".to_string()],
-        environment: Default::default(),
+        environment: HashMap::default(),
         working_directory: None,
         restart_policy: RestartPolicy::Always,
         backoff_config: BackoffConfig::default(),
@@ -246,8 +248,10 @@ async fn test_detach_on_unhealthy_restart() {
     let mut unhealthy_seen = false;
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     while std::time::Instant::now() < deadline {
-        if let Ok(Ok(false)) = timeout(Duration::from_secs(1), handle.trigger_health_check()).await
-        {
+        if matches!(
+            timeout(Duration::from_secs(1), handle.trigger_health_check()).await,
+            Ok(Ok(false))
+        ) {
             unhealthy_seen = true;
             break;
         }

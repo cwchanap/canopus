@@ -48,5 +48,5 @@ async fn corrupted_snapshot_does_not_prevent_bootstrap() {
     let contents = std::fs::read_to_string(&snap_path).unwrap();
     assert!(contents.contains("\"version\""));
 
-    handle.shutdown().await;
+    handle.shutdown();
 }

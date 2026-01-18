@@ -1,3 +1,5 @@
+#![allow(missing_docs, clippy::unwrap_used, unused_crate_dependencies)]
+
 use canopus_inbox::error::{InboxError, Result};
 
 #[test]
@@ -65,7 +67,7 @@ fn test_error_from_io() {
 #[test]
 fn test_error_debug() {
     let err = InboxError::NotFound("test".into());
-    let debug_str = format!("{:?}", err);
+    let debug_str = format!("{err:?}");
     assert!(debug_str.contains("NotFound"));
     assert!(debug_str.contains("test"));
 }

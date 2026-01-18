@@ -72,7 +72,8 @@ jobs:
             -D clippy::all \
             -D clippy::pedantic \
             -W clippy::nursery \
-            -W clippy::cargo
+            -W clippy::cargo \
+            -A clippy::multiple_crate_versions
 
   fmt:
     name: Rustfmt

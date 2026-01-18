@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 
 /// Events emitted by the supervisor system
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(tag = "eventType", rename_all = "camelCase")]
 pub enum ServiceEvent {
     /// Service state has changed
@@ -245,87 +245,85 @@ pub enum EventSeverity {
 
 impl ServiceEvent {
     /// Get the service ID for this event
+    #[must_use]
     pub fn service_id(&self) -> &str {
         match self {
-            ServiceEvent::StateChanged { service_id, .. } => service_id,
-            ServiceEvent::ProcessStarted { service_id, .. } => service_id,
-            ServiceEvent::ProcessExited { service_id, .. } => service_id,
-            ServiceEvent::HealthCheckResult { service_id, .. } => service_id,
-            ServiceEvent::ReadinessCheckResult { service_id, .. } => service_id,
-            ServiceEvent::RestartScheduled { service_id, .. } => service_id,
-            ServiceEvent::RestartAttempt { service_id, .. } => service_id,
-            ServiceEvent::ConfigurationUpdated { service_id, .. } => service_id,
-            ServiceEvent::RouteAttached { service_id, .. } => service_id,
-            ServiceEvent::RouteDetached { service_id, .. } => service_id,
-            ServiceEvent::LogOutput { service_id, .. } => service_id,
-            ServiceEvent::Warning { service_id, .. } => service_id,
-            ServiceEvent::Error { service_id, .. } => service_id,
-            ServiceEvent::StartupTimeout { service_id, .. } => service_id,
-            ServiceEvent::ServiceUnhealthy { service_id, .. } => service_id,
+            Self::StateChanged { service_id, .. }
+            | Self::ProcessStarted { service_id, .. }
+            | Self::ProcessExited { service_id, .. }
+            | Self::HealthCheckResult { service_id, .. }
+            | Self::ReadinessCheckResult { service_id, .. }
+            | Self::RestartScheduled { service_id, .. }
+            | Self::RestartAttempt { service_id, .. }
+            | Self::ConfigurationUpdated { service_id, .. }
+            | Self::RouteAttached { service_id, .. }
+            | Self::RouteDetached { service_id, .. }
+            | Self::LogOutput { service_id, .. }
+            | Self::Warning { service_id, .. }
+            | Self::Error { service_id, .. }
+            | Self::StartupTimeout { service_id, .. }
+            | Self::ServiceUnhealthy { service_id, .. } => service_id,
         }
     }
 
     /// Get the timestamp for this event
+    #[must_use]
     pub fn timestamp(&self) -> &str {
         match self {
-            ServiceEvent::StateChanged { timestamp, .. } => timestamp,
-            ServiceEvent::ProcessStarted { timestamp, .. } => timestamp,
-            ServiceEvent::ProcessExited { exit_info, .. } => &exit_info.timestamp,
-            ServiceEvent::HealthCheckResult { timestamp, .. } => timestamp,
-            ServiceEvent::ReadinessCheckResult { timestamp, .. } => timestamp,
-            ServiceEvent::RestartScheduled { timestamp, .. } => timestamp,
-            ServiceEvent::RestartAttempt { timestamp, .. } => timestamp,
-            ServiceEvent::ConfigurationUpdated { timestamp, .. } => timestamp,
-            ServiceEvent::RouteAttached { timestamp, .. } => timestamp,
-            ServiceEvent::RouteDetached { timestamp, .. } => timestamp,
-            ServiceEvent::LogOutput { timestamp, .. } => timestamp,
-            ServiceEvent::Warning { timestamp, .. } => timestamp,
-            ServiceEvent::Error { timestamp, .. } => timestamp,
-            ServiceEvent::StartupTimeout { timestamp, .. } => timestamp,
-            ServiceEvent::ServiceUnhealthy { timestamp, .. } => timestamp,
+            Self::ProcessExited { exit_info, .. } => &exit_info.timestamp,
+            Self::StateChanged { timestamp, .. }
+            | Self::ProcessStarted { timestamp, .. }
+            | Self::HealthCheckResult { timestamp, .. }
+            | Self::ReadinessCheckResult { timestamp, .. }
+            | Self::RestartScheduled { timestamp, .. }
+            | Self::RestartAttempt { timestamp, .. }
+            | Self::ConfigurationUpdated { timestamp, .. }
+            | Self::RouteAttached { timestamp, .. }
+            | Self::RouteDetached { timestamp, .. }
+            | Self::LogOutput { timestamp, .. }
+            | Self::Warning { timestamp, .. }
+            | Self::Error { timestamp, .. }
+            | Self::StartupTimeout { timestamp, .. }
+            | Self::ServiceUnhealthy { timestamp, .. } => timestamp,
         }
     }
 
     /// Get the severity level for this event
+    #[must_use]
     pub fn severity(&self) -> EventSeverity {
         match self {
-            ServiceEvent::StateChanged { .. } => EventSeverity::Info,
-            ServiceEvent::ProcessStarted { .. } => EventSeverity::Info,
-            ServiceEvent::ProcessExited { exit_info, .. } => {
+            Self::StateChanged { .. }
+            | Self::ProcessStarted { .. }
+            | Self::RestartAttempt { .. }
+            | Self::ConfigurationUpdated { .. }
+            | Self::RouteAttached { .. }
+            | Self::RouteDetached { .. } => EventSeverity::Info,
+            Self::ProcessExited { exit_info, .. } => {
                 if exit_info.is_success() {
                     EventSeverity::Info
                 } else {
                     EventSeverity::Warning
                 }
             }
-            ServiceEvent::HealthCheckResult { success, .. } => {
+            Self::HealthCheckResult { success, .. }
+            | Self::ReadinessCheckResult { success, .. } => {
                 if *success {
                     EventSeverity::Debug
                 } else {
                     EventSeverity::Warning
                 }
             }
-            ServiceEvent::ReadinessCheckResult { success, .. } => {
-                if *success {
-                    EventSeverity::Debug
-                } else {
-                    EventSeverity::Warning
-                }
-            }
-            ServiceEvent::RestartScheduled { .. } => EventSeverity::Warning,
-            ServiceEvent::RestartAttempt { .. } => EventSeverity::Info,
-            ServiceEvent::ConfigurationUpdated { .. } => EventSeverity::Info,
-            ServiceEvent::RouteAttached { .. } => EventSeverity::Info,
-            ServiceEvent::RouteDetached { .. } => EventSeverity::Info,
-            ServiceEvent::LogOutput { .. } => EventSeverity::Debug,
-            ServiceEvent::Warning { .. } => EventSeverity::Warning,
-            ServiceEvent::Error { .. } => EventSeverity::Error,
-            ServiceEvent::StartupTimeout { .. } => EventSeverity::Warning,
-            ServiceEvent::ServiceUnhealthy { .. } => EventSeverity::Critical,
+            Self::RestartScheduled { .. }
+            | Self::Warning { .. }
+            | Self::StartupTimeout { .. } => EventSeverity::Warning,
+            Self::LogOutput { .. } => EventSeverity::Debug,
+            Self::Error { .. } => EventSeverity::Error,
+            Self::ServiceUnhealthy { .. } => EventSeverity::Critical,
         }
     }
 
     /// Create a current timestamp string in RFC3339 format
+    #[must_use]
     pub fn current_timestamp() -> String {
         // Simple RFC3339 format: YYYY-MM-DDTHH:MM:SSZ
         // For production use, consider using chrono for proper timezone handling
@@ -337,14 +335,15 @@ impl ServiceEvent {
         )
     }
 
-    /// Create a state change event
+    /// Create a state changed event
+    #[must_use]
     pub fn state_changed(
         service_id: String,
         from_state: ServiceState,
         to_state: ServiceState,
         reason: Option<String>,
     ) -> Self {
-        ServiceEvent::StateChanged {
+        Self::StateChanged {
             service_id,
             from_state,
             to_state,
@@ -354,13 +353,14 @@ impl ServiceEvent {
     }
 
     /// Create a process started event
+    #[must_use]
     pub fn process_started(
         service_id: String,
         pid: u32,
         command: String,
         args: Vec<String>,
     ) -> Self {
-        ServiceEvent::ProcessStarted {
+        Self::ProcessStarted {
             service_id,
             pid,
             timestamp: Self::current_timestamp(),
@@ -370,21 +370,24 @@ impl ServiceEvent {
     }
 
     /// Create a process exited event
+    #[must_use]
+    #[allow(clippy::missing_const_for_fn)]
     pub fn process_exited(service_id: String, exit_info: ServiceExit) -> Self {
-        ServiceEvent::ProcessExited {
+        Self::ProcessExited {
             service_id,
             exit_info,
         }
     }
 
     /// Create a health check result event
+    #[must_use]
     pub fn health_check_result(
         service_id: String,
         success: bool,
         error: Option<String>,
         duration_ms: u64,
     ) -> Self {
-        ServiceEvent::HealthCheckResult {
+        Self::HealthCheckResult {
             service_id,
             success,
             timestamp: Self::current_timestamp(),
@@ -394,13 +397,14 @@ impl ServiceEvent {
     }
 
     /// Create a readiness check result event
+    #[must_use]
     pub fn readiness_check_result(
         service_id: String,
         success: bool,
         error: Option<String>,
         duration_ms: u64,
     ) -> Self {
-        ServiceEvent::ReadinessCheckResult {
+        Self::ReadinessCheckResult {
             service_id,
             success,
             timestamp: Self::current_timestamp(),
@@ -410,13 +414,14 @@ impl ServiceEvent {
     }
 
     /// Create a restart scheduled event
+    #[must_use]
     pub fn restart_scheduled(
         service_id: String,
         delay_secs: u64,
         attempt_count: u32,
         reason: String,
     ) -> Self {
-        ServiceEvent::RestartScheduled {
+        Self::RestartScheduled {
             service_id,
             delay_secs,
             attempt_count,
@@ -426,8 +431,9 @@ impl ServiceEvent {
     }
 
     /// Create a restart attempt event
+    #[must_use]
     pub fn restart_attempt(service_id: String, attempt: u32) -> Self {
-        ServiceEvent::RestartAttempt {
+        Self::RestartAttempt {
             service_id,
             attempt,
             timestamp: Self::current_timestamp(),
@@ -435,8 +441,9 @@ impl ServiceEvent {
     }
 
     /// Create a warning event
+    #[must_use]
     pub fn warning(service_id: String, message: String, code: Option<String>) -> Self {
-        ServiceEvent::Warning {
+        Self::Warning {
             service_id,
             message,
             timestamp: Self::current_timestamp(),
@@ -445,8 +452,9 @@ impl ServiceEvent {
     }
 
     /// Create an error event
+    #[must_use]
     pub fn error(service_id: String, message: String, code: Option<String>) -> Self {
-        ServiceEvent::Error {
+        Self::Error {
             service_id,
             message,
             timestamp: Self::current_timestamp(),
@@ -456,7 +464,7 @@ impl ServiceEvent {
 }
 
 /// Event filter for subscribing to specific events
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct EventFilter {
     /// Filter by service IDs (empty means all services)
@@ -474,7 +482,8 @@ pub struct EventFilter {
 
 impl EventFilter {
     /// Create a filter that matches all events
-    pub fn all() -> Self {
+    #[must_use]
+    pub const fn all() -> Self {
         Self {
             service_ids: Vec::new(),
             min_severity: None,
@@ -483,6 +492,7 @@ impl EventFilter {
     }
 
     /// Create a filter for a specific service
+    #[must_use]
     pub fn for_service(service_id: String) -> Self {
         Self {
             service_ids: vec![service_id],
@@ -492,7 +502,8 @@ impl EventFilter {
     }
 
     /// Create a filter for events with minimum severity
-    pub fn with_min_severity(severity: EventSeverity) -> Self {
+    #[must_use]
+    pub const fn with_min_severity(severity: EventSeverity) -> Self {
         Self {
             service_ids: Vec::new(),
             min_severity: Some(severity),
@@ -501,6 +512,7 @@ impl EventFilter {
     }
 
     /// Check if this filter matches the given event
+    #[must_use]
     pub fn matches(&self, event: &ServiceEvent) -> bool {
         // Check service ID filter
         if !self.service_ids.is_empty()

@@ -40,16 +40,17 @@ pub enum IpcError {
 
 impl IpcError {
     /// Get error code for this error type
-    pub fn code(&self) -> &'static str {
+    #[must_use]
+    pub const fn code(&self) -> &'static str {
         match self {
-            IpcError::ConnectionFailed(_) => "IPC001",
-            IpcError::SendFailed(_) => "IPC002",
-            IpcError::ReceiveFailed(_) => "IPC003",
-            IpcError::SerializationFailed(_) => "IPC004",
-            IpcError::DeserializationFailed(_) => "IPC005",
-            IpcError::EmptyResponse => "IPC006",
-            IpcError::ProtocolError(_) => "IPC007",
-            IpcError::Timeout(_) => "IPC008",
+            Self::ConnectionFailed(_) => "IPC001",
+            Self::SendFailed(_) => "IPC002",
+            Self::ReceiveFailed(_) => "IPC003",
+            Self::SerializationFailed(_) => "IPC004",
+            Self::DeserializationFailed(_) => "IPC005",
+            Self::EmptyResponse => "IPC006",
+            Self::ProtocolError(_) => "IPC007",
+            Self::Timeout(_) => "IPC008",
         }
     }
 }

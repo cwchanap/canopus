@@ -6,6 +6,7 @@
 use crate::proxy::NoopProxyAdapter;
 use crate::supervisor::{spawn_supervisor, MockInstruction, MockProcessAdapter, SupervisorConfig};
 use schema::{BackoffConfig, RestartPolicy, ServiceEvent, ServiceSpec, ServiceState};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast;
@@ -18,7 +19,7 @@ fn create_test_spec(restart_policy: RestartPolicy, backoff_config: BackoffConfig
         name: "Restart Test Service".to_string(),
         command: "echo".to_string(),
         args: vec!["test".to_string()],
-        environment: Default::default(),
+        environment: HashMap::default(),
         working_directory: None,
         route: None,
         restart_policy,
@@ -36,12 +37,8 @@ async fn collect_events(
 ) -> Vec<ServiceEvent> {
     let mut events = Vec::new();
 
-    loop {
-        match timeout(timeout_duration, event_rx.recv()).await {
-            Ok(Ok(event)) => events.push(event),
-            Ok(Err(_)) => break, // Channel closed
-            Err(_) => break,     // Timeout
-        }
+    while let Ok(Ok(event)) = timeout(timeout_duration, event_rx.recv()).await {
+        events.push(event);
     }
 
     events
@@ -256,8 +253,7 @@ mod tests {
             .count();
         assert!(
             spawning_count >= 2,
-            "Should see at least 2 spawning transitions (initial + restart), got {}",
-            spawning_count
+            "Should see at least 2 spawning transitions (initial + restart), got {spawning_count}"
         );
 
         handle.shutdown().unwrap();
@@ -340,8 +336,7 @@ mod tests {
         // Should see multiple spawning events (restarts for both success and failure)
         assert!(
             spawning_count >= 2,
-            "Should see at least 2 spawning transitions with Always policy, got {}",
-            spawning_count
+            "Should see at least 2 spawning transitions with Always policy, got {spawning_count}"
         );
     }
 
@@ -467,8 +462,7 @@ mod tests {
         // Should only see one process start (initial), not a restart
         assert_eq!(
             process_starts, 1,
-            "Manual stop should prevent restart, but saw {} process starts",
-            process_starts
+            "Manual stop should prevent restart, but saw {process_starts} process starts"
         );
 
         assert_eq!(handle.current_state(), ServiceState::Idle);

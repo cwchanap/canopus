@@ -75,7 +75,7 @@ pub enum ControlMsg {
     },
     /// Get the current effective service specification
     GetSpec {
-        /// Response channel for the current ServiceSpec
+        /// Response channel for the current `ServiceSpec`
         response: oneshot::Sender<ServiceSpec>,
     },
 }
@@ -98,17 +98,17 @@ enum InternalState {
 impl From<InternalState> for ServiceState {
     fn from(state: InternalState) -> Self {
         match state {
-            InternalState::Idle => ServiceState::Idle,
-            InternalState::Spawning => ServiceState::Spawning,
-            InternalState::Starting => ServiceState::Starting,
-            InternalState::Ready => ServiceState::Ready,
-            InternalState::Stopping => ServiceState::Stopping,
+            InternalState::Idle => Self::Idle,
+            InternalState::Spawning => Self::Spawning,
+            InternalState::Starting => Self::Starting,
+            InternalState::Ready => Self::Ready,
+            InternalState::Stopping => Self::Stopping,
         }
     }
 }
 
 /// Health status information for external monitoring
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HealthStatus {
     /// Current service state
     pub state: ServiceState,
@@ -133,7 +133,7 @@ pub struct HealthStatus {
 }
 
 /// Health check result with timing information
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HealthCheckStatus {
     /// Whether the check succeeded
     pub success: bool,
@@ -146,7 +146,7 @@ pub struct HealthCheckStatus {
 }
 
 /// Readiness check result with timing information
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReadinessCheckStatus {
     /// Whether the check succeeded
     pub success: bool,
@@ -171,6 +171,10 @@ pub struct SupervisorHandle {
 
 impl SupervisorHandle {
     /// Send a control message to the supervisor
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the supervisor task has shut down.
     pub fn send(&self, msg: ControlMsg) -> Result<()> {
         self.control_tx.send(msg).map_err(|_| {
             crate::CoreError::ServiceError("Supervisor task has shut down".to_string())
@@ -179,36 +183,58 @@ impl SupervisorHandle {
     }
 
     /// Start the service
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the supervisor task has shut down.
     pub fn start(&self) -> Result<()> {
         self.send(ControlMsg::Start)
     }
 
     /// Stop the service
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the supervisor task has shut down.
     pub fn stop(&self) -> Result<()> {
         self.send(ControlMsg::Stop)
     }
 
     /// Restart the service
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the supervisor task has shut down.
     pub fn restart(&self) -> Result<()> {
         self.send(ControlMsg::Restart)
     }
 
     /// Update the service specification
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the supervisor task has shut down.
     pub fn update_spec(&self, spec: ServiceSpec) -> Result<()> {
         self.send(ControlMsg::UpdateSpec(spec))
     }
 
     /// Shutdown the supervisor
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the supervisor task has shut down.
     pub fn shutdown(&self) -> Result<()> {
         self.send(ControlMsg::Shutdown)
     }
 
     /// Get the current state of the service
+    #[must_use]
     pub fn current_state(&self) -> ServiceState {
         *self.state_rx.borrow()
     }
 
     /// Subscribe to state changes
+    #[must_use]
     pub fn subscribe_to_state(&self) -> watch::Receiver<ServiceState> {
         self.state_rx.clone()
     }
@@ -217,6 +243,10 @@ impl SupervisorHandle {
     ///
     /// This provides detailed information about the service's health state,
     /// including timers, check results, and failure counts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the supervisor task fails to respond.
     pub async fn get_health_status(&self) -> Result<HealthStatus> {
         let (response_tx, response_rx) = oneshot::channel();
 
@@ -233,6 +263,11 @@ impl SupervisorHandle {
     ///
     /// This immediately performs a health check if one is configured,
     /// useful for testing and debugging health check configurations.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the supervisor task fails to respond or if the
+    /// underlying health check encounters an error.
     pub async fn trigger_health_check(&self) -> Result<bool> {
         let (response_tx, response_rx) = oneshot::channel();
 
@@ -253,6 +288,11 @@ impl SupervisorHandle {
     ///
     /// This immediately performs a readiness check if one is configured,
     /// useful for testing and debugging readiness check configurations.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the supervisor task fails to respond or if the
+    /// underlying readiness check encounters an error.
     pub async fn trigger_readiness_check(&self) -> Result<bool> {
         let (response_tx, response_rx) = oneshot::channel();
 
@@ -270,6 +310,10 @@ impl SupervisorHandle {
     }
 
     /// Get current process PID if running
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the supervisor task fails to respond.
     pub async fn get_pid(&self) -> Result<Option<u32>> {
         let (tx, rx) = oneshot::channel();
         self.send(ControlMsg::GetPid { response: tx })?;
@@ -278,6 +322,10 @@ impl SupervisorHandle {
     }
 
     /// Get the current effective service specification from the supervisor task
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the supervisor task fails to respond.
     pub async fn get_spec(&self) -> Result<ServiceSpec> {
         let (tx, rx) = oneshot::channel();
         self.send(ControlMsg::GetSpec { response: tx })?;
@@ -290,6 +338,10 @@ impl SupervisorHandle {
     /// Returns true if:
     /// - Service is in Ready state, OR
     /// - Service has no health checks configured and is running
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the supervisor task fails to respond.
     pub async fn is_healthy(&self) -> Result<bool> {
         let status = self.get_health_status().await?;
 
@@ -306,6 +358,7 @@ impl SupervisorHandle {
     /// Check if the service is ready to handle requests
     ///
     /// This is a convenience method that checks the current state.
+    #[must_use]
     pub fn is_ready(&self) -> bool {
         self.current_state().is_ready()
     }
@@ -378,7 +431,8 @@ mod unit_tests {
     use super::*;
     use crate::proxy::NoopProxyAdapter;
     use crate::supervisor::adapters::MockProcessAdapter;
-    use schema::RestartPolicy;
+    use schema::{BackoffConfig, RestartPolicy};
+    use std::collections::HashMap;
     use std::time::Duration;
     use tokio::time::timeout;
 
@@ -388,11 +442,11 @@ mod unit_tests {
             name: "Test Service".to_string(),
             command: "echo".to_string(),
             args: vec!["hello".to_string()],
-            environment: Default::default(),
+            environment: HashMap::default(),
             working_directory: None,
             route: None,
             restart_policy: RestartPolicy::Never,
-            backoff_config: Default::default(),
+            backoff_config: BackoffConfig::default(),
             health_check: None,
             readiness_check: None,
             graceful_timeout_secs: 5,

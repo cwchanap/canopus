@@ -26,12 +26,16 @@ pub struct Client {
 
 impl Client {
     /// Create a new CLI client
+    #[must_use]
     pub fn new(config: ClientConfig) -> Self {
         let ipc_client = IpcClient::new(&config.daemon_host, config.daemon_port);
         Self { config, ipc_client }
     }
 
     /// Start the daemon and, if a config is provided, synchronize services to match it
+    ///
+    /// # Errors
+    /// Returns an error if the daemon cannot be reached or the config cannot be applied.
     pub async fn start_with_config(&self, config: Option<PathBuf>) -> Result<()> {
         // Ensure daemon is running (reuses existing logic)
         self.start().await?;
@@ -45,6 +49,9 @@ impl Client {
     }
 
     /// Connect to the daemon and send a message
+    ///
+    /// # Errors
+    /// Returns an error if the daemon cannot be reached or returns an IPC error.
     pub async fn send_message(&self, message: Message) -> Result<Response> {
         self.ipc_client
             .send_message(&message)
@@ -53,6 +60,9 @@ impl Client {
     }
 
     /// Get daemon status
+    ///
+    /// # Errors
+    /// Returns an error if the daemon cannot be reached or returns an error response.
     pub async fn status(&self) -> Result<()> {
         match self.send_message(Message::Status).await {
             Ok(Response::Status {
@@ -62,11 +72,11 @@ impl Client {
                 version,
             }) => {
                 println!("Daemon Status:");
-                println!("  Running: {}", running);
-                println!("  Uptime: {} seconds", uptime_seconds);
-                println!("  PID: {}", pid);
+                println!("  Running: {running}");
+                println!("  Uptime: {uptime_seconds} seconds");
+                println!("  PID: {pid}");
                 if let Some(v) = version {
-                    println!("  Version: {}", v);
+                    println!("  Version: {v}");
                 }
             }
             Ok(Response::Error { message, code }) => {
@@ -76,7 +86,7 @@ impl Client {
                 }
                 return Err(CliError::DaemonError(message));
             }
-            Ok(_) => {
+            Ok(Response::Ok { .. }) => {
                 let err = "Unexpected response type".to_string();
                 error!("{}", err);
                 return Err(CliError::DaemonError(err));
@@ -89,7 +99,7 @@ impl Client {
                     println!("  Note: daemon not started");
                     return Ok(());
                 }
-                Err(CliError::IpcError(ipc_err))?
+                return Err(CliError::IpcError(ipc_err));
             }
             Err(e) => return Err(e),
         }
@@ -97,12 +107,15 @@ impl Client {
     }
 
     /// Start the daemon
+    ///
+    /// # Errors
+    /// Returns an error if the daemon cannot be reached or rejects the request.
     pub async fn start(&self) -> Result<()> {
         // First, try to send Start to a running daemon
         match self.send_message(Message::Start).await {
             Ok(resp) => match resp {
                 Response::Ok { message } => {
-                    println!("✓ {}", message);
+                    println!("✓ {message}");
                     Ok(())
                 }
                 Response::Error { message, code } => {
@@ -118,7 +131,7 @@ impl Client {
                         Err(CliError::DaemonError(message))
                     }
                 }
-                _ => {
+                Response::Status { .. } => {
                     let err = "Unexpected response type".to_string();
                     error!("{}", err);
                     Err(CliError::DaemonError(err))
@@ -134,7 +147,7 @@ impl Client {
                     // After ready, sending Start is optional; do it for symmetry
                     match self.send_message(Message::Start).await {
                         Ok(Response::Ok { message }) => {
-                            println!("✓ {}", message);
+                            println!("✓ {message}");
                             Ok(())
                         }
                         Ok(Response::Error { message, code }) => {
@@ -149,7 +162,7 @@ impl Client {
                                 Err(CliError::DaemonError(message))
                             }
                         }
-                        Ok(_) => {
+                        Ok(Response::Status { .. }) => {
                             let err = "Unexpected response type".to_string();
                             error!("{}", err);
                             Err(CliError::DaemonError(err))
@@ -165,10 +178,13 @@ impl Client {
     }
 
     /// Stop the daemon
+    ///
+    /// # Errors
+    /// Returns an error if the daemon cannot be reached or rejects the request.
     pub async fn stop(&self) -> Result<()> {
         match self.send_message(Message::Stop).await? {
             Response::Ok { message } => {
-                println!("✓ {}", message);
+                println!("✓ {message}");
             }
             Response::Error { message, code } => {
                 error!("Failed to stop daemon: {}", message);
@@ -177,7 +193,7 @@ impl Client {
                 }
                 return Err(CliError::DaemonError(message));
             }
-            _ => {
+            Response::Status { .. } => {
                 let err = "Unexpected response type".to_string();
                 error!("{}", err);
                 return Err(CliError::DaemonError(err));
@@ -187,10 +203,13 @@ impl Client {
     }
 
     /// Restart the daemon
+    ///
+    /// # Errors
+    /// Returns an error if the daemon cannot be reached or rejects the request.
     pub async fn restart(&self) -> Result<()> {
         match self.send_message(Message::Restart).await? {
             Response::Ok { message } => {
-                println!("✓ {}", message);
+                println!("✓ {message}");
             }
             Response::Error { message, code } => {
                 error!("Failed to restart daemon: {}", message);
@@ -199,7 +218,7 @@ impl Client {
                 }
                 return Err(CliError::DaemonError(message));
             }
-            _ => {
+            Response::Status { .. } => {
                 let err = "Unexpected response type".to_string();
                 error!("{}", err);
                 return Err(CliError::DaemonError(err));
@@ -209,6 +228,9 @@ impl Client {
     }
 
     /// Send a custom command
+    ///
+    /// # Errors
+    /// Returns an error if the daemon cannot be reached or rejects the request.
     pub async fn custom(&self, command: &str) -> Result<()> {
         match self
             .send_message(Message::Custom {
@@ -217,7 +239,7 @@ impl Client {
             .await?
         {
             Response::Ok { message } => {
-                println!("✓ {}", message);
+                println!("✓ {message}");
             }
             Response::Error { message, code } => {
                 error!("Command failed: {}", message);
@@ -226,7 +248,7 @@ impl Client {
                 }
                 return Err(CliError::DaemonError(message));
             }
-            _ => {
+            Response::Status { .. } => {
                 let err = "Unexpected response type".to_string();
                 error!("{}", err);
                 return Err(CliError::DaemonError(err));
@@ -238,10 +260,13 @@ impl Client {
 
 impl Client {
     /// Apply a simple runtime config (hostname/port per service) from a file path
+    ///
+    /// # Errors
+    /// Returns an error if the runtime config cannot be parsed or applied.
     pub async fn apply_runtime_config_path(&self, cfg_path: &PathBuf) -> Result<()> {
         // Parse simple config: tables per service id with optional hostname/port
         let simple: SimpleServicesFile = load_simple_services_from_toml_path(cfg_path)
-            .map_err(|e| CliError::DaemonError(format!("config error: {}", e)))?;
+            .map_err(|e| CliError::DaemonError(format!("config error: {e}")))?;
 
         // Connect to local UDS control plane
         let socket =
@@ -271,8 +296,7 @@ impl Client {
             if !current_ids.contains(id) {
                 // Unknown service id to the daemon; skip with a warning
                 println!(
-                    "Warning: service '{}' not found in daemon; ensure it is defined in daemon's services config",
-                    id
+                    "Warning: service '{id}' not found in daemon; ensure it is defined in daemon's services config"
                 );
                 continue;
             }
@@ -290,11 +314,11 @@ impl Client {
                 "Started '{}'{}{}",
                 id,
                 cfg.port
-                    .map(|p| format!(" on port {}", p))
+                    .map(|p| format!(" on port {p}"))
                     .unwrap_or_default(),
                 cfg.hostname
                     .as_ref()
-                    .map(|h| format!(" with host {}", h))
+                    .map(|h| format!(" with host {h}"))
                     .unwrap_or_default()
             );
         }
@@ -306,6 +330,9 @@ impl Client {
 impl Client {
     /// Start the daemon, optionally passing a full services config to the daemon when spawning,
     /// and then apply a simple runtime config (hostname/port) via UDS.
+    ///
+    /// # Errors
+    /// Returns an error if the daemon cannot be reached, started, or configured.
     pub async fn start_with_configs(
         &self,
         services_config: Option<PathBuf>,
@@ -341,7 +368,7 @@ impl Client {
             // Send Start for symmetry
             match self.send_message(Message::Start).await {
                 Ok(Response::Ok { message }) => {
-                    println!("✓ {}", message);
+                    println!("✓ {message}");
                 }
                 Ok(Response::Error { message, code }) => {
                     if !matches!(code.as_deref(), Some("DAEMON_ALREADY_RUNNING")) {
@@ -372,17 +399,20 @@ impl Client {
 
 impl Client {
     /// Get daemon semantic version via TCP Status response
+    ///
+    /// # Errors
+    /// Returns an error if the daemon cannot be reached or does not report a version.
     pub async fn version(&self) -> Result<()> {
         match self.send_message(Message::Status).await? {
-            Response::Status { version, .. } => match version {
-                Some(v) => {
-                    println!("{}", v);
+            Response::Status { version, .. } => version.map_or_else(
+                || Err(CliError::DaemonError("version unavailable".into())),
+                |v| {
+                    println!("{v}");
                     Ok(())
-                }
-                None => Err(CliError::DaemonError("version unavailable".into())),
-            },
+                },
+            ),
             Response::Error { message, .. } => Err(CliError::DaemonError(message)),
-            _ => Err(CliError::DaemonError("Unexpected response".into())),
+            Response::Ok { .. } => Err(CliError::DaemonError("Unexpected response".into())),
         }
     }
 }

@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use canopus_core::persistence::load_snapshot;
 use ipc::uds_client::JsonRpcClient;
-mod common;
+pub mod common;
 
 fn toy_bin_path() -> PathBuf {
     // Prefer Cargo-provided binary path
@@ -133,6 +133,7 @@ async fn wait_until_ready(
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
     common::run_with_timeout(std::time::Duration::from_secs(60), async {
         // Temp workspace for socket/state/config/scripts
@@ -172,9 +173,7 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
                 if sock_path.exists() {
                     break;
                 }
-                if Instant::now() >= deadline {
-                    panic!("IPC socket not created in time");
-                }
+                assert!(Instant::now() < deadline, "IPC socket not created in time");
                 sleep(Duration::from_millis(50)).await;
             }
         }
@@ -187,15 +186,11 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
             use tokio::time::{sleep, Duration, Instant};
             let deadline = Instant::now() + Duration::from_secs(3);
             loop {
-                match client.list().await {
-                    Ok(svcs) => break svcs,
-                    Err(_) => {
-                        if Instant::now() >= deadline {
-                            panic!("IPC list did not respond in time");
-                        }
-                        sleep(Duration::from_millis(50)).await;
-                    }
+                if let Ok(svcs) = client.list().await {
+                    break svcs;
                 }
+                assert!(Instant::now() < deadline, "IPC list did not respond in time");
+                sleep(Duration::from_millis(50)).await;
             }
         };
         assert_eq!(services.len(), 1, "one service expected");
@@ -226,7 +221,7 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
                     res.expect("became ready");
                     break;
                 }
-                _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {}
+                () = tokio::time::sleep(std::time::Duration::from_millis(50)) => {}
             }
         }
 
@@ -273,7 +268,7 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
         ));
 
         // Simulate daemon restart: shutdown bootstrap, then bootstrap again with same config
-        boot.shutdown().await;
+        boot.shutdown();
         // New bootstrap on same socket/state paths without binding port 80
         let _boot2 = daemon::bootstrap::bootstrap_with_runtime(Some(cfg_path.clone()), None, None)
             .await
@@ -287,9 +282,7 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
                 if sock_path.exists() {
                     break;
                 }
-                if Instant::now() >= deadline {
-                    panic!("IPC socket not recreated in time");
-                }
+                assert!(Instant::now() < deadline, "IPC socket not recreated in time");
                 sleep(Duration::from_millis(50)).await;
             }
         }
@@ -301,15 +294,13 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
             use tokio::time::{sleep, Duration, Instant};
             let deadline = Instant::now() + Duration::from_secs(3);
             loop {
-                match client2.list().await {
-                    Ok(_) => break,
-                    Err(_) => {
-                        if Instant::now() >= deadline {
-                            break;
-                        }
-                        sleep(Duration::from_millis(50)).await;
-                    }
+                if client2.list().await.is_ok() {
+                    break;
                 }
+                if Instant::now() >= deadline {
+                    break;
+                }
+                sleep(Duration::from_millis(50)).await;
             }
         }
         wait_until_ready(&client2, "toy-http", 12_000)

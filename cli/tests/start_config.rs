@@ -1,4 +1,5 @@
 #![allow(unused_crate_dependencies)]
+#![allow(missing_docs)]
 use std::env;
 use std::time::Duration;
 
@@ -73,7 +74,7 @@ async fn test_cli_start_with_config_removes_unlisted_services() -> CliResult<()>
         assert_eq!(api.state, ServiceState::Idle);
 
         // Cleanup
-        boot.shutdown().await;
+        boot.shutdown();
         daemon_handle.abort();
         Ok::<(), cli::CliError>(())
     })

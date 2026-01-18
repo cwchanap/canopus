@@ -75,7 +75,6 @@ no_mangle_generic_items = "warn"
 overflowing_literals = "warn"
 path_statements = "warn"
 patterns_in_fns_without_body = "warn"
-private_in_public = "warn"
 unconditional_recursion = "warn"
 unused = { level = "warn", priority = -1 }
 unused_allocation = "warn"
@@ -95,6 +94,7 @@ missing_errors_doc = "allow"        # Too noisy for now
 missing_panics_doc = "allow"        # Too noisy for now
 module_name_repetitions = "allow"   # Common in workspace structure
 must_use_candidate = "allow"        # Too noisy for now
+multiple_crate_versions = "allow"   # Frequent in transitive deps across targets
 
 # Performance lints
 inefficient_to_string = "warn"
@@ -112,7 +112,7 @@ if_then_some_else_none = "warn"
 implicit_clone = "warn"
 imprecise_flops = "warn"
 indexing_slicing = "warn"
-integer_arithmetic = "warn"
+arithmetic_side_effects = "warn"
 lossy_float_literal = "warn"
 panic = "warn"
 panic_in_result_fn = "warn"

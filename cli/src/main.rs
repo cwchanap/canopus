@@ -11,7 +11,6 @@ use clap::{Parser, Subcommand, ValueEnum};
 use cli::Client;
 use ipc::uds_client::JsonRpcClient;
 use schema::ServiceEvent;
-use serde_json;
 use std::path::PathBuf;
 use tracing::error;
 
@@ -72,11 +71,11 @@ enum Commands {
 enum SourceAgentArg {
     /// Claude Code by Anthropic
     ClaudeCode,
-    /// OpenAI Codex CLI
+    /// `OpenAI` Codex CLI
     Codex,
     /// Windsurf IDE
     Windsurf,
-    /// OpenCode AI CLI
+    /// `OpenCode` AI CLI
     OpenCode,
     /// Other/unknown agent
     Other,
@@ -193,10 +192,10 @@ enum ServicesCmd {
         /// Service ID to start (mutually exclusive with --config)
         #[arg(required_unless_present = "config", value_name = "SERVICE_ID")]
         service_id: Option<String>,
-        /// Preferred port to run the service on (only with SERVICE_ID)
+        /// Preferred port to run the service on (only with `SERVICE_ID`)
         #[arg(long)]
         port: Option<u16>,
-        /// Hostname alias to bind to this service (only with SERVICE_ID)
+        /// Hostname alias to bind to this service (only with `SERVICE_ID`)
         #[arg(long)]
         hostname: Option<String>,
     },
@@ -211,6 +210,7 @@ enum ServicesCmd {
 }
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
 async fn main() -> canopus_core::Result<()> {
     // Initialize logging
     tracing_subscriber::fmt::init();
@@ -226,30 +226,30 @@ async fn main() -> canopus_core::Result<()> {
     let client = Client::new(config);
 
     let result = match &cli.command {
-        Commands::Status => client.status().await.map_err(cli_to_core),
-        Commands::Version => client.version().await.map_err(cli_to_core),
-        Commands::Start => client.start().await.map_err(cli_to_core),
-        Commands::Stop => client.stop().await.map_err(cli_to_core),
-        Commands::Restart => client.restart().await.map_err(cli_to_core),
-        Commands::Custom { command } => client.custom(command).await.map_err(cli_to_core),
+        Commands::Status => client.status().await.map_err(|e| cli_to_core(&e)),
+        Commands::Version => client.version().await.map_err(|e| cli_to_core(&e)),
+        Commands::Start => client.start().await.map_err(|e| cli_to_core(&e)),
+        Commands::Stop => client.stop().await.map_err(|e| cli_to_core(&e)),
+        Commands::Restart => client.restart().await.map_err(|e| cli_to_core(&e)),
+        Commands::Custom { command } => client.custom(command).await.map_err(|e| cli_to_core(&e)),
         Commands::Services { cmd, socket, token } => {
             let uds = JsonRpcClient::new(socket, token.clone());
             match cmd {
                 ServicesCmd::List => {
-                    let services = uds.list().await.map_err(anyhow_to_core)?;
+                    let services = uds.list().await.map_err(|e| anyhow_to_core(&e))?;
                     if services.is_empty() {
                         println!("No services");
                     } else {
                         for s in services {
                             let mut extras: Vec<String> = Vec::new();
                             if let Some(pid) = s.pid {
-                                extras.push(format!("PID:{}", pid));
+                                extras.push(format!("PID:{pid}"));
                             }
                             if let Some(port) = s.port {
-                                extras.push(format!("PORT:{}", port));
+                                extras.push(format!("PORT:{port}"));
                             }
                             if let Some(hn) = &s.hostname {
-                                extras.push(format!("HOST:{}", hn));
+                                extras.push(format!("HOST:{hn}"));
                             }
                             if extras.is_empty() {
                                 println!("{}\t{}\t{:?}", s.id, s.name, s.state);
@@ -267,19 +267,19 @@ async fn main() -> canopus_core::Result<()> {
                     Ok(())
                 }
                 ServicesCmd::Status { service_id } => {
-                    let d = uds.status(service_id).await.map_err(anyhow_to_core)?;
+                    let d = uds.status(service_id).await.map_err(|e| anyhow_to_core(&e))?;
                     println!("Service Status:");
                     println!("  ID: {}", d.id);
                     println!("  Name: {}", d.name);
                     println!("  State: {:?}", d.state);
                     if let Some(pid) = d.pid {
-                        println!("  PID: {}", pid);
+                        println!("  PID: {pid}");
                     }
                     if let Some(port) = d.port {
-                        println!("  Port: {}", port);
+                        println!("  Port: {port}");
                     }
                     if let Some(hn) = d.hostname {
-                        println!("  Hostname: {}", hn);
+                        println!("  Hostname: {hn}");
                     }
                     Ok(())
                 }
@@ -295,7 +295,7 @@ async fn main() -> canopus_core::Result<()> {
                             Ok(simple) => {
                                 // Apply runtime config semantics using the provided UDS socket
                                 // Gather current services from daemon
-                                let current = uds.list().await.map_err(anyhow_to_core)?;
+                                let current = uds.list().await.map_err(|e| anyhow_to_core(&e))?;
                                 let current_ids: std::collections::HashSet<String> =
                                     current.iter().map(|s| s.id.clone()).collect();
                                 let desired_ids: std::collections::HashSet<String> =
@@ -317,12 +317,11 @@ async fn main() -> canopus_core::Result<()> {
                                 for (id, cfg) in &simple.services {
                                     if !current_ids.contains(id) {
                                         println!(
-                                            "Warning: service '{}' not found in daemon; ensure it is defined in daemon's services config",
-                                            id
+                                            "Warning: service '{id}' not found in daemon; ensure it is defined in daemon's services config"
                                         );
                                         continue;
                                     }
-                                    let detail = uds.status(id).await.map_err(anyhow_to_core)?;
+                                    let detail = uds.status(id).await.map_err(|e| anyhow_to_core(&e))?;
                                     if detail.state != schema::ServiceState::Idle {
                                         println!(
                                             "Skipping '{}': already running ({:?})",
@@ -332,16 +331,16 @@ async fn main() -> canopus_core::Result<()> {
                                     }
                                     uds.start(id, cfg.port, cfg.hostname.as_deref())
                                         .await
-                                        .map_err(anyhow_to_core)?;
+                                        .map_err(|e| anyhow_to_core(&e))?;
                                     println!(
                                         "Started '{}'{}{}",
                                         id,
                                         cfg.port
-                                            .map(|p| format!(" on port {}", p))
+                                            .map(|p| format!(" on port {p}"))
                                             .unwrap_or_default(),
                                         cfg.hostname
                                             .as_ref()
-                                            .map(|h| format!(" with host {}", h))
+                                            .map(|h| format!(" with host {h}"))
                                             .unwrap_or_default()
                                     );
                                 }
@@ -370,21 +369,20 @@ async fn main() -> canopus_core::Result<()> {
                                                     }
                                                     uds.start(&id, None, None)
                                                         .await
-                                                        .map_err(anyhow_to_core)?;
-                                                    println!("Started '{}'", id);
+                                                        .map_err(|e| anyhow_to_core(&e))?;
+                                                    println!("Started '{id}'");
                                                 }
                                                 Err(_) => {
                                                     println!(
-                                                        "Warning: service '{}' not found in daemon; ensure daemon loaded matching services config",
-                                                        id
+                                                        "Warning: service '{id}' not found in daemon; ensure daemon loaded matching services config"
                                                     );
                                                 }
                                             }
                                         }
                                         Ok(())
                                     }
-                                    Err(e) => Err(anyhow_to_core(ipc::IpcError::ProtocolError(
-                                        format!("failed to parse config: {}", e),
+                                    Err(e) => Err(anyhow_to_core(&ipc::IpcError::ProtocolError(
+                                        format!("failed to parse config: {e}"),
                                     ))),
                                 }
                             }
@@ -396,17 +394,17 @@ async fn main() -> canopus_core::Result<()> {
                             .expect("SERVICE_ID required unless --config is provided");
                         uds.start(id, *port, hostname.as_deref())
                             .await
-                            .map_err(anyhow_to_core)
+                            .map_err(|e| anyhow_to_core(&e))
                     }
                 }
                 ServicesCmd::Stop { service_id } => {
-                    uds.stop(service_id).await.map_err(anyhow_to_core)
+                    uds.stop(service_id).await.map_err(|e| anyhow_to_core(&e))
                 }
                 ServicesCmd::Restart { service_id } => {
-                    uds.restart(service_id).await.map_err(anyhow_to_core)
+                    uds.restart(service_id).await.map_err(|e| anyhow_to_core(&e))
                 }
                 ServicesCmd::Health { service_id } => {
-                    let healthy = uds.health_check(service_id).await.map_err(anyhow_to_core)?;
+                    let healthy = uds.health_check(service_id).await.map_err(|e| anyhow_to_core(&e))?;
                     println!(
                         "{}: {}",
                         service_id,
@@ -418,7 +416,7 @@ async fn main() -> canopus_core::Result<()> {
                     let mut rx = uds
                         .tail_logs(service_id, None)
                         .await
-                        .map_err(anyhow_to_core)?;
+                        .map_err(|e| anyhow_to_core(&e))?;
                     while let Some(evt) = rx.recv().await {
                         print_event(&evt);
                     }
@@ -437,11 +435,11 @@ async fn main() -> canopus_core::Result<()> {
     Ok(())
 }
 
-fn anyhow_to_core(e: ipc::IpcError) -> canopus_core::CoreError {
+fn anyhow_to_core(e: &ipc::IpcError) -> canopus_core::CoreError {
     canopus_core::CoreError::ServiceError(e.to_string())
 }
 
-fn cli_to_core(e: cli::CliError) -> canopus_core::CoreError {
+fn cli_to_core(e: &cli::CliError) -> canopus_core::CoreError {
     canopus_core::CoreError::ServiceError(e.to_string())
 }
 
@@ -465,14 +463,15 @@ fn print_event(evt: &ServiceEvent) {
             );
         }
         other => {
-            println!("EVENT: {:?}", other);
+            println!("EVENT: {other:?}");
         }
     }
 }
 
 /// Handle inbox subcommands.
+#[allow(clippy::too_many_lines)]
 async fn handle_inbox_command(cmd: &InboxCmd) -> canopus_core::Result<()> {
-    let store = SqliteStore::open_default().map_err(inbox_to_core)?;
+    let store = SqliteStore::open_default().map_err(|e| inbox_to_core(&e))?;
 
     match cmd {
         InboxCmd::List {
@@ -490,16 +489,16 @@ async fn handle_inbox_command(cmd: &InboxCmd) -> canopus_core::Result<()> {
             };
 
             if *count {
-                let n = store.count(filter).await.map_err(inbox_to_core)?;
+                let n = store.count(filter).await.map_err(|e| inbox_to_core(&e))?;
                 println!("{n}");
             } else {
-                let items = store.list(filter).await.map_err(inbox_to_core)?;
+                let items = store.list(filter).await.map_err(|e| inbox_to_core(&e))?;
                 if items.is_empty() {
                     println!("No inbox items");
                 } else {
                     println!(
-                        "{:<36} {:<15} {:<12} {:<10} {}",
-                        "ID", "PROJECT", "AGENT", "AGE", "ACTION"
+                        "{:<36} {:<15} {:<12} {:<10} ACTION",
+                        "ID", "PROJECT", "AGENT", "AGE"
                     );
                     println!("{}", "-".repeat(100));
                     for item in items {
@@ -523,12 +522,16 @@ async fn handle_inbox_command(cmd: &InboxCmd) -> canopus_core::Result<()> {
             Ok(())
         }
         InboxCmd::View { id } => {
-            let item = store.get(id).await.map_err(inbox_to_core)?.ok_or_else(|| {
+            let item = store
+                .get(id)
+                .await
+                .map_err(|e| inbox_to_core(&e))?
+                .ok_or_else(|| {
                 canopus_core::CoreError::ServiceError(format!("Item not found: {id}"))
             })?;
 
             // Mark as read
-            store.mark_read(id).await.map_err(inbox_to_core)?;
+            store.mark_read(id).await.map_err(|e| inbox_to_core(&e))?;
 
             println!("Inbox Item: {}", item.id);
             println!("{}", "=".repeat(60));
@@ -560,7 +563,7 @@ async fn handle_inbox_command(cmd: &InboxCmd) -> canopus_core::Result<()> {
             agent,
         } => {
             let new_item = NewInboxItem::new(project, status, action, (*agent).into());
-            let item = store.insert(new_item).await.map_err(inbox_to_core)?;
+            let item = store.insert(new_item).await.map_err(|e| inbox_to_core(&e))?;
 
             // Send desktop notification
             if let Err(e) = canopus_inbox::notify::send_notification(&item) {
@@ -580,14 +583,14 @@ async fn handle_inbox_command(cmd: &InboxCmd) -> canopus_core::Result<()> {
         }
         InboxCmd::Read { ids } => {
             for id in ids {
-                store.mark_read(id).await.map_err(inbox_to_core)?;
+                store.mark_read(id).await.map_err(|e| inbox_to_core(&e))?;
                 println!("Marked as read: {id}");
             }
             Ok(())
         }
         InboxCmd::Dismiss { ids } => {
             for id in ids {
-                store.dismiss(id).await.map_err(inbox_to_core)?;
+                store.dismiss(id).await.map_err(|e| inbox_to_core(&e))?;
                 println!("Dismissed: {id}");
             }
             Ok(())
@@ -597,7 +600,7 @@ async fn handle_inbox_command(cmd: &InboxCmd) -> canopus_core::Result<()> {
                 status: Some(InboxStatus::Unread),
                 ..Default::default()
             };
-            let items = store.list(filter).await.map_err(inbox_to_core)?;
+            let items = store.list(filter).await.map_err(|e| inbox_to_core(&e))?;
             let count = items.len();
 
             if count == 0 {
@@ -607,7 +610,7 @@ async fn handle_inbox_command(cmd: &InboxCmd) -> canopus_core::Result<()> {
                 return Ok(());
             }
 
-            println!("{} new inbox item(s)", count);
+            println!("{count} new inbox item(s)");
             for item in items.iter().take(5) {
                 println!(
                     "  * [{}] {}: {}",
@@ -633,13 +636,13 @@ async fn handle_inbox_command(cmd: &InboxCmd) -> canopus_core::Result<()> {
             let deleted = store
                 .cleanup_older_than(*days)
                 .await
-                .map_err(inbox_to_core)?;
+                .map_err(|e| inbox_to_core(&e))?;
             println!("Cleaned up {deleted} old inbox items");
             Ok(())
         }
     }
 }
 
-fn inbox_to_core(e: canopus_inbox::InboxError) -> canopus_core::CoreError {
+fn inbox_to_core(e: &canopus_inbox::InboxError) -> canopus_core::CoreError {
     canopus_core::CoreError::ServiceError(e.to_string())
 }

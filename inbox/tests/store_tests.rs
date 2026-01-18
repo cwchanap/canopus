@@ -1,3 +1,9 @@
+#![allow(
+    clippy::expect_used,
+    missing_docs,
+    unused_crate_dependencies
+)]
+
 use canopus_inbox::item::{InboxFilter, InboxStatus, NewInboxItem, SourceAgent};
 use canopus_inbox::store::SqliteStore;
 use canopus_inbox::InboxStore;
@@ -52,7 +58,8 @@ async fn test_list_with_filter() {
         .await
         .expect("list");
     assert_eq!(claude_only.len(), 1);
-    assert_eq!(claude_only[0].source_agent, SourceAgent::ClaudeCode);
+    let first = claude_only.first().expect("expected one result");
+    assert_eq!(first.source_agent, SourceAgent::ClaudeCode);
 }
 
 #[tokio::test]
@@ -169,7 +176,8 @@ async fn test_sql_injection_protection() {
         .await
         .expect("list");
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].project_name, "test%project");
+    let first = results.first().expect("expected one result");
+    assert_eq!(first.project_name, "test%project");
 
     let results = store
         .list(InboxFilter {
@@ -179,7 +187,8 @@ async fn test_sql_injection_protection() {
         .await
         .expect("list");
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].project_name, "test_project");
+    let first = results.first().expect("expected one result");
+    assert_eq!(first.project_name, "test_project");
 }
 
 #[tokio::test]
@@ -302,8 +311,9 @@ async fn test_filter_combinations() {
         .expect("list");
 
     assert_eq!(results.len(), 1);
-    assert!(results[0].project_name.contains("alpha"));
-    assert_eq!(results[0].source_agent, SourceAgent::ClaudeCode);
+    let first = results.first().expect("expected one result");
+    assert!(first.project_name.contains("alpha"));
+    assert_eq!(first.source_agent, SourceAgent::ClaudeCode);
 }
 
 #[tokio::test]
@@ -329,7 +339,8 @@ async fn test_project_partial_match() {
         .expect("list");
 
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].project_name, "my-awesome-project");
+    let first = results.first().expect("expected one result");
+    assert_eq!(first.project_name, "my-awesome-project");
 }
 
 #[tokio::test]
@@ -339,7 +350,7 @@ async fn test_dismiss_nonexistent() {
     let result = store.dismiss("non-existent-id").await;
     assert!(result.is_err());
     assert!(matches!(
-        result.unwrap_err(),
+        result.expect_err("expected not found error"),
         canopus_inbox::InboxError::NotFound(_)
     ));
 }

@@ -36,15 +36,16 @@ pub enum CliError {
 
 impl CliError {
     /// Get error code for this error type
-    pub fn code(&self) -> &'static str {
+    #[must_use]
+    pub const fn code(&self) -> &'static str {
         match self {
-            CliError::CommandFailed(_) => "CLI001",
-            CliError::InvalidArgument(_) => "CLI002",
-            CliError::ConfigError(_) => "CLI003",
-            CliError::ConnectionFailed(_) => "CLI004",
-            CliError::DaemonError(_) => "CLI005",
-            CliError::IpcError(_) => "CLI007",
-            CliError::IoError(_) => "CLI008",
+            Self::CommandFailed(_) => "CLI001",
+            Self::InvalidArgument(_) => "CLI002",
+            Self::ConfigError(_) => "CLI003",
+            Self::ConnectionFailed(_) => "CLI004",
+            Self::DaemonError(_) => "CLI005",
+            Self::IpcError(_) => "CLI007",
+            Self::IoError(_) => "CLI008",
         }
     }
 }

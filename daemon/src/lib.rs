@@ -27,6 +27,7 @@ pub struct Daemon {
 
 impl Daemon {
     /// Create a new daemon instance
+    #[must_use]
     pub fn new(config: DaemonConfig) -> Self {
         Self {
             config,
@@ -36,11 +37,15 @@ impl Daemon {
     }
 
     /// Start the daemon server
+    ///
+    /// # Errors
+    /// Returns an error if the TCP listener cannot be bound or if IO fails
+    /// while handling connections.
     pub async fn start(&self) -> Result<()> {
         let addr = format!("{}:{}", self.config.host, self.config.port);
         let listener = TcpListener::bind(&addr)
             .await
-            .map_err(|e| DaemonError::ServerError(format!("Failed to bind to {}: {}", addr, e)))?;
+            .map_err(|e| DaemonError::ServerError(format!("Failed to bind to {addr}: {e}")))?;
 
         self.running
             .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -77,7 +82,7 @@ impl Daemon {
             }
 
             let request: Message = serde_json::from_slice(&buffer[..n])?;
-            let response = self.process_message(request).await;
+            let response = self.process_message(request);
             let response_data = serde_json::to_vec(&response)?;
 
             stream.write_all(&response_data).await?;
@@ -87,7 +92,7 @@ impl Daemon {
     }
 
     /// Process incoming messages
-    async fn process_message(&self, message: Message) -> Response {
+    fn process_message(&self, message: Message) -> Response {
         match message {
             Message::Status => {
                 let uptime_seconds = self.start_time.elapsed().as_secs();
@@ -130,7 +135,7 @@ impl Daemon {
             Message::Custom { cmd } => {
                 info!("Custom command received: {}", cmd);
                 Response::Ok {
-                    message: format!("Processed: {}", cmd),
+                    message: format!("Processed: {cmd}"),
                 }
             }
         }

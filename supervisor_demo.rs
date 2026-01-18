@@ -8,13 +8,15 @@
 use canopus_core::proxy::NoopProxyAdapter;
 use canopus_core::supervisor::{spawn_supervisor, MockProcessAdapter, SupervisorConfig};
 use canopus_core::Result;
-use schema::{RestartPolicy, ServiceSpec};
+use schema::{BackoffConfig, RestartPolicy, ServiceSpec};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::time::{timeout, Duration};
 use tracing::info;
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
 async fn main() -> Result<()> {
     // Initialize tracing
     canopus_core::utils::init_tracing("info")?;
@@ -27,11 +29,11 @@ async fn main() -> Result<()> {
         name: "Demo Service".to_string(),
         command: "echo".to_string(),
         args: vec!["Hello from supervisor!".to_string()],
-        environment: Default::default(),
+        environment: HashMap::default(),
         working_directory: None,
         route: None,
         restart_policy: RestartPolicy::Never,
-        backoff_config: Default::default(),
+        backoff_config: BackoffConfig::default(),
         health_check: None,
         readiness_check: None,
         graceful_timeout_secs: 5,
