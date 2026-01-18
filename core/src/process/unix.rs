@@ -49,6 +49,12 @@ pub struct ChildProcess {
 ///
 /// This variant extends [`spawn`] by allowing the caller to specify environment
 /// variables and an optional working directory for the child process.
+///
+/// # Errors
+///
+/// Returns an error if the process fails to spawn or if the child PID cannot be
+/// retrieved.
+#[allow(clippy::implicit_hasher)]
 pub fn spawn_with(
     cmd: &str,
     args: &[&str],
@@ -84,14 +90,14 @@ pub fn spawn_with(
     }
 
     let child = command.spawn().map_err(|e| {
-        error!("Failed to spawn process '{}': {}", cmd, e);
-        CoreError::ProcessSpawn(format!("Failed to spawn '{}': {}", cmd, e))
+        error!("Failed to spawn process '{cmd}': {e}");
+        CoreError::ProcessSpawn(format!("Failed to spawn '{cmd}': {e}"))
     })?;
 
     let raw_pid = child
         .id()
         .ok_or_else(|| CoreError::ProcessSpawn("Spawned child did not have a PID".to_string()))?;
-    let pid = Pid::from_raw(raw_pid as i32);
+    let pid = Pid::from_raw(i32::try_from(raw_pid).unwrap_or(i32::MAX));
     debug!("Successfully spawned process {} in new process group", pid);
 
     Ok(ChildProcess { pid, child })
@@ -99,28 +105,40 @@ pub fn spawn_with(
 
 impl ChildProcess {
     /// Get the process ID
+    #[must_use]
+    #[allow(clippy::missing_const_for_fn)]
     pub fn pid(&self) -> u32 {
-        self.pid.as_raw() as u32
+        u32::try_from(self.pid.as_raw()).unwrap_or_default()
     }
 
     /// Get the process group ID (same as PID for session leaders)
+    #[must_use]
+    #[allow(clippy::missing_const_for_fn)]
     pub fn pgid(&self) -> u32 {
-        self.pid.as_raw() as u32
+        u32::try_from(self.pid.as_raw()).unwrap_or_default()
     }
 
     /// Wait for the process to exit and return its exit status (async)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if waiting on the process fails.
     pub async fn wait(&mut self) -> Result<std::process::ExitStatus> {
         self.child.wait().await.map_err(|e| {
-            CoreError::ProcessWait(format!("Failed to wait for process {}: {}", self.pid, e))
+            CoreError::ProcessWait(format!("Failed to wait for process {}: {e}", self.pid))
         })
     }
 
     /// Try to wait for the process to exit without blocking
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if polling the process status fails.
     pub fn try_wait(&mut self) -> Result<Option<std::process::ExitStatus>> {
         self.child.try_wait().map_err(|e| {
             CoreError::ProcessWait(format!(
-                "Failed to try_wait for process {}: {}",
-                self.pid, e
+                "Failed to try_wait for process {}: {e}",
+                self.pid
             ))
         })
     }
@@ -140,10 +158,10 @@ impl ChildProcess {
 /// * `cmd` - The command to execute (must be in PATH or an absolute path)
 /// * `args` - Command line arguments for the process
 ///
-/// ## Safety
+/// # Errors
 ///
-/// This function uses `unsafe` code to call `libc::setsid()` in the `before_exec`
-/// closure. The safety is ensured because:
+/// Returns an error if the process fails to spawn or if the child PID cannot be
+/// retrieved.
 /// - `setsid()` is called in the child process before `exec()`
 /// - `setsid()` is async-signal-safe and appropriate for use in `before_exec`
 /// - Error handling properly converts C errors to Rust errors
@@ -183,15 +201,15 @@ pub fn spawn(cmd: &str, args: &[&str]) -> Result<ChildProcess> {
     }
 
     let child = command.spawn().map_err(|e| {
-        error!("Failed to spawn process '{}': {}", cmd, e);
-        CoreError::ProcessSpawn(format!("Failed to spawn '{}': {}", cmd, e))
+        error!("Failed to spawn process '{cmd}': {e}");
+        CoreError::ProcessSpawn(format!("Failed to spawn '{cmd}': {e}"))
     })?;
 
     // tokio::process::Child::id() may return Option on some platforms
     let raw_pid = child
         .id()
         .ok_or_else(|| CoreError::ProcessSpawn("Spawned child did not have a PID".to_string()))?;
-    let pid = Pid::from_raw(raw_pid as i32);
+    let pid = Pid::from_raw(i32::try_from(raw_pid).unwrap_or(i32::MAX));
     debug!("Successfully spawned process {} in new process group", pid);
 
     Ok(ChildProcess { pid, child })
@@ -199,11 +217,13 @@ pub fn spawn(cmd: &str, args: &[&str]) -> Result<ChildProcess> {
 
 impl ChildProcess {
     /// Take the stdout handle for async reading, if available
+    #[allow(clippy::missing_const_for_fn)]
     pub fn take_stdout(&mut self) -> Option<tokio::process::ChildStdout> {
         self.child.stdout.take()
     }
 
     /// Take the stderr handle for async reading, if available
+    #[allow(clippy::missing_const_for_fn)]
     pub fn take_stderr(&mut self) -> Option<tokio::process::ChildStderr> {
         self.child.stderr.take()
     }
@@ -234,6 +254,11 @@ impl ChildProcess {
 /// signal_term_group(&child)?; // Gracefully terminate
 /// # Ok::<(), canopus_core::CoreError>(())
 /// ```
+///
+/// # Errors
+///
+/// Returns an error if signaling the process group fails with an unexpected
+/// OS error.
 pub fn signal_term_group(child: &ChildProcess) -> Result<()> {
     debug!("Sending SIGTERM to process group {}", child.pid);
 
@@ -293,6 +318,11 @@ pub fn signal_term_group(child: &ChildProcess) -> Result<()> {
 /// signal_kill_group(&child)?; // Forcefully terminate
 /// # Ok::<(), canopus_core::CoreError>(())
 /// ```
+///
+/// # Errors
+///
+/// Returns an error if signaling the process group fails with an unexpected
+/// OS error.
 pub fn signal_kill_group(child: &ChildProcess) -> Result<()> {
     debug!("Sending SIGKILL to process group {}", child.pid);
 
@@ -348,6 +378,11 @@ pub fn signal_kill_group(child: &ChildProcess) -> Result<()> {
 /// terminate_with_timeout(&mut child, Duration::from_secs(5))?;
 /// # Ok::<(), canopus_core::CoreError>(())
 /// ```
+///
+/// # Errors
+///
+/// Returns an error if signaling the process group fails or if waiting for
+/// the child process status fails.
 pub fn terminate_with_timeout(
     child: &mut ChildProcess,
     timeout: std::time::Duration,
@@ -421,7 +456,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             CoreError::ProcessSpawn(_) => {} // Expected error type
-            e => panic!("Expected ProcessSpawn error, got: {}", e),
+            e => panic!("Expected ProcessSpawn error, got: {e}"),
         }
     }
 

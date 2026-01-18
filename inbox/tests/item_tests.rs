@@ -1,3 +1,10 @@
+#![allow(
+    missing_docs,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    unused_crate_dependencies
+)]
+
 use canopus_inbox::item::{InboxFilter, InboxItem, InboxStatus, NewInboxItem, SourceAgent};
 
 #[test]
@@ -88,10 +95,16 @@ fn test_with_details() {
         }));
 
     assert!(item.details.is_some());
-    let details = item.details.unwrap();
-    assert_eq!(details["key"], "value");
-    assert_eq!(details["count"], 42);
-    assert_eq!(details["nested"]["inner"], true);
+    let details = item.details.expect("expected details to be present");
+    assert_eq!(details.get("key").and_then(|value| value.as_str()), Some("value"));
+    assert_eq!(details.get("count").and_then(serde_json::Value::as_i64), Some(42));
+    assert_eq!(
+        details
+            .get("nested")
+            .and_then(|value| value.get("inner"))
+            .and_then(serde_json::Value::as_bool),
+        Some(true)
+    );
 }
 
 #[test]

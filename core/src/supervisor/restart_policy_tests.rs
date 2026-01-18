@@ -91,6 +91,7 @@ impl ExpectedAction {
 mod tests {
     use super::*;
 
+    #[allow(clippy::too_many_lines)]
     fn create_test_cases() -> Vec<RestartPolicyTestCase> {
         vec![
             // Test case: RestartPolicy::Never
@@ -251,36 +252,44 @@ mod tests {
                 .zip(test_case.expected_actions.iter())
                 .enumerate()
             {
-                let service_exit = exit.to_service_exit(1000 + i as u32);
+                let pid_offset = u32::try_from(i).unwrap_or(0);
+                let service_exit = exit.to_service_exit(1000_u32.saturating_add(pid_offset));
                 let action = engine.should_restart(&service_exit);
 
                 match (&action, expected.should_restart) {
                     (RestartAction::Stop, false) => {
                         // Expected stop - good
-                        println!("  Exit {}: Stop (expected)", i);
+                        println!("  Exit {i}: Stop (expected)");
                     }
                     (RestartAction::Restart { delay }, true) => {
-                        let delay_ms = delay.as_millis() as u64;
+                        let delay_ms = u64::try_from(delay.as_millis()).unwrap_or(u64::MAX);
 
                         if delay_ms >= expected.delay_min_ms && delay_ms <= expected.delay_max_ms {
                             println!(
-                                "  Exit {}: Restart with {}ms delay (expected range: {}-{}ms)",
-                                i, delay_ms, expected.delay_min_ms, expected.delay_max_ms
+                                "  Exit {i}: Restart with {delay_ms}ms delay (expected range: {}-{}ms)",
+                                expected.delay_min_ms,
+                                expected.delay_max_ms
                             );
                         } else {
-                            panic!("Test case '{}', exit {}: Restart delay {}ms outside expected range {}-{}ms",
-                                  test_case.name, i, delay_ms, expected.delay_min_ms, expected.delay_max_ms);
+                            panic!(
+                                "Test case '{}', exit {i}: Restart delay {delay_ms}ms outside expected range {}-{}ms",
+                                test_case.name,
+                                expected.delay_min_ms,
+                                expected.delay_max_ms
+                            );
                         }
                     }
                     (RestartAction::Stop, true) => {
                         panic!(
-                            "Test case '{}', exit {}: Expected restart but got stop",
-                            test_case.name, i
+                            "Test case '{}', exit {i}: Expected restart but got stop",
+                            test_case.name
                         );
                     }
                     (RestartAction::Restart { delay }, false) => {
-                        panic!("Test case '{}', exit {}: Expected stop but got restart with {:?} delay", 
-                              test_case.name, i, delay);
+                        panic!(
+                            "Test case '{}', exit {i}: Expected stop but got restart with {delay:?} delay",
+                            test_case.name
+                        );
                     }
                 }
             }
@@ -413,7 +422,7 @@ mod tests {
 
         // All subsequent delays should be capped at 5s
         for &delay in &delays[1..] {
-            assert!(delay <= 5, "Delay {} exceeds cap of 5s", delay);
+            assert!(delay <= 5, "Delay {delay} exceeds cap of 5s");
         }
 
         // Last few should definitely be at the cap
@@ -448,7 +457,7 @@ mod tests {
 
         // All delays should be exactly 3000ms
         for &delay in &delays {
-            assert_eq!(delay, 3000, "Expected 3000ms, got {}ms", delay);
+            assert_eq!(delay, 3000, "Expected 3000ms, got {delay}ms");
         }
     }
 }

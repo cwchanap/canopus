@@ -32,6 +32,11 @@ pub struct LogRing {
 
 impl LogRing {
     /// Create a new `LogRing` with the given capacity (must be > 0)
+    ///
+    /// # Panics
+    ///
+    /// Panics if `capacity` is zero.
+    #[must_use]
     pub fn new(capacity: usize) -> Self {
         assert!(capacity > 0, "LogRing capacity must be > 0");
         Self {
@@ -57,33 +62,39 @@ impl LogRing {
     }
 
     /// Current number of entries retained
+    #[must_use]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
     /// Whether the ring is empty
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
     /// Total number of entries ever dropped due to capacity
-    pub fn total_dropped(&self) -> u64 {
+    #[must_use]
+    pub const fn total_dropped(&self) -> u64 {
         self.total_dropped
     }
 
     /// Current high-water sequence value (the next seq to be assigned)
-    pub fn next_seq(&self) -> u64 {
+    #[must_use]
+    pub const fn next_seq(&self) -> u64 {
         self.next_seq
     }
 
-    /// Snapshot the current entries. Returns (next_seq, entries_clone)
+    /// Snapshot the current entries. Returns (`next_seq`, `entries_clone`)
     /// where `next_seq` can be used to resume with `iter_after` later.
+    #[must_use]
     pub fn snapshot(&self) -> (u64, Vec<LogEntry>) {
         (self.next_seq, self.entries.iter().cloned().collect())
     }
 
     /// Returns all entries with seq strictly greater than `after_seq`.
     /// This is useful for tailing starting from a previously observed sequence.
+    #[must_use]
     pub fn iter_after(&self, after_seq: u64) -> Vec<LogEntry> {
         self.entries
             .iter()

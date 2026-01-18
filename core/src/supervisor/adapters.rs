@@ -55,7 +55,8 @@ pub struct UnixProcessAdapter;
 #[cfg(unix)]
 impl UnixProcessAdapter {
     /// Create a new Unix process adapter
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self
     }
 }
@@ -69,7 +70,7 @@ impl ProcessAdapter for UnixProcessAdapter {
         debug!("Spawning Unix process: {} {:?}", spec.command, spec.args);
 
         // Build args vector
-        let args: Vec<&str> = spec.args.iter().map(|s| s.as_str()).collect();
+        let args: Vec<&str> = spec.args.iter().map(String::as_str).collect();
 
         // Spawn the process with environment and working directory
         let child = unix::spawn_with(
@@ -99,21 +100,22 @@ impl ManagedProcess for UnixManagedProcess {
     async fn wait(&mut self) -> Result<ServiceExit> {
         let exit_status = self.child.wait().await?;
 
-        let (exit_code, signal) = if let Some(code) = exit_status.code() {
-            (Some(code), None)
-        } else {
-            // On Unix, if there's no exit code, it was likely killed by a signal
-            #[cfg(unix)]
-            {
-                use std::os::unix::process::ExitStatusExt;
-                let signal = exit_status.signal();
-                (None, signal)
-            }
-            #[cfg(not(unix))]
-            {
-                (None, None)
-            }
-        };
+        let (exit_code, signal) = exit_status.code().map_or_else(
+            || {
+                // On Unix, if there's no exit code, it was likely killed by a signal
+                #[cfg(unix)]
+                {
+                    use std::os::unix::process::ExitStatusExt;
+                    let signal = exit_status.signal();
+                    (None, signal)
+                }
+                #[cfg(not(unix))]
+                {
+                    (None, None)
+                }
+            },
+            |code| (Some(code), None),
+        );
 
         Ok(ServiceExit {
             pid: self.pid(),
@@ -188,6 +190,7 @@ impl Default for MockInstruction {
 
 impl MockProcessAdapter {
     /// Create a new mock adapter with no pre-configured instructions
+    #[must_use]
     pub fn new() -> Self {
         Self {
             instructions: Arc::new(tokio::sync::Mutex::new(vec![])),
@@ -207,6 +210,7 @@ impl MockProcessAdapter {
     }
 
     /// Create a mock that always succeeds quickly
+    #[must_use]
     pub fn success() -> Self {
         let adapter = Self::new();
         let adapter_clone = adapter.clone();
@@ -224,6 +228,7 @@ impl MockProcessAdapter {
     }
 
     /// Create a mock that always fails
+    #[must_use]
     pub fn failure() -> Self {
         let adapter = Self::new();
         let adapter_clone = adapter.clone();
@@ -241,6 +246,7 @@ impl MockProcessAdapter {
     }
 
     /// Create a mock that takes a long time to start
+    #[must_use]
     pub fn slow_start() -> Self {
         let adapter = Self::new();
         let adapter_clone = adapter.clone();
@@ -380,13 +386,13 @@ mod rand {
 
     static SEED: AtomicU32 = AtomicU32::new(1);
 
-    pub(crate) fn random<T>() -> T
+    pub(super) fn random<T>() -> T
     where
         T: From<u32>,
     {
         // Simple linear congruential generator
         let prev = SEED.load(Ordering::Relaxed);
-        let next = prev.wrapping_mul(1103515245).wrapping_add(12345);
+        let next = prev.wrapping_mul(1_103_515_245).wrapping_add(12_345);
         SEED.store(next, Ordering::Relaxed);
         T::from(next)
     }
@@ -395,6 +401,8 @@ mod rand {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use schema::BackoffConfig;
+    use std::collections::HashMap;
     use std::time::Duration;
 
     fn create_test_spec() -> ServiceSpec {
@@ -403,11 +411,11 @@ mod tests {
             name: "Test".to_string(),
             command: "echo".to_string(),
             args: vec!["hello".to_string()],
-            environment: Default::default(),
+            environment: HashMap::default(),
             working_directory: None,
             route: None,
             restart_policy: schema::RestartPolicy::Never,
-            backoff_config: Default::default(),
+            backoff_config: BackoffConfig::default(),
             health_check: None,
             readiness_check: None,
             graceful_timeout_secs: 5,

@@ -1,4 +1,5 @@
 #![allow(unused_crate_dependencies)]
+#![allow(missing_docs)]
 use std::env;
 use std::time::Duration;
 
@@ -69,15 +70,14 @@ async fn test_cli_start_with_config_reaches_ready() -> CliResult<()> {
                 assert_eq!(
                     detail2.state,
                     ServiceState::Ready,
-                    "{} should become Ready",
-                    id
+                    "{id} should become Ready"
                 );
             }
-            assert!(detail.pid.is_some(), "{} should have a PID after start", id);
+            assert!(detail.pid.is_some(), "{id} should have a PID after start");
         }
 
         // Cleanup
-        boot.shutdown().await;
+        boot.shutdown();
         daemon_handle.abort();
         Ok::<(), cli::CliError>(())
     })

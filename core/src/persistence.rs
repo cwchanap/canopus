@@ -46,6 +46,7 @@ pub struct ServiceSnapshot {
 
 impl RegistrySnapshot {
     /// Create an empty snapshot
+    #[must_use]
     pub fn empty() -> Self {
         Self {
             version: SNAPSHOT_VERSION,
@@ -61,6 +62,7 @@ impl RegistrySnapshot {
 /// - `CANOPUS_STATE_FILE` env var if provided
 /// - `$HOME/.canopus/state.json` if HOME exists
 /// - `./canopus_state.json` otherwise
+#[must_use]
 pub fn default_snapshot_path() -> PathBuf {
     if let Ok(p) = std::env::var("CANOPUS_STATE_FILE") {
         return PathBuf::from(p);
@@ -75,6 +77,10 @@ pub fn default_snapshot_path() -> PathBuf {
 ///
 /// Returns `Err` for I/O or parse errors so callers can recover by ignoring
 /// the snapshot and starting clean.
+///
+/// # Errors
+///
+/// Returns an error if the snapshot file cannot be read or parsed.
 pub fn load_snapshot(path: impl AsRef<Path>) -> Result<RegistrySnapshot> {
     let path = path.as_ref();
     let mut file = File::open(path).map_err(|e| {
@@ -112,6 +118,10 @@ pub fn load_snapshot(path: impl AsRef<Path>) -> Result<RegistrySnapshot> {
 /// - `flush` + `sync_all` on the temp file
 /// - `rename` temp file over the destination
 /// - Best-effort fsync of the directory to persist rename
+///
+/// # Errors
+///
+/// Returns an error if the snapshot cannot be written to disk.
 pub fn write_snapshot_atomic(path: impl AsRef<Path>, snap: &RegistrySnapshot) -> Result<()> {
     let path = path.as_ref();
     if let Some(parent) = path.parent() {
@@ -178,6 +188,7 @@ pub fn write_snapshot_atomic(path: impl AsRef<Path>, snap: &RegistrySnapshot) ->
 }
 
 /// Create a current timestamp string in RFC3339 format (seconds precision)
+#[must_use]
 pub fn current_timestamp() -> String {
     format!(
         "{}Z",
@@ -190,6 +201,8 @@ pub fn current_timestamp() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use schema::BackoffConfig;
+    use std::collections::HashMap;
     use tempfile::tempdir;
 
     fn make_snap() -> RegistrySnapshot {
@@ -203,11 +216,11 @@ mod tests {
                     name: "Test".into(),
                     command: "echo".into(),
                     args: vec!["hello".into()],
-                    environment: Default::default(),
+                    environment: HashMap::default(),
                     working_directory: None,
                     route: None,
                     restart_policy: schema::RestartPolicy::Always,
-                    backoff_config: Default::default(),
+                    backoff_config: BackoffConfig::default(),
                     health_check: None,
                     readiness_check: None,
                     graceful_timeout_secs: 30,
@@ -248,7 +261,7 @@ mod tests {
 
         let err = load_snapshot(&path).unwrap_err();
         // Must surface a serialization/validation error
-        let msg = format!("{}", err);
+        let msg = format!("{err}");
         assert!(msg.contains("Serialization error"));
     }
 }

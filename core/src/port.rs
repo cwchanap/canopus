@@ -8,10 +8,10 @@
 
 use crate::{CoreError, Result};
 use dashmap::DashMap;
-use once_cell::sync::Lazy;
 use std::{
     net::{SocketAddr, TcpListener},
     process,
+    sync::LazyLock,
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -36,7 +36,7 @@ pub struct ReservationMeta {
 }
 
 /// Global reservation table to track allocated ports in-process
-static RESERVATIONS: Lazy<DashMap<u16, ReservationMeta>> = Lazy::new(DashMap::new);
+static RESERVATIONS: LazyLock<DashMap<u16, ReservationMeta>> = LazyLock::new(DashMap::new);
 
 /// Counter for generating deterministic thread-specific sequences
 static THREAD_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -47,18 +47,23 @@ static THREAD_COUNTER: AtomicU64 = AtomicU64::new(0);
 #[derive(Debug)]
 pub struct PortGuard {
     port: u16,
-    _listener: TcpListener,
+    listener: TcpListener,
 }
 
 impl PortGuard {
     /// Get the allocated port number
-    pub fn port(&self) -> u16 {
+    #[must_use]
+    pub const fn port(&self) -> u16 {
         self.port
     }
 
     /// Get the socket address this port is bound to
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if retrieving the local address fails.
     pub fn addr(&self) -> Result<SocketAddr> {
-        self._listener.local_addr().map_err(CoreError::from)
+        self.listener.local_addr().map_err(CoreError::from)
     }
 }
 
@@ -78,12 +83,14 @@ pub struct PortAllocator {
 
 impl PortAllocator {
     /// Create a new port allocator with default port range
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self::with_range(DEFAULT_PORT_RANGE_START, DEFAULT_PORT_RANGE_END)
     }
 
     /// Create a new port allocator with custom port range
-    pub fn with_range(start: u16, end: u16) -> Self {
+    #[must_use]
+    pub const fn with_range(start: u16, end: u16) -> Self {
         Self {
             range_start: start,
             range_end: end,
@@ -94,13 +101,19 @@ impl PortAllocator {
     ///
     /// If a preferred port is provided and available, it will be used.
     /// Otherwise, falls back to a deterministic sequence of ports within the configured range.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CoreError::NoAvailablePort`] if no ports are available after
+    /// exhausting the allocation attempts, or other IO-related errors when
+    /// probing port availability.
     pub fn reserve(&self, preferred: Option<u16>) -> Result<PortGuard> {
         let mut attempts = 0;
 
         // Try preferred port first if provided
         if let Some(port) = preferred {
             attempts += 1;
-            match self.try_reserve_port_internal(port) {
+            match Self::try_reserve_port_internal(port) {
                 Ok(guard) => {
                     debug!("Successfully reserved preferred port {}", port);
                     return Ok(guard);
@@ -123,7 +136,7 @@ impl PortAllocator {
             }
             attempts += 1;
 
-            match self.try_reserve_port_internal(port) {
+            match Self::try_reserve_port_internal(port) {
                 Ok(guard) => {
                     debug!(
                         "Successfully reserved port {} after {} attempts",
@@ -131,9 +144,7 @@ impl PortAllocator {
                     );
                     return Ok(guard);
                 }
-                Err(CoreError::PortInUse(_)) => {
-                    continue;
-                }
+                Err(CoreError::PortInUse(_)) => {}
                 Err(e) => return Err(e),
             }
         }
@@ -142,13 +153,18 @@ impl PortAllocator {
     }
 
     /// Try to reserve a specific port
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CoreError::PortInUse`] if the port is already reserved or in use,
+    /// or other IO-related errors encountered while probing the port.
     #[cfg(test)]
     pub fn try_reserve_port(&self, port: u16) -> Result<PortGuard> {
-        self.try_reserve_port_internal(port)
+        Self::try_reserve_port_internal(port)
     }
 
     /// Try to reserve a specific port (internal implementation)
-    fn try_reserve_port_internal(&self, port: u16) -> Result<PortGuard> {
+    fn try_reserve_port_internal(port: u16) -> Result<PortGuard> {
         // Check if already reserved in-process
         if RESERVATIONS.contains_key(&port) {
             return Err(CoreError::PortInUse(port));
@@ -183,15 +199,16 @@ impl PortAllocator {
 
         Ok(PortGuard {
             port,
-            _listener: listener,
+            listener,
         })
     }
 
     /// Generate a deterministic sequence of ports to try
     fn generate_port_sequence(&self) -> impl Iterator<Item = u16> + '_ {
-        let seed = self.calculate_deterministic_seed();
+        let seed = Self::calculate_deterministic_seed();
         let range_size = self.range_end - self.range_start;
-        let start_offset = (seed % u64::from(range_size)) as u16;
+        let start_offset =
+            u16::try_from(seed % u64::from(range_size)).unwrap_or_default();
 
         (0..range_size).map(move |i| {
             let offset = (start_offset + i) % range_size;
@@ -200,7 +217,7 @@ impl PortAllocator {
     }
 
     /// Calculate a deterministic seed based on process and thread information
-    fn calculate_deterministic_seed(&self) -> u64 {
+    fn calculate_deterministic_seed() -> u64 {
         let pid = u64::from(process::id());
         let thread_id = get_thread_id();
 
@@ -221,7 +238,7 @@ fn get_thread_id() -> u64 {
 
 /// Explicitly release a reserved port
 ///
-/// This is called automatically when a PortGuard is dropped, but can be called manually if needed.
+/// This is called automatically when a `PortGuard` is dropped, but can be called manually if needed.
 pub fn release_port(port: u16) {
     if let Some(_meta) = RESERVATIONS.remove(&port) {
         debug!("Explicitly released port {}", port);
@@ -279,9 +296,9 @@ mod tests {
             }
             Err(CoreError::PortInUse(_)) => {
                 // Port was already in use by the system, which is acceptable in tests
-                println!("Port {} was already in use by the system", preferred_port);
+                println!("Port {preferred_port} was already in use by the system");
             }
-            Err(e) => panic!("Unexpected error: {}", e),
+            Err(e) => panic!("Unexpected error: {e}"),
         }
     }
 
@@ -310,7 +327,7 @@ mod tests {
                         panic!("Expected port collision error for direct reservation");
                     }
                     Err(e) => {
-                        panic!("Unexpected error type: {}", e);
+                        panic!("Unexpected error type: {e}");
                     }
                 }
 
@@ -333,11 +350,10 @@ mod tests {
             Err(CoreError::PortInUse(_)) => {
                 // Port was already in use by the system - skip the test
                 println!(
-                    "Port {} was already in use by the system, skipping collision test",
-                    preferred_port
+                    "Port {preferred_port} was already in use by the system, skipping collision test"
                 );
             }
-            Err(e) => panic!("Unexpected error during first reservation: {}", e),
+            Err(e) => panic!("Unexpected error during first reservation: {e}"),
         }
     }
 
@@ -348,9 +364,9 @@ mod tests {
 
         let preferred_port = 45125;
         {
-            let _guard = allocator.reserve(Some(preferred_port));
+            let guard = allocator.reserve(Some(preferred_port));
             // Port should be reserved
-            if _guard.is_ok() {
+            if guard.is_ok() {
                 assert!(RESERVATIONS.contains_key(&preferred_port));
             }
         } // guard drops here
@@ -394,7 +410,7 @@ mod tests {
                 // All ports in the small range were unavailable
                 assert!(tried > 0);
             }
-            Err(e) => panic!("Unexpected error: {}", e),
+            Err(e) => panic!("Unexpected error: {e}"),
         }
     }
 

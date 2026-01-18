@@ -7,6 +7,10 @@ use tracing::{debug, warn};
 /// Trait for notification backends, allowing for mocking in tests.
 pub trait NotificationBackend: Send + Sync {
     /// Send a notification with the given summary and body.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backend fails to deliver the notification.
     fn send(&self, summary: &str, body: &str) -> Result<()>;
 }
 
@@ -173,6 +177,7 @@ pub fn is_available() -> bool {
 
 /// Truncates a string to a maximum length, adding "..." if truncated.
 /// Handles Unicode correctly by respecting character boundaries.
+#[must_use]
 pub fn truncate(s: &str, max_len: usize) -> String {
     if s.chars().count() <= max_len {
         s.to_string()

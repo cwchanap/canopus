@@ -11,6 +11,10 @@ pub fn init_tracing() {
 }
 
 /// Validate configuration data
+///
+/// # Errors
+///
+/// Returns a validation error if the input is empty or contains invalid JSON.
 pub fn validate_config_data(data: &str) -> crate::Result<()> {
     if data.is_empty() {
         return Err(crate::CoreError::ValidationError(
@@ -21,10 +25,7 @@ pub fn validate_config_data(data: &str) -> crate::Result<()> {
     // Try to parse as JSON to validate structure
     match serde_json::from_str::<serde_json::Value>(data) {
         Ok(_) => Ok(()),
-        Err(e) => Err(crate::CoreError::ValidationError(format!(
-            "Invalid JSON: {}",
-            e
-        ))),
+        Err(e) => Err(crate::CoreError::ValidationError(format!("Invalid JSON: {e}"))),
     }
 }
 

@@ -13,6 +13,7 @@
 use canopus_core::process::unix::{
     signal_kill_group, signal_term_group, spawn, terminate_with_timeout,
 };
+use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 
 /// Determine if process-group tests should run in this environment.
@@ -49,7 +50,7 @@ fn test_process_group_isolation() {
     assert_eq!(child.pid(), child.pgid());
 
     // Child PGID should be different from parent PGID
-    assert_ne!(child.pgid() as i32, parent_pgid);
+    assert_ne!(i64::from(child.pgid()), i64::from(parent_pgid));
 
     // Clean up the sleep process
     let _ = signal_kill_group(&child);
@@ -72,7 +73,8 @@ fn test_sigterm_termination() {
     std::thread::sleep(Duration::from_millis(200));
 
     // Check if process still exists by trying to send signal 0 (existence check)
-    let result = unsafe { libc::kill(pid as i32, 0) };
+    let pid_i32 = i32::try_from(pid).unwrap_or(i32::MAX);
+    let result = unsafe { libc::kill(pid_i32, 0) };
 
     if result == 0 {
         // Process still exists, might be handling SIGTERM, give it more time or kill it
@@ -112,15 +114,13 @@ fn test_sigkill_termination() {
                 if attempts > 20 {
                     // 1 second total
                     // Try to kill the process directly as fallback
-                    let _ = unsafe { libc::kill(pid as i32, libc::SIGKILL) };
-                    panic!(
-                        "Process {} was not killed after SIGKILL within timeout",
-                        pid
-                    );
+                    let pid_i32 = i32::try_from(pid).unwrap_or(i32::MAX);
+                    let _ = unsafe { libc::kill(pid_i32, libc::SIGKILL) };
+                    panic!("Process {pid} was not killed after SIGKILL within timeout");
                 }
             }
             Err(e) => {
-                panic!("Error waiting for process {}: {}", pid, e);
+                panic!("Error waiting for process {pid}: {e}");
             }
         }
     }
@@ -134,13 +134,13 @@ fn test_process_group_tree_termination() {
         return;
     }
     // Create a test shell script that spawns child processes
-    let test_script = r#"#!/bin/bash
+    let test_script = r"#!/bin/bash
 # Spawn some background processes
 sleep 30 &
 sleep 30 &
 # Wait for signals
 sleep 30
-"#;
+";
 
     // Write the test script to a temporary file
     let script_path = "/tmp/canopus_test_script.sh";
@@ -148,7 +148,6 @@ sleep 30
 
     // Make script executable
     let mut perms = std::fs::metadata(script_path).unwrap().permissions();
-    use std::os::unix::fs::PermissionsExt;
     perms.set_mode(0o755);
     std::fs::set_permissions(script_path, perms).expect("Failed to set permissions");
 
@@ -166,7 +165,8 @@ sleep 30
     let mut attempts = 0;
     loop {
         std::thread::sleep(Duration::from_millis(100));
-        let result = unsafe { libc::killpg(pgid as i32, 0) };
+        let pgid_i32 = i32::try_from(pgid).unwrap_or(i32::MAX);
+        let result = unsafe { libc::killpg(pgid_i32, 0) };
 
         if result == -1 {
             // Process group is gone, verify errno
@@ -174,8 +174,7 @@ sleep 30
             // Could be ESRCH (no such process) or EPERM (permission denied, process changed owner)
             assert!(
                 errno == libc::ESRCH || errno == libc::EPERM,
-                "Unexpected errno: {}",
-                errno
+                "Unexpected errno: {errno}"
             );
             break;
         }
@@ -189,10 +188,7 @@ sleep 30
             if kill_result.is_ok() {
                 break; // Signal was sent successfully
             }
-            panic!(
-                "Process group {} was not killed after multiple attempts",
-                pgid
-            );
+            panic!("Process group {pgid} was not killed after multiple attempts");
         }
     }
 
@@ -272,7 +268,7 @@ fn test_spawn_invalid_command() {
 
     match result.unwrap_err() {
         canopus_core::CoreError::ProcessSpawn(_) => {} // Expected
-        e => panic!("Expected ProcessSpawn error, got: {:?}", e),
+        e => panic!("Expected ProcessSpawn error, got: {e:?}"),
     }
 }
 
@@ -292,7 +288,7 @@ fn test_process_ids() {
     assert_eq!(child.pid(), child.pgid());
 
     // PIDs should be reasonable (not too high)
-    assert!(child.pid() < 1000000);
+    assert!(child.pid() < 1_000_000);
 
     // Clean up
     let _ = signal_kill_group(&child);
@@ -300,11 +296,22 @@ fn test_process_ids() {
 
 /// Helper function to verify process group membership
 fn get_process_group_id(pid: u32) -> Result<u32, std::io::Error> {
-    let pgid = unsafe { libc::getpgid(pid as i32) };
-    if pgid == -1 {
+    let pid_i32 = i32::try_from(pid).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "pid does not fit in i32",
+        )
+    })?;
+    let group_id = unsafe { libc::getpgid(pid_i32) };
+    if group_id == -1 {
         Err(std::io::Error::last_os_error())
     } else {
-        Ok(pgid as u32)
+        u32::try_from(group_id).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "pgid does not fit in u32",
+            )
+        })
     }
 }
 
@@ -319,8 +326,8 @@ fn test_process_group_verification() {
     let pid = child.pid();
 
     // Verify the process is in its own group
-    let pgid = get_process_group_id(pid).expect("Failed to get process group ID");
-    assert_eq!(pgid, pid);
+    let group_id = get_process_group_id(pid).expect("Failed to get process group ID");
+    assert_eq!(group_id, pid);
 
     // Clean up
     let _ = signal_kill_group(&child);

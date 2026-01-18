@@ -68,12 +68,12 @@ async fn main() -> daemon::Result<()> {
     if let Err(e) = daemon.start().await {
         error!("Daemon failed: {}", e);
         // try graceful shutdown of bootstrap on error path
-        boot.shutdown().await;
+        boot.shutdown();
         return Err(e);
     }
 
     info!("Daemon stopped");
     // Gracefully shutdown supervised components
-    boot.shutdown().await;
+    boot.shutdown();
     Ok(())
 }

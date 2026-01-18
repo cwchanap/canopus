@@ -30,39 +30,56 @@ impl JsonRpcClient {
         }
     }
 
+    /// Fetch the daemon version string.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response is invalid.
     pub async fn version(&self) -> Result<String> {
         let (mut reader, mut writer) = self.connect_and_handshake().await?;
         let req = jsonrpc_req("canopus.version", Value::Null, 1);
         write_json(&mut writer, &req).await?;
         let resp = read_json::<JsonRpcResponse, _>(&mut reader).await?;
-        if let Some(result) = resp.result {
-            Ok(result
-                .get("version")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string())
-        } else {
-            Err(IpcError::ProtocolError("version call failed".into()))
-        }
+        resp.result.map_or_else(
+            || Err(IpcError::ProtocolError("version call failed".into())),
+            |result| {
+                Ok(result
+                    .get("version")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string())
+            },
+        )
     }
 
+    /// List service summaries.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response is invalid.
     pub async fn list(&self) -> Result<Vec<ServiceSummary>> {
         let (mut reader, mut writer) = self.connect_and_handshake().await?;
         let req = jsonrpc_req("canopus.list", Value::Null, 2);
         write_json(&mut writer, &req).await?;
         let resp = read_json::<JsonRpcResponse, _>(&mut reader).await?;
-        if let Some(result) = resp.result {
-            let services = result
-                .get("services")
-                .cloned()
-                .unwrap_or(Value::Array(vec![]));
-            serde_json::from_value::<Vec<ServiceSummary>>(services)
-                .map_err(|e| IpcError::DeserializationFailed(e.to_string()))
-        } else {
-            Err(IpcError::ProtocolError("list call failed".into()))
-        }
+        resp.result.map_or_else(
+            || Err(IpcError::ProtocolError("list call failed".into())),
+            |result| {
+                let services = result
+                    .get("services")
+                    .cloned()
+                    .unwrap_or(Value::Array(vec![]));
+                serde_json::from_value::<Vec<ServiceSummary>>(services)
+                    .map_err(|e| IpcError::DeserializationFailed(e.to_string()))
+            },
+        )
     }
 
+    /// Start a service.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server reports an error.
     pub async fn start(
         &self,
         service_id: &str,
@@ -77,6 +94,11 @@ impl JsonRpcClient {
         .await
     }
 
+    /// Stop a service.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server reports an error.
     pub async fn stop(&self, service_id: &str) -> Result<()> {
         self.simple_ok(
             "canopus.stop",
@@ -86,6 +108,11 @@ impl JsonRpcClient {
         .await
     }
 
+    /// Restart a service.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server reports an error.
     pub async fn restart(&self, service_id: &str) -> Result<()> {
         self.simple_ok(
             "canopus.restart",
@@ -95,6 +122,11 @@ impl JsonRpcClient {
         .await
     }
 
+    /// Fetch service details.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response is invalid.
     pub async fn status(&self, service_id: &str) -> Result<ServiceDetail> {
         let (mut reader, mut writer) = self.connect_and_handshake().await?;
         let req = jsonrpc_req(
@@ -104,14 +136,20 @@ impl JsonRpcClient {
         );
         write_json(&mut writer, &req).await?;
         let resp = read_json::<JsonRpcResponse, _>(&mut reader).await?;
-        if let Some(result) = resp.result {
-            serde_json::from_value::<ServiceDetail>(result)
-                .map_err(|e| IpcError::DeserializationFailed(e.to_string()))
-        } else {
-            Err(IpcError::ProtocolError("status call failed".into()))
-        }
+        resp.result.map_or_else(
+            || Err(IpcError::ProtocolError("status call failed".into())),
+            |result| {
+                serde_json::from_value::<ServiceDetail>(result)
+                    .map_err(|e| IpcError::DeserializationFailed(e.to_string()))
+            },
+        )
     }
 
+    /// Run a health check for the given service.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response is invalid.
     pub async fn health_check(&self, service_id: &str) -> Result<bool> {
         let (mut reader, mut writer) = self.connect_and_handshake().await?;
         let req = jsonrpc_req(
@@ -121,16 +159,22 @@ impl JsonRpcClient {
         );
         write_json(&mut writer, &req).await?;
         let resp = read_json::<JsonRpcResponse, _>(&mut reader).await?;
-        if let Some(result) = resp.result {
-            Ok(result
-                .get("healthy")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false))
-        } else {
-            Err(IpcError::ProtocolError("healthCheck call failed".into()))
-        }
+        resp.result.map_or_else(
+            || Err(IpcError::ProtocolError("healthCheck call failed".into())),
+            |result| {
+                Ok(result
+                    .get("healthy")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false))
+            },
+        )
     }
 
+    /// Bind a hostname to the service.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server reports an error.
     pub async fn bind_host(&self, service_id: &str, host: &str) -> Result<()> {
         let (mut reader, mut writer) = self.connect_and_handshake().await?;
         let req = jsonrpc_req(
@@ -146,6 +190,11 @@ impl JsonRpcClient {
         Ok(())
     }
 
+    /// Assign a port for the service.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response is invalid.
     pub async fn assign_port(&self, service_id: &str, preferred: Option<u16>) -> Result<u16> {
         let (mut reader, mut writer) = self.connect_and_handshake().await?;
         let req = jsonrpc_req(
@@ -155,13 +204,24 @@ impl JsonRpcClient {
         );
         write_json(&mut writer, &req).await?;
         let resp = read_json::<JsonRpcResponse, _>(&mut reader).await?;
-        if let Some(result) = resp.result {
-            Ok(result.get("port").and_then(|v| v.as_u64()).unwrap_or(0) as u16)
-        } else {
-            Err(IpcError::ProtocolError("assignPort failed".into()))
-        }
+        resp.result.map_or_else(
+            || Err(IpcError::ProtocolError("assignPort failed".into())),
+            |result| {
+                let port = result
+                    .get("port")
+                    .and_then(Value::as_u64)
+                    .and_then(|value| u16::try_from(value).ok())
+                    .unwrap_or(0);
+                Ok(port)
+            },
+        )
     }
 
+    /// Tail logs for a service, returning a stream of events.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection or subscription fails.
     pub async fn tail_logs(
         &self,
         service_id: &str,
@@ -176,10 +236,9 @@ impl JsonRpcClient {
         // Handshake
         let hs = jsonrpc_req(
             "canopus.handshake",
-            match &self.token {
-                Some(t) => serde_json::json!({"token": t}),
-                None => Value::Null,
-            },
+            self.token
+                .as_ref()
+                .map_or(Value::Null, |t| serde_json::json!({"token": t})),
             100,
         );
         write_json_locked(writer.clone(), &hs).await?;
@@ -215,6 +274,11 @@ impl JsonRpcClient {
         Ok(rx)
     }
 
+    /// Delete metadata for a service.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the delete request fails.
     pub async fn delete_meta(&self, service_id: &str) -> Result<()> {
         self.simple_ok(
             "canopus.deleteMeta",
@@ -230,7 +294,7 @@ impl JsonRpcClient {
         write_json(&mut writer, &req).await?;
         let resp = read_json::<JsonRpcResponse, _>(&mut reader).await?;
         if resp.error.is_some() {
-            return Err(IpcError::ProtocolError(format!("{} failed", method)));
+            return Err(IpcError::ProtocolError(format!("{method} failed")));
         }
         Ok(())
     }
@@ -248,10 +312,9 @@ impl JsonRpcClient {
 
         let req = jsonrpc_req(
             "canopus.handshake",
-            match &self.token {
-                Some(t) => serde_json::json!({"token": t}),
-                None => Value::Null,
-            },
+            self.token
+                .as_ref()
+                .map_or(Value::Null, |t| serde_json::json!({"token": t})),
             0,
         );
         write_json(&mut writer, &req).await?;
@@ -292,7 +355,10 @@ fn jsonrpc_req(method: &str, params: Value, id: u64) -> JsonRpcRequest {
     }
 }
 
-async fn write_json<S: AsyncWriteExt + Unpin>(writer: &mut S, v: &impl Serialize) -> Result<()> {
+async fn write_json<S>(writer: &mut S, v: &(impl Serialize + Sync)) -> Result<()>
+where
+    S: tokio::io::AsyncWrite + Unpin + Send,
+{
     let data = serde_json::to_vec(v).map_err(|e| IpcError::SerializationFailed(e.to_string()))?;
     writer
         .write_all(&data)
@@ -302,7 +368,7 @@ async fn write_json<S: AsyncWriteExt + Unpin>(writer: &mut S, v: &impl Serialize
 
 async fn write_json_locked(
     writer: Arc<Mutex<tokio::net::unix::OwnedWriteHalf>>,
-    v: &impl Serialize,
+    v: &(impl Serialize + Sync),
 ) -> Result<()> {
     let data = serde_json::to_vec(v).map_err(|e| IpcError::SerializationFailed(e.to_string()))?;
     let mut guard = writer.lock().await;

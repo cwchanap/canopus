@@ -1,3 +1,4 @@
+#![allow(unused_crate_dependencies)]
 //! IPC (Inter-Process Communication) module
 //!
 //! This crate handles communication between the daemon and CLI components.
@@ -33,6 +34,11 @@ impl IpcClient {
     }
 
     /// Connect to the daemon and send a message
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection fails, the message cannot be serialized,
+    /// or the response cannot be read or deserialized.
     pub async fn send_message(&self, message: &Message) -> Result<Response> {
         let addr = format!("{}:{}", self.host, self.port);
 

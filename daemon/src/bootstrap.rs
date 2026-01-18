@@ -1,4 +1,4 @@
-//! Daemon bootstrap: wire supervisor(s), IPC server, and NullProxy
+//! Daemon bootstrap: wire supervisor(s), IPC server, and `NullProxy`
 //!
 //! This module provides a `bootstrap` function that loads service specs,
 //! starts supervisors, spins up the IPC server with a supervisor control
@@ -36,10 +36,10 @@ pub struct BootstrapHandle {
 /// Attempt to retrieve a login shell PATH suitable for user-level tools (npm, nvm shims, etc.)
 ///
 /// Precedence:
-/// - CANOPUS_LOGIN_PATH env var if set (explicit override)
+/// - `CANOPUS_LOGIN_PATH` env var if set (explicit override)
 /// - /bin/zsh -lc 'echo -n $PATH'
 /// - /bin/bash -lc 'echo -n $PATH'
-/// - Fallback: std::env::var("PATH")
+/// - Fallback: `std::env::var("PATH")`
 fn resolve_login_path() -> Option<String> {
     if let Ok(v) = std::env::var("CANOPUS_LOGIN_PATH") {
         let t = v.trim();
@@ -93,8 +93,8 @@ fn resolve_login_path() -> Option<String> {
 
 impl BootstrapHandle {
     /// Initiate graceful shutdown: stop supervisors and abort IPC server task
-    pub async fn shutdown(mut self) {
-        for (id, h) in self.handles.iter() {
+    pub fn shutdown(mut self) {
+        for (id, h) in &self.handles {
             if let Err(e) = h.shutdown() {
                 warn!(
                     "Failed to shutdown service '{}': {}. Process may still be running.",
@@ -111,11 +111,18 @@ impl BootstrapHandle {
 }
 
 /// Bootstrap the daemon components
+///
+/// # Errors
+/// Returns an error if any daemon component fails to initialize.
 pub async fn bootstrap(config_path: Option<PathBuf>) -> Result<BootstrapHandle> {
     bootstrap_with_runtime(config_path, None, Some("127.0.0.1:80")).await
 }
 
 /// Bootstrap with an additional optional runtime config (simple per-service hostname/port)
+///
+/// # Errors
+/// Returns an error if any daemon component fails to initialize.
+#[allow(clippy::cognitive_complexity, clippy::too_many_lines)]
 pub async fn bootstrap_with_runtime(
     config_path: Option<PathBuf>,
     runtime_config_path: Option<PathBuf>,
@@ -137,12 +144,12 @@ pub async fn bootstrap_with_runtime(
     let proxy_addr = proxy_address.unwrap_or("127.0.0.1:0");
     let proxy = Arc::new(
         LocalReverseProxy::new(proxy_addr)
-            .map_err(|e| DaemonError::ServerError(format!("proxy init failed: {}", e)))?,
+            .map_err(|e| DaemonError::ServerError(format!("proxy init failed: {e}")))?,
     );
 
     // Initialize persistent storage (SQLite in $HOME/.canopus/canopus.db)
     let storage = SqliteStorage::open_default()
-        .map_err(|e| DaemonError::ServerError(format!("storage init failed: {}", e)))?;
+        .map_err(|e| DaemonError::ServerError(format!("storage init failed: {e}")))?;
 
     // Shared event bus
     let (event_tx, _event_rx) = tokio::sync::broadcast::channel(1024);
@@ -157,8 +164,8 @@ pub async fn bootstrap_with_runtime(
                 snap.services.len()
             );
             // Do not adopt unknown PIDs; clear them
-            let mut cleaned = snap.clone();
-            for svc in cleaned.services.iter_mut() {
+            let mut cleaned = snap;
+            for svc in &mut cleaned.services {
                 svc.last_pid = None;
             }
             cleaned
@@ -239,7 +246,7 @@ pub async fn bootstrap_with_runtime(
     if let Some(rt_path) = runtime_config_path {
         match load_simple_services_from_toml_path(&rt_path) {
             Ok(simple) => {
-                for (id, scfg) in simple.services.iter() {
+                for (id, scfg) in &simple.services {
                     if handles.contains_key(id) {
                         if let Some(p) = scfg.port {
                             if let Err(e) = storage.update_port(id, Some(p)).await {
@@ -269,6 +276,7 @@ pub async fn bootstrap_with_runtime(
         {
             use ipc::server::supervisor_adapter::SupervisorControlPlane;
             use ipc::server::{IpcServer, IpcServerConfig};
+            use std::sync::Arc as StdArc;
             let socket_path = std::env::var("CANOPUS_IPC_SOCKET")
                 .unwrap_or_else(|_| "/tmp/canopus.sock".to_string());
             let token = std::env::var("CANOPUS_IPC_TOKEN").ok();
@@ -278,7 +286,6 @@ pub async fn bootstrap_with_runtime(
                 unix_socket_path: Some(PathBuf::from(socket_path)),
                 windows_pipe_name: None,
             };
-            use std::sync::Arc as StdArc;
             // Resolve a login PATH so spawned services can resolve user-level binaries like npm
             let login_path = resolve_login_path();
             let router = SupervisorControlPlane::new(handles.clone(), event_tx.clone())
@@ -314,7 +321,7 @@ pub async fn bootstrap_with_runtime(
                         }
                         // Persist to SQLite
                         if let Err(e) = storage
-                            .update_state(service_id, &format!("{:?}", to_state))
+                            .update_state(service_id, &format!("{to_state:?}"))
                             .await
                         {
                             warn!("Failed to persist state for {}: {}", service_id, e);

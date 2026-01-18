@@ -22,8 +22,7 @@ mod tests {
         let deserialized: T = serde_json::from_str(&json).expect("Failed to deserialize from JSON");
         assert_eq!(
             *original, deserialized,
-            "Round-trip failed for JSON: {}",
-            json
+            "Round-trip failed for JSON: {json}"
         );
     }
 
@@ -217,6 +216,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn test_service_events_json_roundtrip() {
         let events = [
             ServiceEvent::StateChanged {
@@ -430,7 +430,7 @@ mod tests {
         };
 
         let json = serde_json::to_string_pretty(&spec).unwrap();
-        println!("ServiceSpec JSON: {}", json);
+        println!("ServiceSpec JSON: {json}");
 
         // Check that field names are in camelCase
         assert!(json.contains("\"workingDirectory\""));
@@ -456,7 +456,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&event).unwrap();
-        println!("ServiceEvent JSON: {}", json);
+        println!("ServiceEvent JSON: {json}");
         assert!(json.contains("\"eventType\":\"stateChanged\""));
         assert!(json.contains("\"service_id\":\"test\""));
         // Note: The actual serialization may vary based on enum representation

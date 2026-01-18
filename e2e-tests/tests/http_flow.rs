@@ -4,11 +4,12 @@
 use ipc::uds_client::JsonRpcClient;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
+use tokio::sync::Mutex;
 
-fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+async fn test_lock() -> tokio::sync::MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(())).lock().expect("lock")
+    LOCK.get_or_init(|| Mutex::new(())).lock().await
 }
 
 fn workspace_root() -> PathBuf {
@@ -53,7 +54,7 @@ fn uds_socket_path(label: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
-    let filename = format!("canopus-{}-{}-{}.sock", label, pid, ts);
+    let filename = format!("canopus-{label}-{pid}-{ts}.sock");
     PathBuf::from("/tmp").join(filename)
 }
 
@@ -104,17 +105,14 @@ async fn wait_until_ready(
     use tokio::time::{sleep, Duration, Instant};
     let deadline = Instant::now() + Duration::from_millis(timeout_ms);
     loop {
-        match client.list().await {
-            Ok(services) => {
-                if let Some(s) = services.into_iter().find(|s| s.id == service_id) {
-                    if s.state == schema::ServiceState::Ready {
-                        return Ok(());
-                    }
+        if let Ok(services) = client.list().await {
+            if let Some(s) = services.into_iter().find(|s| s.id == service_id) {
+                if s.state == schema::ServiceState::Ready {
+                    return Ok(());
                 }
             }
-            Err(_) => {
-                // Server might not be accepting yet; retry until deadline
-            }
+        } else {
+            // Server might not be accepting yet; retry until deadline
         }
         if Instant::now() >= deadline {
             return Err(ipc::IpcError::ProtocolError("ready wait timed out".into()));
@@ -125,7 +123,7 @@ async fn wait_until_ready(
 
 #[tokio::test]
 async fn http_start_with_port_and_hostname_and_list_status_show_them() {
-    let _lock = test_lock();
+    let _lock = test_lock().await;
     // Temp workspace
     let temp = tempfile::tempdir().expect("tempdir");
     let base = temp.path().to_path_buf();
@@ -164,9 +162,7 @@ async fn http_start_with_port_and_hostname_and_list_status_show_them() {
             if sock_path.exists() {
                 break;
             }
-            if Instant::now() >= deadline {
-                panic!("IPC socket not created in time");
-            }
+            assert!(Instant::now() < deadline, "IPC socket not created in time");
             sleep(Duration::from_millis(50)).await;
         }
     }
@@ -236,12 +232,12 @@ async fn http_start_with_port_and_hostname_and_list_status_show_them() {
     assert!(healthy);
 
     // Shutdown daemon to avoid interference with subsequent tests
-    boot.shutdown().await;
+    boot.shutdown();
 }
 
 #[tokio::test]
 async fn http_start_without_port_allocator_assigns_and_list_status_show_it() {
-    let _lock = test_lock();
+    let _lock = test_lock().await;
     // Temp workspace
     let temp = tempfile::tempdir().expect("tempdir");
     let base = temp.path().to_path_buf();
@@ -274,9 +270,7 @@ async fn http_start_without_port_allocator_assigns_and_list_status_show_it() {
             if sock_path.exists() {
                 break;
             }
-            if Instant::now() >= deadline {
-                panic!("IPC socket not created in time");
-            }
+            assert!(Instant::now() < deadline, "IPC socket not created in time");
             sleep(Duration::from_millis(50)).await;
         }
     }
@@ -328,12 +322,12 @@ async fn http_start_without_port_allocator_assigns_and_list_status_show_it() {
     assert!(healthy);
 
     // Shutdown daemon to avoid interference with subsequent tests
-    boot.shutdown().await;
+    boot.shutdown();
 }
 
 #[tokio::test]
 async fn http_restart_keeps_port_and_hostname_and_ready_again() {
-    let _lock = test_lock();
+    let _lock = test_lock().await;
     // Temp workspace
     let temp = tempfile::tempdir().expect("tempdir");
     let base = temp.path().to_path_buf();
@@ -372,9 +366,7 @@ async fn http_restart_keeps_port_and_hostname_and_ready_again() {
             if sock_path.exists() {
                 break;
             }
-            if Instant::now() >= deadline {
-                panic!("IPC socket not created in time");
-            }
+            assert!(Instant::now() < deadline, "IPC socket not created in time");
             sleep(Duration::from_millis(50)).await;
         }
     }
@@ -446,12 +438,12 @@ async fn http_restart_keeps_port_and_hostname_and_ready_again() {
     assert!(healthy);
 
     // Shutdown daemon to avoid interference with subsequent tests
-    boot.shutdown().await;
+    boot.shutdown();
 }
 
 #[tokio::test]
 async fn http_duplicate_start_is_idempotent_and_keeps_settings() {
-    let _lock = test_lock();
+    let _lock = test_lock().await;
     // Temp workspace
     let temp = tempfile::tempdir().expect("tempdir");
     let base = temp.path().to_path_buf();
@@ -490,9 +482,7 @@ async fn http_duplicate_start_is_idempotent_and_keeps_settings() {
             if sock_path.exists() {
                 break;
             }
-            if Instant::now() >= deadline {
-                panic!("IPC socket not created in time");
-            }
+            assert!(Instant::now() < deadline, "IPC socket not created in time");
             sleep(Duration::from_millis(50)).await;
         }
     }
@@ -549,12 +539,12 @@ async fn http_duplicate_start_is_idempotent_and_keeps_settings() {
     assert_eq!(st.hostname.as_deref(), Some(hostname.as_str()));
 
     // Shutdown daemon to avoid interference with subsequent tests
-    boot.shutdown().await;
+    boot.shutdown();
 }
 
 #[tokio::test]
 async fn http_start_with_hostname_only_and_list_status_show_port_and_hostname() {
-    let _lock = test_lock();
+    let _lock = test_lock().await;
     // Temp workspace
     let temp = tempfile::tempdir().expect("tempdir");
     let base = temp.path().to_path_buf();
@@ -587,9 +577,7 @@ async fn http_start_with_hostname_only_and_list_status_show_port_and_hostname() 
             if sock_path.exists() {
                 break;
             }
-            if Instant::now() >= deadline {
-                panic!("IPC socket not created in time");
-            }
+            assert!(Instant::now() < deadline, "IPC socket not created in time");
             sleep(Duration::from_millis(50)).await;
         }
     }
@@ -644,5 +632,5 @@ async fn http_start_with_hostname_only_and_list_status_show_port_and_hostname() 
     assert!(healthy);
 
     // Shutdown daemon to avoid interference with subsequent tests
-    boot.shutdown().await;
+    boot.shutdown();
 }

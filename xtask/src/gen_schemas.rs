@@ -7,6 +7,7 @@ use std::fs;
 use std::path::Path;
 
 /// Generate JSON schemas and TypeScript definitions
+#[allow(clippy::redundant_pub_crate)]
 pub(crate) fn run() -> Result<()> {
     println!("Generating schemas...");
 
@@ -38,14 +39,14 @@ fn generate_json_schemas(schemas_dir: &Path) -> Result<()> {
 
     for (name, schema) in schemas {
         let json = serde_json::to_string_pretty(&schema)
-            .context(format!("Failed to serialize {} schema", name))?;
+            .context(format!("Failed to serialize {name} schema"))?;
 
-        let filename = format!("{}.json", name);
+        let filename = format!("{name}.json");
         let path = schemas_dir.join(&filename);
 
-        fs::write(&path, json).context(format!("Failed to write {}", filename))?;
+        fs::write(&path, json).context(format!("Failed to write {filename}"))?;
 
-        println!("    ✓ Generated {}", filename);
+        println!("    ✓ Generated {filename}");
     }
 
     Ok(())

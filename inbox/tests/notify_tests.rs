@@ -1,3 +1,5 @@
+#![allow(missing_docs, unused_crate_dependencies)]
+
 use canopus_inbox::item::{InboxItem, NewInboxItem, SourceAgent};
 use canopus_inbox::notify::{format_item_notification, format_summary_notification, truncate};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -21,19 +23,37 @@ impl MockNotifier {
     }
 
     fn summaries(&self) -> Vec<String> {
-        self.summaries.lock().unwrap().clone()
+        self.summaries
+            .lock()
+            .map_or_else(|_| Vec::new(), |summaries| summaries.clone())
     }
 
     fn bodies(&self) -> Vec<String> {
-        self.bodies.lock().unwrap().clone()
+        self.bodies
+            .lock()
+            .map_or_else(|_| Vec::new(), |bodies| bodies.clone())
     }
 }
 
 impl canopus_inbox::notify::NotificationBackend for MockNotifier {
     fn send(&self, summary: &str, body: &str) -> canopus_inbox::Result<()> {
         self.call_count.fetch_add(1, Ordering::SeqCst);
-        self.summaries.lock().unwrap().push(summary.to_string());
-        self.bodies.lock().unwrap().push(body.to_string());
+        self.summaries
+            .lock()
+            .map_err(|_| {
+                canopus_inbox::InboxError::Notification(
+                    "Notification summary lock poisoned".to_string(),
+                )
+            })?
+            .push(summary.to_string());
+        self.bodies
+            .lock()
+            .map_err(|_| {
+                canopus_inbox::InboxError::Notification(
+                    "Notification body lock poisoned".to_string(),
+                )
+            })?
+            .push(body.to_string());
         Ok(())
     }
 }
@@ -123,11 +143,18 @@ fn test_notifier_send_notification() {
         SourceAgent::ClaudeCode,
     ));
 
-    notifier.send_notification(&item).expect("send");
+    assert!(notifier.send_notification(&item).is_ok());
 
     assert_eq!(mock.call_count(), 1);
-    assert_eq!(mock.summaries()[0], "[Claude Code] test-project");
-    assert!(mock.bodies()[0].contains("Status summary"));
+    let summaries = mock.summaries();
+    assert_eq!(
+        summaries.first().map(String::as_str),
+        Some("[Claude Code] test-project")
+    );
+    let bodies = mock.bodies();
+    assert!(bodies
+        .first()
+        .is_some_and(|body| body.contains("Status summary")));
 }
 
 #[test]
@@ -140,10 +167,13 @@ fn test_notifier_send_summary_notification() {
         InboxItem::from_new(NewInboxItem::new("p2", "s2", "a2", SourceAgent::Codex)),
     ];
 
-    notifier.send_summary_notification(2, &items).expect("send");
+    assert!(notifier.send_summary_notification(2, &items).is_ok());
 
     assert_eq!(mock.call_count(), 1);
-    assert!(mock.summaries()[0].contains("2 new item(s)"));
+    let summaries = mock.summaries();
+    assert!(summaries
+        .first()
+        .is_some_and(|summary| summary.contains("2 new item(s)")));
 }
 
 #[test]
@@ -158,11 +188,11 @@ fn test_notifier_with_long_content() {
         SourceAgent::ClaudeCode,
     ));
 
-    notifier.send_notification(&item).expect("send");
+    assert!(notifier.send_notification(&item).is_ok());
 
     assert_eq!(mock.call_count(), 1);
-    let body = &mock.bodies()[0];
-    assert!(body.len() < 400);
+    let bodies = mock.bodies();
+    assert!(bodies.first().is_some_and(|body| body.len() < 400));
 }
 
 #[test]
@@ -177,7 +207,7 @@ fn test_notifier_multiple_calls() {
             "action",
             SourceAgent::ClaudeCode,
         ));
-        notifier.send_notification(&item).expect("send");
+        assert!(notifier.send_notification(&item).is_ok());
     }
 
     assert_eq!(mock.call_count(), 5);

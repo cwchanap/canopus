@@ -75,15 +75,16 @@ fn configure_socket_permissions(path: &std::path::Path) -> Result<()> {
     };
 
     chown(path, None, Some(group.gid)).map_err(|e| {
-        IpcError::ProtocolError(format!("Failed to chown socket {:?}: {}", path, e))
+        IpcError::ProtocolError(format!("Failed to chown socket {}: {e}", path.display()))
     })?;
 
-    let metadata = fs::metadata(path)
-        .map_err(|e| IpcError::ProtocolError(format!("Failed to stat socket {:?}: {}", path, e)))?;
+    let metadata = fs::metadata(path).map_err(|e| {
+        IpcError::ProtocolError(format!("Failed to stat socket {}: {e}", path.display()))
+    })?;
     let mut perms = metadata.permissions();
     perms.set_mode(0o660);
     fs::set_permissions(path, perms).map_err(|e| {
-        IpcError::ProtocolError(format!("Failed to set permissions on {:?}: {}", path, e))
+        IpcError::ProtocolError(format!("Failed to set permissions on {}: {e}", path.display()))
     })?;
 
     info!(
@@ -185,6 +186,7 @@ pub struct IpcServer {
 
 impl IpcServer {
     /// Create a new IPC server
+    #[must_use]
     pub fn new(config: IpcServerConfig) -> Self {
         Self {
             config,
@@ -193,11 +195,16 @@ impl IpcServer {
     }
 
     /// Create with a provided control plane/router implementation
+    #[must_use]
     pub fn with_router(config: IpcServerConfig, router: Arc<dyn ControlPlane>) -> Self {
         Self { config, router }
     }
 
     /// Start serving connections based on platform
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the platform is unsupported or the server cannot start.
     pub async fn serve(&self) -> Result<()> {
         #[cfg(unix)]
         {
@@ -225,18 +232,19 @@ impl IpcServer {
         // Remove pre-existing socket file if present
         if path.exists() {
             match std::fs::remove_file(&path) {
-                Ok(_) => debug!("Removed existing socket at {:?}", path),
+                Ok(()) => debug!("Removed existing socket at {:?}", path),
                 Err(e) => {
                     return Err(IpcError::ProtocolError(format!(
-                        "Failed to remove existing socket {:?}: {}",
-                        path, e
+                        "Failed to remove existing socket {}: {e}",
+                        path.display()
                     )));
                 }
             }
         }
 
-        let listener = UnixListener::bind(&path).map_err(|e| {
-            IpcError::ConnectionFailed(format!("Failed to bind UDS {:?}: {}", path, e))
+        let listener = UnixListener::bind(&path)
+        .map_err(|e| {
+            IpcError::ConnectionFailed(format!("Failed to bind UDS {}: {e}", path.display()))
         })?;
         info!("IPC server (UDS) listening at {:?}", path);
 
@@ -301,8 +309,8 @@ async fn handle_connection_unix(
         .params
         .as_ref()
         .and_then(|v| v.get("token"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+        .and_then(Value::as_str)
+        .map(ToString::to_string);
 
     if let Some(expected) = config.auth_token.clone() {
         if provided.as_deref() != Some(expected.as_str()) {
@@ -332,6 +340,7 @@ async fn handle_connection_unix(
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 async fn route_method(
     config: &IpcServerConfig,
     router: Arc<dyn ControlPlane>,
@@ -355,105 +364,105 @@ async fn route_method(
         }
         "canopus.list" => match router.list().await {
             Ok(services) => JsonRpcResponse::ok(id, serde_json::json!({"services": services})),
-            Err(e) => JsonRpcResponse::err(id, -32000, format!("list failed: {}", e), None),
+            Err(e) => JsonRpcResponse::err(id, -32000, format!("list failed: {e}"), None),
         },
         "canopus.status" => {
             let sid = params
                 .get("serviceId")
-                .and_then(|v| v.as_str())
+                .and_then(Value::as_str)
                 .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
             match router.status(sid).await {
                 Ok(detail) => JsonRpcResponse::ok(id, serde_json::to_value(detail).unwrap()),
-                Err(e) => JsonRpcResponse::err(id, -32000, format!("status failed: {}", e), None),
+                Err(e) => JsonRpcResponse::err(id, -32000, format!("status failed: {e}"), None),
             }
         }
         "canopus.start" => {
             let sid = params
                 .get("serviceId")
-                .and_then(|v| v.as_str())
+                .and_then(Value::as_str)
                 .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
             let port = params
                 .get("port")
-                .and_then(|v| v.as_u64())
-                .map(|n| n as u16);
+                .and_then(Value::as_u64)
+                .and_then(|n| u16::try_from(n).ok());
             let hostname = params
                 .get("hostname")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+                .and_then(Value::as_str)
+                .map(ToString::to_string);
             match router.start(sid, port, hostname).await {
                 Ok(()) => JsonRpcResponse::ok(id, serde_json::json!({"ok": true})),
-                Err(e) => JsonRpcResponse::err(id, -32000, format!("start failed: {}", e), None),
+                Err(e) => JsonRpcResponse::err(id, -32000, format!("start failed: {e}"), None),
             }
         }
         "canopus.stop" => {
             let sid = params
                 .get("serviceId")
-                .and_then(|v| v.as_str())
+                .and_then(Value::as_str)
                 .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
             match router.stop(sid).await {
                 Ok(()) => JsonRpcResponse::ok(id, serde_json::json!({"ok": true})),
-                Err(e) => JsonRpcResponse::err(id, -32000, format!("stop failed: {}", e), None),
+                Err(e) => JsonRpcResponse::err(id, -32000, format!("stop failed: {e}"), None),
             }
         }
         "canopus.restart" => {
             let sid = params
                 .get("serviceId")
-                .and_then(|v| v.as_str())
+                .and_then(Value::as_str)
                 .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
             match router.restart(sid).await {
                 Ok(()) => JsonRpcResponse::ok(id, serde_json::json!({"ok": true})),
-                Err(e) => JsonRpcResponse::err(id, -32000, format!("restart failed: {}", e), None),
+                Err(e) => JsonRpcResponse::err(id, -32000, format!("restart failed: {e}"), None),
             }
         }
         "canopus.bindHost" => {
             let sid = params
                 .get("serviceId")
-                .and_then(|v| v.as_str())
+                .and_then(Value::as_str)
                 .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
             let host = params
                 .get("host")
-                .and_then(|v| v.as_str())
+                .and_then(Value::as_str)
                 .ok_or_else(|| IpcError::ProtocolError("missing host".into()))?;
             match router.bind_host(sid, host).await {
                 Ok(()) => JsonRpcResponse::ok(id, serde_json::json!({"ok": true})),
-                Err(e) => JsonRpcResponse::err(id, -32000, format!("bindHost failed: {}", e), None),
+                Err(e) => JsonRpcResponse::err(id, -32000, format!("bindHost failed: {e}"), None),
             }
         }
         "canopus.assignPort" => {
             let sid = params
                 .get("serviceId")
-                .and_then(|v| v.as_str())
+                .and_then(Value::as_str)
                 .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
             let preferred = params
                 .get("preferred")
-                .and_then(|v| v.as_u64())
-                .map(|n| n as u16);
+                .and_then(Value::as_u64)
+                .and_then(|n| u16::try_from(n).ok());
             match router.assign_port(sid, preferred).await {
                 Ok(port) => JsonRpcResponse::ok(id, serde_json::json!({"port": port})),
                 Err(e) => {
-                    JsonRpcResponse::err(id, -32000, format!("assignPort failed: {}", e), None)
+                    JsonRpcResponse::err(id, -32000, format!("assignPort failed: {e}"), None)
                 }
             }
         }
         "canopus.healthCheck" => {
             let sid = params
                 .get("serviceId")
-                .and_then(|v| v.as_str())
+                .and_then(Value::as_str)
                 .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
             match router.health_check(sid).await {
                 Ok(healthy) => JsonRpcResponse::ok(id, serde_json::json!({"healthy": healthy})),
                 Err(e) => {
-                    JsonRpcResponse::err(id, -32000, format!("healthCheck failed: {}", e), None)
+                    JsonRpcResponse::err(id, -32000, format!("healthCheck failed: {e}"), None)
                 }
             }
         }
         "canopus.tailLogs" => {
             let sid = params
                 .get("serviceId")
-                .and_then(|v| v.as_str())
+                .and_then(Value::as_str)
                 .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?
                 .to_string();
-            let from_seq = params.get("fromSeq").and_then(|v| v.as_u64());
+            let from_seq = params.get("fromSeq").and_then(Value::as_u64);
             let mut rx = router.tail_logs(&sid, from_seq).await?;
             let writer_clone = writer.clone();
             tokio::spawn(async move {
@@ -471,7 +480,7 @@ async fn route_method(
         "canopus.deleteMeta" => {
             let sid = params
                 .get("serviceId")
-                .and_then(|v| v.as_str())
+                .and_then(Value::as_str)
                 .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
             router.delete_meta(sid).await?;
             JsonRpcResponse::ok(id, serde_json::json!({"ok": true}))
@@ -645,7 +654,7 @@ pub mod supervisor_adapter {
     // Reduce type complexity for runtime metadata storage
     type RuntimeMeta = HashMap<String, (Option<u16>, Option<String>)>;
 
-    /// Control plane adapter backed by a set of SupervisorHandles and a shared event bus
+    /// Control plane adapter backed by a set of `SupervisorHandle`s and a shared event bus
     #[allow(missing_debug_implementations)]
     pub struct SupervisorControlPlane {
         handles: HashMap<String, SupervisorHandle>,
@@ -658,6 +667,7 @@ pub mod supervisor_adapter {
     }
 
     impl SupervisorControlPlane {
+        #[must_use]
         pub fn new(
             handles: HashMap<String, SupervisorHandle>,
             event_tx: broadcast::Sender<ServiceEvent>,
@@ -671,6 +681,7 @@ pub mod supervisor_adapter {
             }
         }
 
+        #[must_use]
         pub fn with_meta_store(mut self, meta: Arc<dyn super::ServiceMetaStore>) -> Self {
             self.meta = Some(meta);
             self
@@ -678,13 +689,14 @@ pub mod supervisor_adapter {
 
         /// Provide a precomputed login PATH to inject into service environments when
         /// they don't explicitly set PATH. This helps resolve commands like `npm`.
+        #[must_use]
         pub fn with_login_path(mut self, path: Option<String>) -> Self {
             self.login_path = path;
             self
         }
 
         #[cfg(unix)]
-        async fn ensure_hostname_binding(&self, hostname: &str) {
+        fn ensure_hostname_binding(hostname: &str) {
             use std::fs::OpenOptions;
             use std::io::{Read, Write};
             let path = "/etc/hosts";
@@ -701,7 +713,7 @@ pub mod supervisor_adapter {
             {
                 return;
             }
-            let line = format!("127.0.0.1\t{} {}\n", hostname, tag);
+            let line = format!("127.0.0.1\t{hostname} {tag}\n");
             match OpenOptions::new().append(true).open(path) {
                 Ok(mut f) => {
                     if let Err(e) = f.write_all(line.as_bytes()) {
@@ -719,7 +731,7 @@ pub mod supervisor_adapter {
         }
 
         #[cfg(unix)]
-        async fn remove_hostname_binding(&self, hostname: &str) {
+        fn remove_hostname_binding(hostname: &str) {
             use std::io::{Read, Write};
             let path = "/etc/hosts";
             let tag = "# canopus";
@@ -774,7 +786,7 @@ pub mod supervisor_adapter {
                                 port = *rp;
                             }
                             if hostname.is_none() {
-                                hostname = rh.clone();
+                                hostname.clone_from(rh);
                             }
                         }
                     }
@@ -811,6 +823,7 @@ pub mod supervisor_adapter {
             Ok(out)
         }
 
+        #[allow(clippy::too_many_lines)]
         async fn start(
             &self,
             service_id: &str,
@@ -823,22 +836,22 @@ pub mod supervisor_adapter {
                 .ok_or_else(|| super::IpcError::ProtocolError("unknown service".into()))?;
 
             // Determine port to use (allocate if not provided)
-            let chosen_port = if let Some(p) = port {
-                Some(p)
-            } else {
-                let alloc = canopus_core::PortAllocator::new();
-                match alloc.reserve(None) {
-                    Ok(g) => Some(g.port()),
-                    Err(_) => None,
-                }
-            };
+            let chosen_port = port.map_or_else(
+                || {
+                    let alloc = canopus_core::PortAllocator::new();
+                    alloc.reserve(None).map_or(None, |g| Some(g.port()))
+                },
+                Some,
+            );
 
             // Possibly update spec with port/hostname and ensure PATH if configured
             {
                 let mut spec = handle.spec.clone();
-                let mut need_update = false;
-
-                if let Some(p) = chosen_port {
+                let mut need_update = if let Some(hn) = hostname.clone() {
+                    // Use route field to carry hostname for proxy integration
+                    spec.route = Some(hn);
+                    true
+                } else if let Some(p) = chosen_port {
                     spec.environment.insert("PORT".to_string(), p.to_string());
                     // If readiness check is TCP, align port
                     if let Some(rc) = &mut spec.readiness_check {
@@ -846,14 +859,10 @@ pub mod supervisor_adapter {
                             *rp = p;
                         }
                     }
-                    need_update = true;
-                }
-
-                if let Some(hn) = hostname.clone() {
-                    // Use route field to carry hostname for proxy integration
-                    spec.route = Some(hn.clone());
-                    need_update = true;
-                }
+                    true
+                } else {
+                    false
+                };
 
                 // Inject login PATH if available and not explicitly set in the spec
                 if let Some(lp) = &self.login_path {
@@ -939,7 +948,7 @@ pub mod supervisor_adapter {
                 }
 
                 if let Some(hn) = eff_hostname.as_deref() {
-                    self.ensure_hostname_binding(hn).await;
+                    Self::ensure_hostname_binding(hn);
                 }
             }
 
@@ -1052,7 +1061,7 @@ pub mod supervisor_adapter {
                             port = *rp;
                         }
                         if hostname.is_none() {
-                            hostname = rh.clone();
+                            hostname.clone_from(rh);
                         }
                     }
                 }
@@ -1127,7 +1136,7 @@ pub mod supervisor_adapter {
                 }
 
                 if let Some(hn) = eff_hostname {
-                    self.remove_hostname_binding(hn.as_str()).await;
+                    Self::remove_hostname_binding(hn.as_str());
                 }
             }
 
@@ -1154,10 +1163,7 @@ pub mod supervisor_adapter {
         async fn assign_port(&self, _service_id: &str, _preferred: Option<u16>) -> Result<u16> {
             // Allocate a free port best-effort
             let alloc = canopus_core::PortAllocator::new();
-            let port = match alloc.reserve(_preferred) {
-                Ok(g) => g.port(),
-                Err(_) => 0,
-            };
+            let port = alloc.reserve(_preferred).map_or(0, |g| g.port());
             Ok(port)
         }
 
@@ -1192,8 +1198,7 @@ pub mod supervisor_adapter {
                             }
                         }
                         Err(broadcast::error::RecvError::Lagged(_)) => {
-                            // Skip lagged; continue
-                            continue;
+                            // Skip lagged events.
                         }
                         Err(broadcast::error::RecvError::Closed) => break,
                     }
