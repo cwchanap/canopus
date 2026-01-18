@@ -1,0 +1,62 @@
+{
+  "$schema": "https://windsurf.com/schemas/cascade-hooks.json",
+  "description": "Canopus Inbox integration for Windsurf Cascade Hooks",
+  "installation": [
+    "1. Copy this file to your Windsurf workspace: .windsurf/cascade-hooks.json",
+    "2. Ensure 'canopus' CLI is available in PATH",
+    "3. Restart Windsurf to apply hooks"
+  ],
+  "hooks": {
+    "onUserPrompt": {
+      "description": "Log user prompts to Canopus inbox",
+      "enabled": false,
+      "command": "canopus",
+      "args": [
+        "inbox",
+        "add",
+        "--project",
+        "${workspaceName}",
+        "--status",
+        "User prompt submitted",
+        "--action",
+        "Review prompt and response",
+        "--agent",
+        "windsurf"
+      ]
+    },
+    "onModelResponse": {
+      "description": "Notify when Cascade completes a response",
+      "enabled": true,
+      "command": "canopus",
+      "args": [
+        "inbox",
+        "add",
+        "--project",
+        "${workspaceName}",
+        "--status",
+        "Cascade response completed",
+        "--action",
+        "Review changes and provide feedback",
+        "--agent",
+        "windsurf"
+      ]
+    },
+    "onTaskComplete": {
+      "description": "Notify when a multi-step task completes",
+      "enabled": true,
+      "command": "canopus",
+      "args": [
+        "inbox",
+        "add",
+        "--project",
+        "${workspaceName}",
+        "--status",
+        "Task completed: ${taskDescription}",
+        "--action",
+        "Review completed work",
+        "--agent",
+        "windsurf"
+      ]
+    }
+  }
+}

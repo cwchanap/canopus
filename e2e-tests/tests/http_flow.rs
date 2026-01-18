@@ -4,6 +4,12 @@
 use ipc::uds_client::JsonRpcClient;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
+
+fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(())).lock().expect("lock")
+}
 
 fn workspace_root() -> PathBuf {
     // CARGO_MANIFEST_DIR points to e2e-tests crate directory
@@ -119,6 +125,7 @@ async fn wait_until_ready(
 
 #[tokio::test]
 async fn http_start_with_port_and_hostname_and_list_status_show_them() {
+    let _lock = test_lock();
     // Temp workspace
     let temp = tempfile::tempdir().expect("tempdir");
     let base = temp.path().to_path_buf();
@@ -145,7 +152,7 @@ async fn http_start_with_port_and_hostname_and_list_status_show_them() {
         .expect("write services.toml");
 
     // Bootstrap daemon
-    let boot = daemon::bootstrap::bootstrap(Some(cfg_path.clone()))
+    let boot = daemon::bootstrap::bootstrap_with_runtime(Some(cfg_path.clone()), None, None)
         .await
         .expect("bootstrap ok");
 
@@ -234,6 +241,7 @@ async fn http_start_with_port_and_hostname_and_list_status_show_them() {
 
 #[tokio::test]
 async fn http_start_without_port_allocator_assigns_and_list_status_show_it() {
+    let _lock = test_lock();
     // Temp workspace
     let temp = tempfile::tempdir().expect("tempdir");
     let base = temp.path().to_path_buf();
@@ -254,7 +262,7 @@ async fn http_start_without_port_allocator_assigns_and_list_status_show_it() {
         .expect("write services.toml");
 
     // Bootstrap daemon
-    let boot = daemon::bootstrap::bootstrap(Some(cfg_path.clone()))
+    let boot = daemon::bootstrap::bootstrap_with_runtime(Some(cfg_path.clone()), None, None)
         .await
         .expect("bootstrap ok");
 
@@ -325,6 +333,7 @@ async fn http_start_without_port_allocator_assigns_and_list_status_show_it() {
 
 #[tokio::test]
 async fn http_restart_keeps_port_and_hostname_and_ready_again() {
+    let _lock = test_lock();
     // Temp workspace
     let temp = tempfile::tempdir().expect("tempdir");
     let base = temp.path().to_path_buf();
@@ -351,7 +360,7 @@ async fn http_restart_keeps_port_and_hostname_and_ready_again() {
         .expect("write services.toml");
 
     // Bootstrap daemon
-    let boot = daemon::bootstrap::bootstrap(Some(cfg_path.clone()))
+    let boot = daemon::bootstrap::bootstrap_with_runtime(Some(cfg_path.clone()), None, None)
         .await
         .expect("bootstrap ok");
 
@@ -442,6 +451,7 @@ async fn http_restart_keeps_port_and_hostname_and_ready_again() {
 
 #[tokio::test]
 async fn http_duplicate_start_is_idempotent_and_keeps_settings() {
+    let _lock = test_lock();
     // Temp workspace
     let temp = tempfile::tempdir().expect("tempdir");
     let base = temp.path().to_path_buf();
@@ -468,7 +478,7 @@ async fn http_duplicate_start_is_idempotent_and_keeps_settings() {
         .expect("write services.toml");
 
     // Bootstrap daemon
-    let boot = daemon::bootstrap::bootstrap(Some(cfg_path.clone()))
+    let boot = daemon::bootstrap::bootstrap_with_runtime(Some(cfg_path.clone()), None, None)
         .await
         .expect("bootstrap ok");
 
@@ -544,6 +554,7 @@ async fn http_duplicate_start_is_idempotent_and_keeps_settings() {
 
 #[tokio::test]
 async fn http_start_with_hostname_only_and_list_status_show_port_and_hostname() {
+    let _lock = test_lock();
     // Temp workspace
     let temp = tempfile::tempdir().expect("tempdir");
     let base = temp.path().to_path_buf();
@@ -564,7 +575,7 @@ async fn http_start_with_hostname_only_and_list_status_show_port_and_hostname() 
         .expect("write services.toml");
 
     // Bootstrap daemon
-    let boot = daemon::bootstrap::bootstrap(Some(cfg_path.clone()))
+    let boot = daemon::bootstrap::bootstrap_with_runtime(Some(cfg_path.clone()), None, None)
         .await
         .expect("bootstrap ok");
 

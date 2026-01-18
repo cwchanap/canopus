@@ -18,7 +18,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 anyhow = "1"
-rusqlite = { version = "0.30", features = ["bundled"] }
+rusqlite = { version = "0.38.0", features = ["bundled"] }
 async-trait = "0.1"
 
 schema = { workspace = true }

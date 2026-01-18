@@ -173,7 +173,7 @@ impl ProxyApi for NullProxy {
 }
 
 /// Lightweight local HTTP reverse proxy that listens on a configurable address
-/// (default 127.0.0.1:9080) and routes requests by Host header to a backend
+/// (commonly 127.0.0.1:80) and routes requests by Host header to a backend
 /// on 127.0.0.1:<port> as registered via `attach`.
 #[derive(Debug)]
 pub struct LocalReverseProxy {
@@ -182,17 +182,30 @@ pub struct LocalReverseProxy {
 }
 
 impl LocalReverseProxy {
-    /// Create and start a local reverse proxy bound to `listen` (e.g., "127.0.0.1:9080").
-    /// If parsing fails, falls back to 127.0.0.1:9080.
-    pub fn new(listen: &str) -> Self {
-        let listen_addr: SocketAddr = listen
-            .parse()
-            .unwrap_or_else(|_| SocketAddr::from(([127, 0, 0, 1], 9080)));
+    /// Create and start a local reverse proxy bound to the provided address
+    /// string (e.g., "127.0.0.1:80"). The proxy must bind successfully or it
+    /// returns an `InitializationError` so the caller can surface a clear failure
+    /// message (e.g., instructing the user to run with elevated privileges).
+    pub fn new(listen: &str) -> Result<Self> {
         let routes: Arc<DashMap<String, u16>> = Arc::new(DashMap::new());
+        let listen_addr: SocketAddr = listen.trim().parse().map_err(|e| {
+            crate::CoreError::InitializationError(format!(
+                "LocalReverseProxy: invalid listen address '{}': {}",
+                listen, e
+            ))
+        })?;
 
-        let routes_clone = routes.clone();
+        let builder = Server::try_bind(&listen_addr).map_err(|e| {
+            crate::CoreError::InitializationError(format!(
+                "LocalReverseProxy failed to bind {} (binding port 80 usually requires sudo/root): {}",
+                listen_addr, e
+            ))
+        })?;
+
+        let routes_for_svc = routes.clone();
+        let actual_addr = builder.local_addr();
         let make_svc = make_service_fn(move |_conn| {
-            let routes = routes_clone.clone();
+            let routes = routes_for_svc.clone();
             async move {
                 Ok::<_, Infallible>(service_fn(move |req| {
                     let routes = routes.clone();
@@ -201,18 +214,22 @@ impl LocalReverseProxy {
             }
         });
 
-        // Spawn the HTTP server in the background
         tokio::spawn(async move {
-            if let Err(e) = Server::bind(&listen_addr).serve(make_svc).await {
-                warn!("LocalReverseProxy server error on {}: {}", listen_addr, e);
+            if let Err(e) = builder.serve(make_svc).await {
+                warn!("LocalReverseProxy server error on {}: {}", actual_addr, e);
             }
         });
 
-        info!("LocalReverseProxy listening on {}", listen_addr);
-        Self {
+        info!("LocalReverseProxy listening on {}", actual_addr);
+        Ok(Self {
             routes,
-            listen_addr,
-        }
+            listen_addr: actual_addr,
+        })
+    }
+
+    /// The address the proxy is listening on.
+    pub fn listen_addr(&self) -> SocketAddr {
+        self.listen_addr
     }
 
     fn normalize_host(host: &str) -> String {
@@ -241,13 +258,12 @@ impl LocalReverseProxy {
             }
         };
         let host_key = Self::normalize_host(host);
+        let host_owned = host.to_owned();
         let port = match routes.get(&host_key) {
             Some(entry) => *entry.value(),
             None => {
-                let mut resp = Response::new(Body::from(format!(
-                    "no route for host: {}",
-                    host_key
-                )));
+                let mut resp =
+                    Response::new(Body::from(format!("no route for host: {}", host_key)));
                 *resp.status_mut() = http::StatusCode::BAD_GATEWAY;
                 return Ok(resp);
             }
@@ -276,7 +292,7 @@ impl LocalReverseProxy {
         // Add/override some forwarding headers
         parts.headers.insert(
             HeaderName::from_static("x-forwarded-host"),
-            HeaderValue::from_str(host).unwrap_or_else(|_| HeaderValue::from_static("")),
+            HeaderValue::from_str(&host_owned).unwrap_or_else(|_| HeaderValue::from_static("")),
         );
         parts.headers.insert(
             HeaderName::from_static("x-forwarded-proto"),
@@ -289,10 +305,7 @@ impl LocalReverseProxy {
         match client.request(out_req).await {
             Ok(resp) => Ok(resp),
             Err(e) => {
-                let mut resp = Response::new(Body::from(format!(
-                    "upstream request failed: {}",
-                    e
-                )));
+                let mut resp = Response::new(Body::from(format!("upstream request failed: {}", e)));
                 *resp.status_mut() = http::StatusCode::BAD_GATEWAY;
                 Ok(resp)
             }

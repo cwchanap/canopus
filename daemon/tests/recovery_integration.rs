@@ -1,3 +1,5 @@
+//! Integration tests for daemon recovery functionality
+
 use daemon::bootstrap;
 use std::time::Duration;
 // Silence unused crate dependency lints for workspace-wide dev deps
@@ -36,7 +38,7 @@ async fn corrupted_snapshot_does_not_prevent_bootstrap() {
     )
     .unwrap();
 
-    let handle = bootstrap::bootstrap(Some(cfg_path))
+    let handle = bootstrap::bootstrap_with_runtime(Some(cfg_path), None, None)
         .await
         .expect("bootstrap ok");
     assert_eq!(handle.services.len(), 1);

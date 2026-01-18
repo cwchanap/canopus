@@ -85,12 +85,14 @@ pub struct ServiceSpec {
 
 impl ServiceSpec {
     /// Get the graceful timeout as a Duration
-    pub fn graceful_timeout(&self) -> Duration {
+    #[must_use]
+    pub const fn graceful_timeout(&self) -> Duration {
         Duration::from_secs(self.graceful_timeout_secs)
     }
 
     /// Get the startup timeout as a Duration
-    pub fn startup_timeout(&self) -> Duration {
+    #[must_use]
+    pub const fn startup_timeout(&self) -> Duration {
         Duration::from_secs(self.startup_timeout_secs)
     }
 }
@@ -121,17 +123,20 @@ pub enum ServiceState {
 
 impl ServiceState {
     /// Check if the service is in a running state (not Idle)
-    pub fn is_running(&self) -> bool {
+    #[must_use]
+    pub const fn is_running(&self) -> bool {
         !matches!(self, ServiceState::Idle)
     }
 
     /// Check if the service is ready to handle requests
-    pub fn is_ready(&self) -> bool {
+    #[must_use]
+    pub const fn is_ready(&self) -> bool {
         matches!(self, ServiceState::Ready)
     }
 
     /// Check if the service is transitioning between states
-    pub fn is_transitional(&self) -> bool {
+    #[must_use]
+    pub const fn is_transitional(&self) -> bool {
         matches!(
             self,
             ServiceState::Spawning | ServiceState::Starting | ServiceState::Stopping
@@ -179,17 +184,20 @@ pub struct BackoffConfig {
 
 impl BackoffConfig {
     /// Get the base delay as a Duration
-    pub fn base_delay(&self) -> Duration {
+    #[must_use]
+    pub const fn base_delay(&self) -> Duration {
         Duration::from_secs(self.base_delay_secs)
     }
 
     /// Get the maximum delay as a Duration
-    pub fn max_delay(&self) -> Duration {
+    #[must_use]
+    pub const fn max_delay(&self) -> Duration {
         Duration::from_secs(self.max_delay_secs)
     }
 
     /// Get the failure window as a Duration
-    pub fn failure_window(&self) -> Duration {
+    #[must_use]
+    pub const fn failure_window(&self) -> Duration {
         Duration::from_secs(self.failure_window_secs)
     }
 }
@@ -227,7 +235,7 @@ const fn default_failure_window_secs() -> u64 {
 }
 
 /// Health check configuration for determining service health
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct HealthCheck {
     /// Type of health check to perform
@@ -252,18 +260,20 @@ pub struct HealthCheck {
 
 impl HealthCheck {
     /// Get the interval as a Duration
-    pub fn interval(&self) -> Duration {
+    #[must_use]
+    pub const fn interval(&self) -> Duration {
         Duration::from_secs(self.interval_secs)
     }
 
     /// Get the timeout as a Duration
-    pub fn timeout(&self) -> Duration {
+    #[must_use]
+    pub const fn timeout(&self) -> Duration {
         Duration::from_secs(self.timeout_secs)
     }
 }
 
 /// Readiness check configuration for determining when service is ready
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadinessCheck {
     /// Type of readiness check to perform
@@ -288,23 +298,26 @@ pub struct ReadinessCheck {
 
 impl ReadinessCheck {
     /// Get the initial delay as a Duration
-    pub fn initial_delay(&self) -> Duration {
+    #[must_use]
+    pub const fn initial_delay(&self) -> Duration {
         Duration::from_secs(self.initial_delay_secs)
     }
 
     /// Get the interval as a Duration
-    pub fn interval(&self) -> Duration {
+    #[must_use]
+    pub const fn interval(&self) -> Duration {
         Duration::from_secs(self.interval_secs)
     }
 
     /// Get the timeout as a Duration
-    pub fn timeout(&self) -> Duration {
+    #[must_use]
+    pub const fn timeout(&self) -> Duration {
         Duration::from_secs(self.timeout_secs)
     }
 }
 
 /// Type of health/readiness check to perform
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum HealthCheckType {
     /// TCP connection check to a specific port
@@ -351,7 +364,7 @@ const fn default_success_threshold() -> u32 {
 }
 
 /// Information about a service process exit
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceExit {
     /// Process ID that exited
@@ -371,11 +384,13 @@ pub struct ServiceExit {
 
 impl ServiceExit {
     /// Check if this represents a successful exit (code 0)
+    #[must_use]
     pub fn is_success(&self) -> bool {
         self.exit_code == Some(0)
     }
 
     /// Check if this represents a failure (non-zero exit code or signal)
+    #[must_use]
     pub fn is_failure(&self) -> bool {
         !self.is_success()
     }
@@ -506,11 +521,6 @@ mod tests {
             HealthCheckType::Tcp { port } => assert_eq!(port, 8080),
             _ => panic!("Expected TCP check"),
         }
-    }
-
-    #[test]
-    fn test_health_check_type_http_defaults_removed() {
-        // HTTP check type removed; nothing to test here
     }
 
     #[test]

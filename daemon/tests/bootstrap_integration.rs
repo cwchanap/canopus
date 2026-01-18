@@ -1,3 +1,5 @@
+//! Integration tests for daemon bootstrap functionality
+
 use std::fs;
 // Silence unused crate dependency lints for workspace-wide dev deps
 use anyhow as _;
@@ -28,8 +30,8 @@ async fn bootstrap_start_stop() {
         "#;
         fs::write(&path, toml).unwrap();
 
-        // Bootstrap
-        let handle = daemon::bootstrap::bootstrap(Some(path))
+        // Bootstrap without binding port 80
+        let handle = daemon::bootstrap::bootstrap_with_runtime(Some(path), None, None)
             .await
             .expect("bootstrap should succeed");
         assert_eq!(handle.services.len(), 1);

@@ -6,8 +6,10 @@ members = [
     "daemon",
     "cli",
     "schema",
+    "inbox",
     "xtask",
     "e2e-tests",
+    "hooks",
 ]
 
 [workspace.package]
@@ -20,10 +22,12 @@ repository = "https://github.com/yourusername/canopus"
 [workspace.dependencies]
 # Internal crates - use package name for core to avoid std::core conflicts
 canopus-core = { path = "core" }
+canopus-inbox = { path = "inbox" }
 ipc = { path = "ipc" }
 daemon = { path = "daemon" }
 cli = { path = "cli" }
 schema = { path = "schema" }
+hooks = { path = "hooks" }
 
 # Async runtime
 tokio = { version = "1.0", features = ["full"] }

@@ -14,8 +14,8 @@ use canopus_core::supervisor::{spawn_supervisor, SupervisorConfig, UnixProcessAd
 use schema::ServiceSpec;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::process::Command as StdCommand;
+use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
@@ -49,7 +49,10 @@ fn resolve_login_path() -> Option<String> {
     }
 
     // Try zsh interactive login shell (covers ~/.zprofile and ~/.zshrc where nvm is usually set)
-    if let Ok(out) = StdCommand::new("/bin/zsh").args(["-lic", "echo -n $PATH"]).output() {
+    if let Ok(out) = StdCommand::new("/bin/zsh")
+        .args(["-lic", "echo -n $PATH"])
+        .output()
+    {
         if out.status.success() {
             let s = String::from_utf8_lossy(&out.stdout).to_string();
             if !s.trim().is_empty() {
@@ -59,7 +62,10 @@ fn resolve_login_path() -> Option<String> {
     }
 
     // Fallback: zsh login-only
-    if let Ok(out) = StdCommand::new("/bin/zsh").args(["-lc", "echo -n $PATH"]).output() {
+    if let Ok(out) = StdCommand::new("/bin/zsh")
+        .args(["-lc", "echo -n $PATH"])
+        .output()
+    {
         if out.status.success() {
             let s = String::from_utf8_lossy(&out.stdout).to_string();
             if !s.trim().is_empty() {
@@ -69,7 +75,10 @@ fn resolve_login_path() -> Option<String> {
     }
 
     // Try bash login shell
-    if let Ok(out) = StdCommand::new("/bin/bash").args(["-lc", "echo -n $PATH"]).output() {
+    if let Ok(out) = StdCommand::new("/bin/bash")
+        .args(["-lc", "echo -n $PATH"])
+        .output()
+    {
         if out.status.success() {
             let s = String::from_utf8_lossy(&out.stdout).to_string();
             if !s.trim().is_empty() {
@@ -85,8 +94,13 @@ fn resolve_login_path() -> Option<String> {
 impl BootstrapHandle {
     /// Initiate graceful shutdown: stop supervisors and abort IPC server task
     pub async fn shutdown(mut self) {
-        for h in self.handles.values() {
-            let _ = h.shutdown();
+        for (id, h) in self.handles.iter() {
+            if let Err(e) = h.shutdown() {
+                warn!(
+                    "Failed to shutdown service '{}': {}. Process may still be running.",
+                    id, e
+                );
+            }
         }
         if let Some(task) = self.server_task.take() {
             // IPC server runs accept loop; aborting is acceptable for now
@@ -98,13 +112,14 @@ impl BootstrapHandle {
 
 /// Bootstrap the daemon components
 pub async fn bootstrap(config_path: Option<PathBuf>) -> Result<BootstrapHandle> {
-    bootstrap_with_runtime(config_path, None).await
+    bootstrap_with_runtime(config_path, None, Some("127.0.0.1:80")).await
 }
 
 /// Bootstrap with an additional optional runtime config (simple per-service hostname/port)
 pub async fn bootstrap_with_runtime(
     config_path: Option<PathBuf>,
     runtime_config_path: Option<PathBuf>,
+    proxy_address: Option<&'static str>,
 ) -> Result<BootstrapHandle> {
     // Load services from config if provided, otherwise start empty (no supervisors)
     let services: Vec<ServiceSpec> = if let Some(path) = config_path {
@@ -115,10 +130,15 @@ pub async fn bootstrap_with_runtime(
         vec![]
     };
 
-    // Initialize local reverse proxy (user-level, listens on 127.0.0.1:9080 by default)
-    let proxy_listen = std::env::var("CANOPUS_PROXY_LISTEN")
-        .unwrap_or_else(|_| "127.0.0.1:9080".to_string());
-    let proxy = Arc::new(LocalReverseProxy::new(&proxy_listen));
+    // Initialize local reverse proxy on provided address for friendly URLs like
+    // http://service.localhost. Binding port 80 typically requires elevated
+    // privileges (sudo/root). For testing, proxy_address can be set to None
+    // to use an OS-assigned port.
+    let proxy_addr = proxy_address.unwrap_or("127.0.0.1:0");
+    let proxy = Arc::new(
+        LocalReverseProxy::new(proxy_addr)
+            .map_err(|e| DaemonError::ServerError(format!("proxy init failed: {}", e)))?,
+    );
 
     // Initialize persistent storage (SQLite in $HOME/.canopus/canopus.db)
     let storage = SqliteStorage::open_default()
@@ -170,7 +190,12 @@ pub async fn bootstrap_with_runtime(
         let handle = spawn_supervisor(cfg);
         // Recovery workflow: auto-start only services with Always policy
         if spec.restart_policy == schema::RestartPolicy::Always {
-            let _ = handle.start();
+            if let Err(e) = handle.start() {
+                warn!(
+                    "Failed to auto-start service '{}' with Always restart policy: {}",
+                    spec.id, e
+                );
+            }
         } else {
             debug!(
                 "Service '{}' not auto-started (policy: {:?})",

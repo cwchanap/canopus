@@ -26,13 +26,12 @@ humantime = "2.1"
 dirs-next = "2.0"
 hyper = { version = "0.14", features = ["full"] }
 http = "0.2"
+schema = { path = "../schema" }
 
 # Unix process management
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.27", default-features = false, features = ["process", "signal"] }
 libc = "0.2"
-
-schema = { path = "../schema" }
 
 [dev-dependencies]
 tempfile = "3.10"
