@@ -47,15 +47,15 @@ mod tests {
 
     #[test]
     fn test_result_type_alias() {
-        fn returns_ok() -> u32 {
-            42
+        fn returns_ok() -> Result<u32> {
+            Ok(42)
         }
 
         fn returns_err() -> Result<u32> {
             Err(DaemonError::ServerError("test failure".to_string()))
         }
 
-        assert_eq!(returns_ok(), 42);
+        assert_eq!(returns_ok().expect("returns_ok"), 42);
         assert!(returns_err().is_err());
     }
 
