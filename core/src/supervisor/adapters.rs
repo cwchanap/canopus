@@ -103,16 +103,9 @@ impl ManagedProcess for UnixManagedProcess {
         let (exit_code, signal) = exit_status.code().map_or_else(
             || {
                 // On Unix, if there's no exit code, it was likely killed by a signal
-                #[cfg(unix)]
-                {
-                    use std::os::unix::process::ExitStatusExt;
-                    let signal = exit_status.signal();
-                    (None, signal)
-                }
-                #[cfg(not(unix))]
-                {
-                    (None, None)
-                }
+                use std::os::unix::process::ExitStatusExt;
+                let signal = exit_status.signal();
+                (None, signal)
             },
             |code| (Some(code), None),
         );

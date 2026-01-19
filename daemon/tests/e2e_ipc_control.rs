@@ -47,8 +47,8 @@ async fn e2e_ipc_bind_assign() {
             .await
             .expect("assignPort");
         assert!(
-            p == 0 || (30000..=60000).contains(&p),
-            "port {p} should be in default range or 0 on failure"
+            (30000..=60000).contains(&p),
+            "port {p} should be in default range"
         );
 
         boot.shutdown();

@@ -211,7 +211,9 @@ impl JsonRpcClient {
                     .get("port")
                     .and_then(Value::as_u64)
                     .and_then(|value| u16::try_from(value).ok())
-                    .unwrap_or(0);
+                    .ok_or_else(|| {
+                        IpcError::ProtocolError("assignPort returned invalid port".into())
+                    })?;
                 Ok(port)
             },
         )

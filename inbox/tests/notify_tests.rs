@@ -37,23 +37,19 @@ impl MockNotifier {
 
 impl canopus_inbox::notify::NotificationBackend for MockNotifier {
     fn send(&self, summary: &str, body: &str) -> canopus_inbox::Result<()> {
+        let mut summaries = self.summaries.lock().map_err(|_| {
+            canopus_inbox::InboxError::Notification(
+                "Notification summary lock poisoned".to_string(),
+            )
+        })?;
+        let mut bodies = self.bodies.lock().map_err(|_| {
+            canopus_inbox::InboxError::Notification(
+                "Notification body lock poisoned".to_string(),
+            )
+        })?;
+        summaries.push(summary.to_string());
+        bodies.push(body.to_string());
         self.call_count.fetch_add(1, Ordering::SeqCst);
-        self.summaries
-            .lock()
-            .map_err(|_| {
-                canopus_inbox::InboxError::Notification(
-                    "Notification summary lock poisoned".to_string(),
-                )
-            })?
-            .push(summary.to_string());
-        self.bodies
-            .lock()
-            .map_err(|_| {
-                canopus_inbox::InboxError::Notification(
-                    "Notification body lock poisoned".to_string(),
-                )
-            })?
-            .push(body.to_string());
         Ok(())
     }
 }

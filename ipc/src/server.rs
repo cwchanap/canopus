@@ -847,11 +847,13 @@ pub mod supervisor_adapter {
             // Possibly update spec with port/hostname and ensure PATH if configured
             {
                 let mut spec = handle.spec.clone();
-                let mut need_update = if let Some(hn) = hostname.clone() {
+                let mut need_update = false;
+                if let Some(hn) = hostname.clone() {
                     // Use route field to carry hostname for proxy integration
                     spec.route = Some(hn);
-                    true
-                } else if let Some(p) = chosen_port {
+                    need_update = true;
+                }
+                if let Some(p) = chosen_port {
                     spec.environment.insert("PORT".to_string(), p.to_string());
                     // If readiness check is TCP, align port
                     if let Some(rc) = &mut spec.readiness_check {
@@ -859,10 +861,8 @@ pub mod supervisor_adapter {
                             *rp = p;
                         }
                     }
-                    true
-                } else {
-                    false
-                };
+                    need_update = true;
+                }
 
                 // Inject login PATH if available and not explicitly set in the spec
                 if let Some(lp) = &self.login_path {
@@ -1160,11 +1160,15 @@ pub mod supervisor_adapter {
             Ok(())
         }
 
-        async fn assign_port(&self, _service_id: &str, _preferred: Option<u16>) -> Result<u16> {
+        async fn assign_port(&self, service_id: &str, preferred: Option<u16>) -> Result<u16> {
             // Allocate a free port best-effort
             let alloc = canopus_core::PortAllocator::new();
-            let port = alloc.reserve(_preferred).map_or(0, |g| g.port());
-            Ok(port)
+            let guard = alloc.reserve(preferred).map_err(|e| {
+                super::IpcError::ProtocolError(format!(
+                    "assignPort failed for {service_id} (preferred={preferred:?}): {e}"
+                ))
+            })?;
+            Ok(guard.port())
         }
 
         async fn health_check(&self, service_id: &str) -> Result<bool> {

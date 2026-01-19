@@ -28,7 +28,7 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 # The lint level for unmaintained crates
 unmaintained = "workspace"
 # The lint level for crates that have been yanked from their source registry
-yanked = "allow"
+yanked = "warn"
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
 ignore = [
