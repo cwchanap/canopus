@@ -35,9 +35,7 @@ impl NotificationBackend for DesktopNotifier {
 
             let title = escape_apple_script(summary);
             let message = escape_apple_script(body);
-            let script = format!(
-                "display notification \"{message}\" with title \"{title}\""
-            );
+            let script = format!("display notification \"{message}\" with title \"{title}\"");
             let status = Command::new("osascript")
                 .arg("-e")
                 .arg(script)
