@@ -428,20 +428,26 @@ fn row_to_inbox_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<InboxItem> {
         source_agent: SourceAgent::from_str(&row.get::<_, String>(4)?),
         details,
         status: InboxStatus::from_str(&row.get::<_, String>(6)?),
-        created_at: Utc.timestamp_opt(created_ts, 0).single().unwrap_or_else(|| {
-            error!(
-                "Invalid created_at timestamp {} for inbox item {}, using current time",
-                created_ts, item_id
-            );
-            Utc::now()
-        }),
-        updated_at: Utc.timestamp_opt(updated_ts, 0).single().unwrap_or_else(|| {
-            error!(
-                "Invalid updated_at timestamp {} for inbox item {}, using current time",
-                updated_ts, item_id
-            );
-            Utc::now()
-        }),
+        created_at: Utc
+            .timestamp_opt(created_ts, 0)
+            .single()
+            .unwrap_or_else(|| {
+                error!(
+                    "Invalid created_at timestamp {} for inbox item {}, using current time",
+                    created_ts, item_id
+                );
+                Utc::now()
+            }),
+        updated_at: Utc
+            .timestamp_opt(updated_ts, 0)
+            .single()
+            .unwrap_or_else(|| {
+                error!(
+                    "Invalid updated_at timestamp {} for inbox item {}, using current time",
+                    updated_ts, item_id
+                );
+                Utc::now()
+            }),
         dismissed_at: dismissed_ts.and_then(|ts| Utc.timestamp_opt(ts, 0).single()),
         notified: row.get::<_, i32>(10)? != 0,
     })

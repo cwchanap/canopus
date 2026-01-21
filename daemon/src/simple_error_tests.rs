@@ -1,4 +1,4 @@
-    #[cfg(test)]
+#[cfg(test)]
 mod tests {
     use crate::{DaemonError, Result};
     use std::error::Error;
