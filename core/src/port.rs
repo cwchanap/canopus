@@ -263,9 +263,17 @@ pub fn clear_reservations() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+    fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+        TEST_LOCK.lock().expect("port test lock poisoned")
+    }
 
     #[test]
     fn test_port_allocator_creation() {
+        let _lock = test_lock();
         let allocator = PortAllocator::new();
         assert_eq!(allocator.range_start, DEFAULT_PORT_RANGE_START);
         assert_eq!(allocator.range_end, DEFAULT_PORT_RANGE_END);
@@ -277,6 +285,7 @@ mod tests {
 
     #[test]
     fn test_preferred_port_success() {
+        let _lock = test_lock();
         clear_reservations();
         let allocator = PortAllocator::new();
 
@@ -300,6 +309,7 @@ mod tests {
 
     #[test]
     fn test_port_collision() {
+        let _lock = test_lock();
         clear_reservations();
         let allocator = PortAllocator::new();
 
@@ -355,6 +365,7 @@ mod tests {
 
     #[test]
     fn test_port_release_on_drop() {
+        let _lock = test_lock();
         clear_reservations();
         let allocator = PortAllocator::new();
 
@@ -373,6 +384,7 @@ mod tests {
 
     #[test]
     fn test_deterministic_sequence() {
+        let _lock = test_lock();
         let allocator = PortAllocator::with_range(45000, 45010);
 
         // Generate sequence twice and verify they're identical
@@ -390,6 +402,7 @@ mod tests {
 
     #[test]
     fn test_fallback_to_sequence() {
+        let _lock = test_lock();
         clear_reservations();
         let allocator = PortAllocator::with_range(45200, 45210);
 
@@ -412,6 +425,7 @@ mod tests {
 
     #[test]
     fn test_explicit_release() {
+        let _lock = test_lock();
         clear_reservations();
         let allocator = PortAllocator::new();
         let preferred_port = 45126;
@@ -428,6 +442,7 @@ mod tests {
 
     #[test]
     fn test_get_addr() {
+        let _lock = test_lock();
         clear_reservations();
         let allocator = PortAllocator::new();
         let preferred_port = 45127;
