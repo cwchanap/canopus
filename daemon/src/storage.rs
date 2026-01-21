@@ -279,7 +279,12 @@ impl SqliteStorage {
                     .optional()
                     .map_err(|e| anyhow::anyhow!(e))?
                 };
-                Ok(val.flatten().and_then(|v| u16::try_from(v).ok()))
+                match val.flatten() {
+                    Some(v) => u16::try_from(v)
+                        .map(Some)
+                        .map_err(|_| anyhow::anyhow!("Invalid port value in database: {v}")),
+                    None => Ok(None),
+                }
             }
         })
         .await??;
@@ -320,4 +325,52 @@ fn now_ts() -> i64 {
         .unwrap_or_default()
         .as_secs();
     i64::try_from(secs).unwrap_or(i64::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{LazyLock, Mutex};
+
+    static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+    #[tokio::test]
+    async fn fetch_port_errors_on_invalid_value() {
+        let _lock = ENV_LOCK.lock().expect("env lock");
+        let original_home = std::env::var("HOME").ok();
+        let temp = tempfile::tempdir().expect("tempdir");
+        let home = temp.path().join("home");
+        std::fs::create_dir_all(&home).expect("create home dir");
+        std::env::set_var("HOME", &home);
+
+        let storage = SqliteStorage::open_default().expect("open sqlite");
+        let conn = storage.conn.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.blocking_lock();
+            conn.execute(
+                "INSERT INTO services (id, name, state, pid, port, hostname, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    "svc",
+                    "svc",
+                    "idle",
+                    Option::<i64>::None,
+                    70_000_i64,
+                    Option::<String>::None,
+                    now_ts(),
+                ],
+            )
+            .expect("insert row");
+        })
+        .await
+        .expect("insert task");
+
+        let err = storage.fetch_port("svc").await.expect_err("invalid port");
+        assert!(err.to_string().contains("Invalid port value"));
+
+        if let Some(home) = original_home {
+            std::env::set_var("HOME", home);
+        } else {
+            std::env::remove_var("HOME");
+        }
+    }
 }

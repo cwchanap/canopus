@@ -97,7 +97,10 @@ pub fn spawn_with(
     let raw_pid = child
         .id()
         .ok_or_else(|| CoreError::ProcessSpawn("Spawned child did not have a PID".to_string()))?;
-    let pid = Pid::from_raw(i32::try_from(raw_pid).unwrap_or(i32::MAX));
+    let pid_raw = i32::try_from(raw_pid).map_err(|e| {
+        CoreError::ProcessSpawn(format!("Invalid child PID {raw_pid}: {e}"))
+    })?;
+    let pid = Pid::from_raw(pid_raw);
     debug!("Successfully spawned process {} in new process group", pid);
 
     Ok(ChildProcess { pid, child })
@@ -206,7 +209,10 @@ pub fn spawn(cmd: &str, args: &[&str]) -> Result<ChildProcess> {
     let raw_pid = child
         .id()
         .ok_or_else(|| CoreError::ProcessSpawn("Spawned child did not have a PID".to_string()))?;
-    let pid = Pid::from_raw(i32::try_from(raw_pid).unwrap_or(i32::MAX));
+    let pid_raw = i32::try_from(raw_pid).map_err(|e| {
+        CoreError::ProcessSpawn(format!("Invalid child PID {raw_pid}: {e}"))
+    })?;
+    let pid = Pid::from_raw(pid_raw);
     debug!("Successfully spawned process {} in new process group", pid);
 
     Ok(ChildProcess { pid, child })

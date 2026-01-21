@@ -21,6 +21,27 @@ pub struct JsonRpcClient {
     token: Option<String>,
 }
 
+fn extract_version(result: &Value) -> Result<String> {
+    let version = result
+        .get("version")
+        .and_then(Value::as_str)
+        .ok_or_else(|| IpcError::ProtocolError("missing version in response".into()))?;
+    Ok(version.to_string())
+}
+
+fn extract_services(result: &Value) -> Result<Vec<ServiceSummary>> {
+    let services = result
+        .get("services")
+        .ok_or_else(|| IpcError::ProtocolError("missing services in response".into()))?;
+    if !services.is_array() {
+        return Err(IpcError::ProtocolError(
+            "invalid services in response".into(),
+        ));
+    }
+    serde_json::from_value::<Vec<ServiceSummary>>(services.clone())
+        .map_err(|e| IpcError::DeserializationFailed(e.to_string()))
+}
+
 #[allow(missing_docs)]
 impl JsonRpcClient {
     pub fn new(socket_path: impl Into<PathBuf>, token: Option<String>) -> Self {
@@ -42,13 +63,7 @@ impl JsonRpcClient {
         let resp = read_json::<JsonRpcResponse, _>(&mut reader).await?;
         resp.result.map_or_else(
             || Err(IpcError::ProtocolError("version call failed".into())),
-            |result| {
-                Ok(result
-                    .get("version")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string())
-            },
+            |result| extract_version(&result),
         )
     }
 
@@ -64,14 +79,7 @@ impl JsonRpcClient {
         let resp = read_json::<JsonRpcResponse, _>(&mut reader).await?;
         resp.result.map_or_else(
             || Err(IpcError::ProtocolError("list call failed".into())),
-            |result| {
-                let services = result
-                    .get("services")
-                    .cloned()
-                    .unwrap_or(Value::Array(vec![]));
-                serde_json::from_value::<Vec<ServiceSummary>>(services)
-                    .map_err(|e| IpcError::DeserializationFailed(e.to_string()))
-            },
+            |result| extract_services(&result),
         )
     }
 
@@ -392,6 +400,53 @@ async fn read_json<T: for<'de> Deserialize<'de>, S: AsyncReadExt + Unpin>(
         return Err(IpcError::EmptyResponse);
     }
     serde_json::from_slice(&buf[..n]).map_err(|e| IpcError::DeserializationFailed(e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_version_requires_version_key() {
+        let err = extract_version(&serde_json::json!({})).expect_err("missing version");
+        match err {
+            IpcError::ProtocolError(msg) => assert!(msg.contains("missing version")),
+            other => panic!("unexpected error: {other}"),
+        }
+    }
+
+    #[test]
+    fn extract_services_requires_services_array() {
+        let err = extract_services(&serde_json::json!({})).expect_err("missing services");
+        match err {
+            IpcError::ProtocolError(msg) => assert!(msg.contains("missing services")),
+            other => panic!("unexpected error: {other}"),
+        }
+
+        let err = extract_services(&serde_json::json!({"services": "nope"}))
+            .expect_err("invalid services");
+        match err {
+            IpcError::ProtocolError(msg) => assert!(msg.contains("invalid services")),
+            other => panic!("unexpected error: {other}"),
+        }
+    }
+
+    #[test]
+    fn extract_services_parses_service_list() {
+        let service = ServiceSummary {
+            id: "svc".to_string(),
+            name: "svc".to_string(),
+            state: schema::ServiceState::Idle,
+            pid: None,
+            port: None,
+            hostname: None,
+        };
+        let services = serde_json::to_value(vec![service]).expect("serialize services");
+        let result = serde_json::json!({"services": services});
+        let parsed = extract_services(&result).expect("valid services");
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].id, "svc");
+    }
 }
 
 async fn read_value<S: AsyncReadExt + Unpin>(reader: &mut S) -> Result<Value> {
