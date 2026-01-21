@@ -55,7 +55,7 @@ pub struct MockProxyAdapter {
 }
 
 impl MockProxyAdapter {
-    /// Create a new empty registry
+    /// Create a new `MockProxyAdapter` with no recorded operations
     #[must_use]
     pub fn new() -> Self {
         Self::default()

@@ -355,6 +355,14 @@ async fn route_method(
 
     #[allow(unused_macros)]
     macro_rules! bad_params {
+        ($field:expr, $msg:expr) => {
+            return Ok(Some(JsonRpcResponse::err(
+                id,
+                -32602,
+                format!("invalid params: {} {}", $field, $msg),
+                None,
+            )));
+        };
         ($msg:expr) => {
             return Ok(Some(JsonRpcResponse::err(id, -32602, $msg, None)));
         };
@@ -383,10 +391,21 @@ async fn route_method(
                 .get("serviceId")
                 .and_then(Value::as_str)
                 .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
-            let port = params
-                .get("port")
-                .and_then(Value::as_u64)
-                .and_then(|n| u16::try_from(n).ok());
+            let port = match params.get("port") {
+                Some(value) if value.is_null() => None,
+                Some(value) => {
+                    let n = match value.as_u64() {
+                        Some(n) => n,
+                        None => bad_params!("port", "invalid port number"),
+                    };
+                    let port = match u16::try_from(n) {
+                        Ok(port) => port,
+                        Err(_) => bad_params!("port", "invalid port number"),
+                    };
+                    Some(port)
+                }
+                None => None,
+            };
             let hostname = params
                 .get("hostname")
                 .and_then(Value::as_str)
@@ -435,10 +454,21 @@ async fn route_method(
                 .get("serviceId")
                 .and_then(Value::as_str)
                 .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
-            let preferred = params
-                .get("preferred")
-                .and_then(Value::as_u64)
-                .and_then(|n| u16::try_from(n).ok());
+            let preferred = match params.get("preferred") {
+                Some(value) if value.is_null() => None,
+                Some(value) => {
+                    let n = match value.as_u64() {
+                        Some(n) => n,
+                        None => bad_params!("preferred", "invalid port number"),
+                    };
+                    let preferred = match u16::try_from(n) {
+                        Ok(port) => port,
+                        Err(_) => bad_params!("preferred", "invalid port number"),
+                    };
+                    Some(preferred)
+                }
+                None => None,
+            };
             match router.assign_port(sid, preferred).await {
                 Ok(port) => JsonRpcResponse::ok(id, serde_json::json!({"port": port})),
                 Err(e) => JsonRpcResponse::err(id, -32000, format!("assignPort failed: {e}"), None),
@@ -836,13 +866,16 @@ pub mod supervisor_adapter {
                 .ok_or_else(|| super::IpcError::ProtocolError("unknown service".into()))?;
 
             // Determine port to use (allocate if not provided)
-            let chosen_port = port.map_or_else(
-                || {
+            let chosen_port = match port {
+                Some(port) => Some(port),
+                None => {
                     let alloc = canopus_core::PortAllocator::new();
-                    alloc.reserve(None).map_or(None, |g| Some(g.port()))
-                },
-                Some,
-            );
+                    let guard = alloc
+                        .reserve(None)
+                        .map_err(|e| super::IpcError::ProtocolError(e.to_string()))?;
+                    Some(guard.port())
+                }
+            };
 
             // Possibly update spec with port/hostname and ensure PATH if configured
             {
@@ -1224,6 +1257,62 @@ pub mod supervisor_adapter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn test_route_method_rejects_invalid_start_port() {
+        #[cfg(unix)]
+        {
+            let (stream, _peer) = tokio::net::UnixStream::pair().expect("unix pair");
+            let (_reader, writer) = stream.into_split();
+            let writer = Arc::new(Mutex::new(writer));
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.start".to_string(),
+                params: Some(serde_json::json!({"serviceId": "svc", "port": 70_000})),
+                id: Some(Value::from(1)),
+            };
+            let resp = route_method(
+                &IpcServerConfig::default(),
+                Arc::new(NoopControlPlane),
+                writer,
+                req,
+            )
+            .await
+            .expect("route method")
+            .expect("response");
+            let err = resp.error.expect("error");
+            assert_eq!(err.code, -32602);
+            assert!(err.message.contains("port"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_route_method_rejects_invalid_assign_port() {
+        #[cfg(unix)]
+        {
+            let (stream, _peer) = tokio::net::UnixStream::pair().expect("unix pair");
+            let (_reader, writer) = stream.into_split();
+            let writer = Arc::new(Mutex::new(writer));
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.assignPort".to_string(),
+                params: Some(serde_json::json!({"serviceId": "svc", "preferred": 70_000})),
+                id: Some(Value::from(2)),
+            };
+            let resp = route_method(
+                &IpcServerConfig::default(),
+                Arc::new(NoopControlPlane),
+                writer,
+                req,
+            )
+            .await
+            .expect("route method")
+            .expect("response");
+            let err = resp.error.expect("error");
+            assert_eq!(err.code, -32602);
+            assert!(err.message.contains("preferred"));
+        }
+    }
 
     #[tokio::test]
     async fn test_unix_server_handshake_rejects_without_token_when_required() {
