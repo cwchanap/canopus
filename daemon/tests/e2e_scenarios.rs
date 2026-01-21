@@ -189,7 +189,10 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
                 if let Ok(svcs) = client.list().await {
                     break svcs;
                 }
-                assert!(Instant::now() < deadline, "IPC list did not respond in time");
+                assert!(
+                    Instant::now() < deadline,
+                    "IPC list did not respond in time"
+                );
                 sleep(Duration::from_millis(50)).await;
             }
         };
@@ -282,7 +285,10 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
                 if sock_path.exists() {
                     break;
                 }
-                assert!(Instant::now() < deadline, "IPC socket not recreated in time");
+                assert!(
+                    Instant::now() < deadline,
+                    "IPC socket not recreated in time"
+                );
                 sleep(Duration::from_millis(50)).await;
             }
         }

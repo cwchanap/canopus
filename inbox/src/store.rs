@@ -5,7 +5,7 @@
 use crate::error::{InboxError, Result};
 use crate::item::{InboxFilter, InboxItem, InboxStatus, NewInboxItem, SourceAgent};
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{TimeZone, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -428,21 +428,21 @@ fn row_to_inbox_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<InboxItem> {
         source_agent: SourceAgent::from_str(&row.get::<_, String>(4)?),
         details,
         status: InboxStatus::from_str(&row.get::<_, String>(6)?),
-        created_at: DateTime::from_timestamp(created_ts, 0).unwrap_or_else(|| {
+        created_at: Utc.timestamp_opt(created_ts, 0).single().unwrap_or_else(|| {
             error!(
                 "Invalid created_at timestamp {} for inbox item {}, using current time",
                 created_ts, item_id
             );
             Utc::now()
         }),
-        updated_at: DateTime::from_timestamp(updated_ts, 0).unwrap_or_else(|| {
+        updated_at: Utc.timestamp_opt(updated_ts, 0).single().unwrap_or_else(|| {
             error!(
                 "Invalid updated_at timestamp {} for inbox item {}, using current time",
                 updated_ts, item_id
             );
             Utc::now()
         }),
-        dismissed_at: dismissed_ts.and_then(|ts| DateTime::from_timestamp(ts, 0)),
+        dismissed_at: dismissed_ts.and_then(|ts| Utc.timestamp_opt(ts, 0).single()),
         notified: row.get::<_, i32>(10)? != 0,
     })
 }

@@ -84,7 +84,10 @@ fn configure_socket_permissions(path: &std::path::Path) -> Result<()> {
     let mut perms = metadata.permissions();
     perms.set_mode(0o660);
     fs::set_permissions(path, perms).map_err(|e| {
-        IpcError::ProtocolError(format!("Failed to set permissions on {}: {e}", path.display()))
+        IpcError::ProtocolError(format!(
+            "Failed to set permissions on {}: {e}",
+            path.display()
+        ))
     })?;
 
     info!(
@@ -242,8 +245,7 @@ impl IpcServer {
             }
         }
 
-        let listener = UnixListener::bind(&path)
-        .map_err(|e| {
+        let listener = UnixListener::bind(&path).map_err(|e| {
             IpcError::ConnectionFailed(format!("Failed to bind UDS {}: {e}", path.display()))
         })?;
         info!("IPC server (UDS) listening at {:?}", path);
@@ -439,9 +441,7 @@ async fn route_method(
                 .and_then(|n| u16::try_from(n).ok());
             match router.assign_port(sid, preferred).await {
                 Ok(port) => JsonRpcResponse::ok(id, serde_json::json!({"port": port})),
-                Err(e) => {
-                    JsonRpcResponse::err(id, -32000, format!("assignPort failed: {e}"), None)
-                }
+                Err(e) => JsonRpcResponse::err(id, -32000, format!("assignPort failed: {e}"), None),
             }
         }
         "canopus.healthCheck" => {
@@ -847,11 +847,14 @@ pub mod supervisor_adapter {
             // Possibly update spec with port/hostname and ensure PATH if configured
             {
                 let mut spec = handle.spec.clone();
-                let mut need_update = false;
+                let should_inject_path = self
+                    .login_path
+                    .as_ref()
+                    .map_or(false, |_| !spec.environment.contains_key("PATH"));
+                let need_update = hostname.is_some() || chosen_port.is_some() || should_inject_path;
                 if let Some(hn) = hostname.clone() {
                     // Use route field to carry hostname for proxy integration
                     spec.route = Some(hn);
-                    need_update = true;
                 }
                 if let Some(p) = chosen_port {
                     spec.environment.insert("PORT".to_string(), p.to_string());
@@ -861,14 +864,12 @@ pub mod supervisor_adapter {
                             *rp = p;
                         }
                     }
-                    need_update = true;
                 }
 
                 // Inject login PATH if available and not explicitly set in the spec
                 if let Some(lp) = &self.login_path {
-                    if !spec.environment.contains_key("PATH") {
+                    if should_inject_path {
                         spec.environment.insert("PATH".to_string(), lp.clone());
-                        need_update = true;
                     }
                 }
 

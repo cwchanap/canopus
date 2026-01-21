@@ -313,9 +313,9 @@ impl ServiceEvent {
                     EventSeverity::Warning
                 }
             }
-            Self::RestartScheduled { .. }
-            | Self::Warning { .. }
-            | Self::StartupTimeout { .. } => EventSeverity::Warning,
+            Self::RestartScheduled { .. } | Self::Warning { .. } | Self::StartupTimeout { .. } => {
+                EventSeverity::Warning
+            }
             Self::LogOutput { .. } => EventSeverity::Debug,
             Self::Error { .. } => EventSeverity::Error,
             Self::ServiceUnhealthy { .. } => EventSeverity::Critical,

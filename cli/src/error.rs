@@ -27,11 +27,11 @@ pub enum CliError {
 
     /// IPC communication errors
     #[error("IPC error: {0}")]
-    IpcError(#[from] ipc::IpcError),
+    IpcError(#[source] ipc::IpcError),
 
     /// I/O operation errors
     #[error("I/O error: {0}")]
-    IoError(#[from] std::io::Error),
+    IoError(#[source] std::io::Error),
 }
 
 impl CliError {
@@ -52,6 +52,18 @@ impl CliError {
 
 /// CLI-specific result type
 pub type Result<T> = std::result::Result<T, CliError>;
+
+impl From<ipc::IpcError> for CliError {
+    fn from(err: ipc::IpcError) -> Self {
+        Self::IpcError(err)
+    }
+}
+
+impl From<std::io::Error> for CliError {
+    fn from(err: std::io::Error) -> Self {
+        Self::IoError(err)
+    }
+}
 
 #[cfg(test)]
 mod tests {

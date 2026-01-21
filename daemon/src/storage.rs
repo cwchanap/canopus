@@ -64,8 +64,7 @@ impl SqliteStorage {
     /// # Errors
     /// Returns an error if the database directory or schema cannot be created.
     pub fn open_default() -> anyhow::Result<Self> {
-        let base = std::env::var("HOME")
-            .map_or_else(|_| PathBuf::from("."), PathBuf::from);
+        let base = std::env::var("HOME").map_or_else(|_| PathBuf::from("."), PathBuf::from);
         let dir = base.join(".canopus");
         std::fs::create_dir_all(&dir)?;
         let db_path = dir.join("canopus.db");

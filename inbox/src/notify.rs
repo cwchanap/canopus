@@ -2,7 +2,10 @@
 
 use crate::error::{InboxError, Result};
 use crate::item::InboxItem;
-use tracing::{debug, warn};
+use tracing::debug;
+
+#[cfg(not(target_os = "macos"))]
+use tracing::warn;
 
 /// Trait for notification backends, allowing for mocking in tests.
 pub trait NotificationBackend: Send + Sync {
@@ -20,21 +23,49 @@ pub struct DesktopNotifier;
 
 impl NotificationBackend for DesktopNotifier {
     fn send(&self, summary: &str, body: &str) -> Result<()> {
-        use notify_rust::Notification;
-
         debug!("Sending notification: {}", summary);
 
-        Notification::new()
-            .appname("Canopus Inbox")
-            .summary(summary)
-            .body(body)
-            .icon("mail-unread")
-            .timeout(notify_rust::Timeout::Milliseconds(5000))
-            .show()
-            .map_err(|e| {
-                warn!("Failed to send notification: {}", e);
-                InboxError::Notification(e.to_string())
-            })?;
+        #[cfg(target_os = "macos")]
+        {
+            use std::process::Command;
+
+            fn escape_apple_script(input: &str) -> String {
+                input.replace('\\', "\\\\").replace('"', "\\\"")
+            }
+
+            let title = escape_apple_script(summary);
+            let message = escape_apple_script(body);
+            let script = format!(
+                "display notification \"{message}\" with title \"{title}\""
+            );
+            let status = Command::new("osascript")
+                .arg("-e")
+                .arg(script)
+                .status()
+                .map_err(|e| InboxError::Notification(e.to_string()))?;
+            if !status.success() {
+                return Err(InboxError::Notification(
+                    "osascript failed to send notification".to_string(),
+                ));
+            }
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            use notify_rust::Notification;
+
+            Notification::new()
+                .appname("Canopus Inbox")
+                .summary(summary)
+                .body(body)
+                .icon("mail-unread")
+                .timeout(notify_rust::Timeout::Milliseconds(5000))
+                .show()
+                .map_err(|e| {
+                    warn!("Failed to send notification: {}", e);
+                    InboxError::Notification(e.to_string())
+                })?;
+        }
 
         Ok(())
     }

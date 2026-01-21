@@ -11,8 +11,8 @@ use dashmap::DashMap;
 use std::{
     net::{SocketAddr, TcpListener},
     process,
-    sync::LazyLock,
     sync::atomic::{AtomicU64, Ordering},
+    sync::LazyLock,
     time::{SystemTime, UNIX_EPOCH},
 };
 use tracing::{debug, warn};
@@ -197,18 +197,14 @@ impl PortAllocator {
             return Err(CoreError::PortInUse(port));
         }
 
-        Ok(PortGuard {
-            port,
-            listener,
-        })
+        Ok(PortGuard { port, listener })
     }
 
     /// Generate a deterministic sequence of ports to try
     fn generate_port_sequence(&self) -> impl Iterator<Item = u16> + '_ {
         let seed = Self::calculate_deterministic_seed();
         let range_size = self.range_end - self.range_start;
-        let start_offset =
-            u16::try_from(seed % u64::from(range_size)).unwrap_or_default();
+        let start_offset = u16::try_from(seed % u64::from(range_size)).unwrap_or_default();
 
         (0..range_size).map(move |i| {
             let offset = (start_offset + i) % range_size;
