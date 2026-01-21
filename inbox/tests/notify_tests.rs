@@ -43,12 +43,12 @@ impl canopus_inbox::notify::NotificationBackend for MockNotifier {
             )
         })?;
         let mut bodies = self.bodies.lock().map_err(|_| {
-            canopus_inbox::InboxError::Notification(
-                "Notification body lock poisoned".to_string(),
-            )
+            canopus_inbox::InboxError::Notification("Notification body lock poisoned".to_string())
         })?;
         summaries.push(summary.to_string());
         bodies.push(body.to_string());
+        drop(bodies);
+        drop(summaries);
         self.call_count.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }

@@ -12,11 +12,17 @@ pub enum HealthError {
 
     /// TCP connection failed
     #[error("tcp connection failed: {0}")]
-    Tcp(#[from] std::io::Error),
+    Tcp(#[source] std::io::Error),
 
     // HTTP-related errors removed
     /// Unsupported probe type requested
     #[error("unsupported probe type: {0}")]
     UnsupportedProbeType(String),
     // HTTP request/URI errors removed
+}
+
+impl From<std::io::Error> for HealthError {
+    fn from(err: std::io::Error) -> Self {
+        Self::Tcp(err)
+    }
 }

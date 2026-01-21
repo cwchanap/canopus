@@ -25,7 +25,9 @@ pub fn validate_config_data(data: &str) -> crate::Result<()> {
     // Try to parse as JSON to validate structure
     match serde_json::from_str::<serde_json::Value>(data) {
         Ok(_) => Ok(()),
-        Err(e) => Err(crate::CoreError::ValidationError(format!("Invalid JSON: {e}"))),
+        Err(e) => Err(crate::CoreError::ValidationError(format!(
+            "Invalid JSON: {e}"
+        ))),
     }
 }
 

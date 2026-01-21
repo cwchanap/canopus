@@ -6,7 +6,9 @@
 
 use canopus_core::config::{load_services_from_toml_path, load_simple_services_from_toml_path};
 use canopus_core::ClientConfig;
-use canopus_inbox::{truncate, InboxFilter, InboxStatus, InboxStore, NewInboxItem, SourceAgent, SqliteStore};
+use canopus_inbox::{
+    truncate, InboxFilter, InboxStatus, InboxStore, NewInboxItem, SourceAgent, SqliteStore,
+};
 use clap::{Parser, Subcommand, ValueEnum};
 use cli::Client;
 use ipc::uds_client::JsonRpcClient;
@@ -267,7 +269,10 @@ async fn main() -> canopus_core::Result<()> {
                     Ok(())
                 }
                 ServicesCmd::Status { service_id } => {
-                    let d = uds.status(service_id).await.map_err(|e| anyhow_to_core(&e))?;
+                    let d = uds
+                        .status(service_id)
+                        .await
+                        .map_err(|e| anyhow_to_core(&e))?;
                     println!("Service Status:");
                     println!("  ID: {}", d.id);
                     println!("  Name: {}", d.name);
@@ -321,7 +326,8 @@ async fn main() -> canopus_core::Result<()> {
                                         );
                                         continue;
                                     }
-                                    let detail = uds.status(id).await.map_err(|e| anyhow_to_core(&e))?;
+                                    let detail =
+                                        uds.status(id).await.map_err(|e| anyhow_to_core(&e))?;
                                     if detail.state != schema::ServiceState::Idle {
                                         println!(
                                             "Skipping '{}': already running ({:?})",
@@ -400,11 +406,15 @@ async fn main() -> canopus_core::Result<()> {
                 ServicesCmd::Stop { service_id } => {
                     uds.stop(service_id).await.map_err(|e| anyhow_to_core(&e))
                 }
-                ServicesCmd::Restart { service_id } => {
-                    uds.restart(service_id).await.map_err(|e| anyhow_to_core(&e))
-                }
+                ServicesCmd::Restart { service_id } => uds
+                    .restart(service_id)
+                    .await
+                    .map_err(|e| anyhow_to_core(&e)),
                 ServicesCmd::Health { service_id } => {
-                    let healthy = uds.health_check(service_id).await.map_err(|e| anyhow_to_core(&e))?;
+                    let healthy = uds
+                        .health_check(service_id)
+                        .await
+                        .map_err(|e| anyhow_to_core(&e))?;
                     println!(
                         "{}: {}",
                         service_id,
@@ -527,8 +537,8 @@ async fn handle_inbox_command(cmd: &InboxCmd) -> canopus_core::Result<()> {
                 .await
                 .map_err(|e| inbox_to_core(&e))?
                 .ok_or_else(|| {
-                canopus_core::CoreError::ServiceError(format!("Item not found: {id}"))
-            })?;
+                    canopus_core::CoreError::ServiceError(format!("Item not found: {id}"))
+                })?;
 
             // Mark as read
             store.mark_read(id).await.map_err(|e| inbox_to_core(&e))?;
@@ -563,7 +573,10 @@ async fn handle_inbox_command(cmd: &InboxCmd) -> canopus_core::Result<()> {
             agent,
         } => {
             let new_item = NewInboxItem::new(project, status, action, (*agent).into());
-            let item = store.insert(new_item).await.map_err(|e| inbox_to_core(&e))?;
+            let item = store
+                .insert(new_item)
+                .await
+                .map_err(|e| inbox_to_core(&e))?;
 
             // Send desktop notification
             if let Err(e) = canopus_inbox::notify::send_notification(&item) {

@@ -31,24 +31,26 @@ hooks = { path = "hooks" }
 
 # Async runtime
 tokio = { version = "1.0", features = ["full"] }
+async-trait = "0.1.80"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde_json = "1.0.64"
 
 # CLI
 clap = { version = "4.0", features = ["derive"] }
 
 # Error handling
-anyhow = "1.0"
+anyhow = "1.0.69"
 thiserror = "1.0"
+lazy_static = "1.4.0"
 
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Schema generation
-schemars = { version = "0.8", features = ["derive"] }
+schemars = { version = "0.8.16", features = ["derive"] }
 
 # Testing
 cargo-nextest = { version = "0.9" }

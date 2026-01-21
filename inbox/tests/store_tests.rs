@@ -1,8 +1,4 @@
-#![allow(
-    clippy::expect_used,
-    missing_docs,
-    unused_crate_dependencies
-)]
+#![allow(clippy::expect_used, missing_docs, unused_crate_dependencies)]
 
 use canopus_inbox::item::{InboxFilter, InboxStatus, NewInboxItem, SourceAgent};
 use canopus_inbox::store::SqliteStore;

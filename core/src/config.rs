@@ -330,9 +330,7 @@ pub fn load_services_from_toml_str(input: &str) -> Result<ServicesFile> {
 
                 // Deserialize into ServiceSpec using the schema serde config (handles defaults and aliases)
                 let spec: ServiceSpec = table_with_id.try_into().map_err(|e| {
-                    CoreError::ConfigurationError(format!(
-                        "Failed to parse service '{id}': {e}"
-                    ))
+                    CoreError::ConfigurationError(format!("Failed to parse service '{id}': {e}"))
                 })?;
                 services.push(spec);
             }

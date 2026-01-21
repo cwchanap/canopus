@@ -137,10 +137,7 @@ impl ServiceState {
     /// Check if the service is transitioning between states
     #[must_use]
     pub const fn is_transitional(&self) -> bool {
-        matches!(
-            self,
-            Self::Spawning | Self::Starting | Self::Stopping
-        )
+        matches!(self, Self::Spawning | Self::Starting | Self::Stopping)
     }
 }
 

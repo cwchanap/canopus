@@ -297,20 +297,14 @@ fn test_process_ids() {
 /// Helper function to verify process group membership
 fn get_process_group_id(pid: u32) -> Result<u32, std::io::Error> {
     let pid_i32 = i32::try_from(pid).map_err(|_| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "pid does not fit in i32",
-        )
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "pid does not fit in i32")
     })?;
     let group_id = unsafe { libc::getpgid(pid_i32) };
     if group_id == -1 {
         Err(std::io::Error::last_os_error())
     } else {
         u32::try_from(group_id).map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "pgid does not fit in u32",
-            )
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "pgid does not fit in u32")
         })
     }
 }

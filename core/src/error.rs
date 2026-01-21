@@ -23,11 +23,11 @@ pub enum CoreError {
 
     /// I/O operation errors
     #[error("I/O error: {0}")]
-    IoError(#[from] std::io::Error),
+    IoError(#[source] std::io::Error),
 
     /// JSON serialization/deserialization errors
     #[error("Serialization error: {0}")]
-    SerializationError(#[from] serde_json::Error),
+    SerializationError(#[source] serde_json::Error),
 
     /// Port allocation errors
     #[error("Port {0} is already in use")]
@@ -91,6 +91,18 @@ impl From<&str> for CoreError {
 impl From<String> for CoreError {
     fn from(s: String) -> Self {
         Self::Other(s)
+    }
+}
+
+impl From<std::io::Error> for CoreError {
+    fn from(err: std::io::Error) -> Self {
+        Self::IoError(err)
+    }
+}
+
+impl From<serde_json::Error> for CoreError {
+    fn from(err: serde_json::Error) -> Self {
+        Self::SerializationError(err)
     }
 }
 

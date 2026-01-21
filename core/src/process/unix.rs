@@ -136,10 +136,7 @@ impl ChildProcess {
     /// Returns an error if polling the process status fails.
     pub fn try_wait(&mut self) -> Result<Option<std::process::ExitStatus>> {
         self.child.try_wait().map_err(|e| {
-            CoreError::ProcessWait(format!(
-                "Failed to try_wait for process {}: {e}",
-                self.pid
-            ))
+            CoreError::ProcessWait(format!("Failed to try_wait for process {}: {e}", self.pid))
         })
     }
 }

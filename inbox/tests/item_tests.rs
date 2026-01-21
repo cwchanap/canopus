@@ -96,8 +96,14 @@ fn test_with_details() {
 
     assert!(item.details.is_some());
     let details = item.details.expect("expected details to be present");
-    assert_eq!(details.get("key").and_then(|value| value.as_str()), Some("value"));
-    assert_eq!(details.get("count").and_then(serde_json::Value::as_i64), Some(42));
+    assert_eq!(
+        details.get("key").and_then(|value| value.as_str()),
+        Some("value")
+    );
+    assert_eq!(
+        details.get("count").and_then(serde_json::Value::as_i64),
+        Some(42)
+    );
     assert_eq!(
         details
             .get("nested")
