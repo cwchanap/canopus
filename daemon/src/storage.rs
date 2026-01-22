@@ -330,13 +330,14 @@ fn now_ts() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{LazyLock, Mutex};
+    use std::sync::LazyLock;
+    use tokio::sync::Mutex;
 
     static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     #[tokio::test]
     async fn fetch_port_errors_on_invalid_value() {
-        let _lock = ENV_LOCK.lock().expect("env lock");
+        let _lock = ENV_LOCK.lock().await;
         let original_home = std::env::var("HOME").ok();
         let temp = tempfile::tempdir().expect("tempdir");
         let home = temp.path().join("home");

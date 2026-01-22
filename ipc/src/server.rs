@@ -355,17 +355,17 @@ async fn route_method(
 
     #[allow(unused_macros)]
     macro_rules! bad_params {
-        ($field:expr, $msg:expr) => {
+        ($field:expr, $msg:expr) => {{
             return Ok(Some(JsonRpcResponse::err(
                 id,
                 -32602,
                 format!("invalid params: {} {}", $field, $msg),
                 None,
             )));
-        };
-        ($msg:expr) => {
+        }};
+        ($msg:expr) => {{
             return Ok(Some(JsonRpcResponse::err(id, -32602, $msg, None)));
-        };
+        }};
     }
 
     Ok(Some(match method {
