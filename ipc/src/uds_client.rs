@@ -402,6 +402,18 @@ async fn read_json<T: for<'de> Deserialize<'de>, S: AsyncReadExt + Unpin>(
     serde_json::from_slice(&buf[..n]).map_err(|e| IpcError::DeserializationFailed(e.to_string()))
 }
 
+async fn read_value<S: AsyncReadExt + Unpin>(reader: &mut S) -> Result<Value> {
+    let mut buf = vec![0u8; 65536];
+    let n = reader
+        .read(&mut buf)
+        .await
+        .map_err(|e| IpcError::ReceiveFailed(e.to_string()))?;
+    if n == 0 {
+        return Err(IpcError::EmptyResponse);
+    }
+    serde_json::from_slice(&buf[..n]).map_err(|e| IpcError::DeserializationFailed(e.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -447,16 +459,4 @@ mod tests {
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].id, "svc");
     }
-}
-
-async fn read_value<S: AsyncReadExt + Unpin>(reader: &mut S) -> Result<Value> {
-    let mut buf = vec![0u8; 65536];
-    let n = reader
-        .read(&mut buf)
-        .await
-        .map_err(|e| IpcError::ReceiveFailed(e.to_string()))?;
-    if n == 0 {
-        return Err(IpcError::EmptyResponse);
-    }
-    serde_json::from_slice(&buf[..n]).map_err(|e| IpcError::DeserializationFailed(e.to_string()))
 }
