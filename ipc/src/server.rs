@@ -394,13 +394,11 @@ async fn route_method(
             let port = match params.get("port") {
                 Some(value) if value.is_null() => None,
                 Some(value) => {
-                    let n = match value.as_u64() {
-                        Some(n) => n,
-                        None => bad_params!("port", "invalid port number"),
+                    let Some(n) = value.as_u64() else {
+                        bad_params!("port", "invalid port number");
                     };
-                    let port = match u16::try_from(n) {
-                        Ok(port) => port,
-                        Err(_) => bad_params!("port", "invalid port number"),
+                    let Ok(port) = u16::try_from(n) else {
+                        bad_params!("port", "invalid port number");
                     };
                     Some(port)
                 }
@@ -457,13 +455,11 @@ async fn route_method(
             let preferred = match params.get("preferred") {
                 Some(value) if value.is_null() => None,
                 Some(value) => {
-                    let n = match value.as_u64() {
-                        Some(n) => n,
-                        None => bad_params!("preferred", "invalid port number"),
+                    let Some(n) = value.as_u64() else {
+                        bad_params!("preferred", "invalid port number");
                     };
-                    let preferred = match u16::try_from(n) {
-                        Ok(port) => port,
-                        Err(_) => bad_params!("preferred", "invalid port number"),
+                    let Ok(preferred) = u16::try_from(n) else {
+                        bad_params!("preferred", "invalid port number");
                     };
                     Some(preferred)
                 }
@@ -866,15 +862,14 @@ pub mod supervisor_adapter {
                 .ok_or_else(|| super::IpcError::ProtocolError("unknown service".into()))?;
 
             // Determine port to use (allocate if not provided)
-            let chosen_port = match port {
-                Some(port) => Some(port),
-                None => {
-                    let alloc = canopus_core::PortAllocator::new();
-                    let guard = alloc
-                        .reserve(None)
-                        .map_err(|e| super::IpcError::ProtocolError(e.to_string()))?;
-                    Some(guard.port())
-                }
+            let chosen_port = if let Some(port) = port {
+                Some(port)
+            } else {
+                let alloc = canopus_core::PortAllocator::new();
+                let guard = alloc
+                    .reserve(None)
+                    .map_err(|e| super::IpcError::ProtocolError(e.to_string()))?;
+                Some(guard.port())
             };
 
             // Possibly update spec with port/hostname and ensure PATH if configured
