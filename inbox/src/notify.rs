@@ -7,6 +7,15 @@ use tracing::debug;
 #[cfg(not(target_os = "macos"))]
 use tracing::warn;
 
+#[cfg(target_os = "macos")]
+fn escape_apple_script(input: &str) -> String {
+    input
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+}
+
 /// Trait for notification backends, allowing for mocking in tests.
 pub trait NotificationBackend: Send + Sync {
     /// Send a notification with the given summary and body.
@@ -15,6 +24,18 @@ pub trait NotificationBackend: Send + Sync {
     ///
     /// Returns an error if the backend fails to deliver the notification.
     fn send(&self, summary: &str, body: &str) -> Result<()>;
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::escape_apple_script;
+
+    #[test]
+    fn escape_apple_script_escapes_newlines() {
+        let input = "line1\nline2\r\\\"\\";
+        let escaped = escape_apple_script(input);
+        assert_eq!(escaped, "line1\\nline2\\r\\\\\\\"\\\\");
+    }
 }
 
 /// Desktop notification backend using notify-rust.
@@ -28,10 +49,6 @@ impl NotificationBackend for DesktopNotifier {
         #[cfg(target_os = "macos")]
         {
             use std::process::Command;
-
-            fn escape_apple_script(input: &str) -> String {
-                input.replace('\\', "\\\\").replace('"', "\\\"")
-            }
 
             let title = escape_apple_script(summary);
             let message = escape_apple_script(body);

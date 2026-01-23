@@ -60,12 +60,17 @@ impl ipc::server::ServiceMetaStore for SqliteStorage {
 }
 
 impl SqliteStorage {
-    /// Open or create the `SQLite` database at $HOME/.canopus/canopus.db
+    /// Open or create the `SQLite` database at $HOME/.canopus/canopus.db.
+    ///
+    /// HOME must be set; the database path is resolved as `$HOME/.canopus/canopus.db`.
     ///
     /// # Errors
-    /// Returns an error if the database directory or schema cannot be created.
+    /// Returns an error if HOME is not set, or if the database directory or schema cannot be
+    /// created.
     pub fn open_default() -> anyhow::Result<Self> {
-        let base = std::env::var("HOME").map_or_else(|_| PathBuf::from("."), PathBuf::from);
+        let base = std::env::var("HOME").map(PathBuf::from).map_err(|_| {
+            anyhow::anyhow!("HOME must be set to open default database at $HOME/.canopus/canopus.db")
+        })?;
         let dir = base.join(".canopus");
         std::fs::create_dir_all(&dir)?;
         let db_path = dir.join("canopus.db");
@@ -353,6 +358,37 @@ mod tests {
 
     static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
+    struct HomeGuard {
+        original_home: Option<String>,
+    }
+
+    impl HomeGuard {
+        fn new(original_home: Option<String>) -> Self {
+            Self { original_home }
+        }
+    }
+
+    impl Drop for HomeGuard {
+        fn drop(&mut self) {
+            if let Some(home) = &self.original_home {
+                std::env::set_var("HOME", home);
+            } else {
+                std::env::remove_var("HOME");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn open_default_requires_home() {
+        let _lock = ENV_LOCK.lock().await;
+        let original_home = std::env::var("HOME").ok();
+        std::env::remove_var("HOME");
+        let _home_guard = HomeGuard::new(original_home);
+
+        let err = SqliteStorage::open_default().expect_err("missing HOME should error");
+        assert!(err.to_string().contains("HOME"));
+    }
+
     #[tokio::test]
     async fn fetch_port_errors_on_invalid_value() {
         let _lock = ENV_LOCK.lock().await;
@@ -361,6 +397,7 @@ mod tests {
         let home = temp.path().join("home");
         std::fs::create_dir_all(&home).expect("create home dir");
         std::env::set_var("HOME", &home);
+        let _home_guard = HomeGuard::new(original_home);
 
         let storage = SqliteStorage::open_default().expect("open sqlite");
         let conn = storage.conn.clone();
@@ -386,10 +423,5 @@ mod tests {
         let err = storage.fetch_port("svc").await.expect_err("invalid port");
         assert!(err.to_string().contains("Invalid port value"));
 
-        if let Some(home) = original_home {
-            std::env::set_var("HOME", home);
-        } else {
-            std::env::remove_var("HOME");
-        }
     }
 }

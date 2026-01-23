@@ -668,13 +668,45 @@ pub mod supervisor_adapter {
     use super::{ControlPlane, Result, ServiceDetail, ServiceSummary};
     use async_trait::async_trait;
     use canopus_core::supervisor::SupervisorHandle;
+    use canopus_core::PortGuard;
     use schema::ServiceEvent;
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::{broadcast, mpsc};
 
     // Reduce type complexity for runtime metadata storage
-    type RuntimeMeta = HashMap<String, (Option<u16>, Option<String>)>;
+    #[derive(Default)]
+    struct RuntimeMetaEntry {
+        port: Option<u16>,
+        hostname: Option<String>,
+        port_guard: Option<PortGuard>,
+    }
+
+    type RuntimeMeta = HashMap<String, RuntimeMetaEntry>;
+
+    struct PortGuardRelease<'a> {
+        runtime_meta: &'a std::sync::Mutex<RuntimeMeta>,
+        service_id: String,
+    }
+
+    impl<'a> PortGuardRelease<'a> {
+        fn new(runtime_meta: &'a std::sync::Mutex<RuntimeMeta>, service_id: &str) -> Self {
+            Self {
+                runtime_meta,
+                service_id: service_id.to_string(),
+            }
+        }
+    }
+
+    impl Drop for PortGuardRelease<'_> {
+        fn drop(&mut self) {
+            if let Ok(mut map) = self.runtime_meta.lock() {
+                if let Some(entry) = map.get_mut(&self.service_id) {
+                    entry.port_guard.take();
+                }
+            }
+        }
+    }
 
     /// Control plane adapter backed by a set of `SupervisorHandle`s and a shared event bus
     #[allow(missing_debug_implementations)]
@@ -825,12 +857,12 @@ pub mod supervisor_adapter {
                 // Use volatile runtime metadata if persistent store returned None
                 if port.is_none() || hostname.is_none() {
                     if let Ok(map) = self.runtime_meta.lock() {
-                        if let Some((rp, rh)) = map.get(id) {
+                        if let Some(entry) = map.get(id) {
                             if port.is_none() {
-                                port = *rp;
+                                port = entry.port;
                             }
                             if hostname.is_none() {
-                                hostname.clone_from(rh);
+                                hostname.clone_from(&entry.hostname);
                             }
                         }
                     }
@@ -880,6 +912,7 @@ pub mod supervisor_adapter {
                 .ok_or_else(|| super::IpcError::ProtocolError("unknown service".into()))?;
 
             // Determine port to use (allocate if not provided)
+            let mut reserved_guard: Option<PortGuard> = None;
             let chosen_port = if let Some(port) = port {
                 Some(port)
             } else {
@@ -887,8 +920,11 @@ pub mod supervisor_adapter {
                 let guard = alloc
                     .reserve(None)
                     .map_err(|e| super::IpcError::ProtocolError(e.to_string()))?;
-                Some(guard.port())
+                let port = guard.port();
+                reserved_guard = Some(guard);
+                Some(port)
             };
+            let mut _port_guard_release = None;
 
             // Possibly update spec with port/hostname and ensure PATH if configured
             {
@@ -946,12 +982,18 @@ pub mod supervisor_adapter {
             // Update in-memory runtime metadata immediately
             {
                 if let Ok(mut map) = self.runtime_meta.lock() {
-                    let entry = map.entry(service_id.to_string()).or_insert((None, None));
+                    let entry = map
+                        .entry(service_id.to_string())
+                        .or_insert_with(RuntimeMetaEntry::default);
                     if chosen_port.is_some() {
-                        entry.0 = chosen_port;
+                        entry.port = chosen_port;
                     }
                     if let Some(hn) = &hostname {
-                        entry.1 = Some(hn.clone());
+                        entry.hostname = Some(hn.clone());
+                    }
+                    if let Some(guard) = reserved_guard.take() {
+                        entry.port_guard = Some(guard);
+                        _port_guard_release = Some(PortGuardRelease::new(&self.runtime_meta, service_id));
                     }
                 }
             }
@@ -976,8 +1018,8 @@ pub mod supervisor_adapter {
 
                 if eff_hostname.is_none() {
                     if let Ok(map) = self.runtime_meta.lock() {
-                        if let Some((_rp, rh)) = map.get(service_id) {
-                            if let Some(hn) = rh.clone() {
+                        if let Some(entry) = map.get(service_id) {
+                            if let Some(hn) = entry.hostname.clone() {
                                 eff_hostname = Some(hn);
                             }
                         }
@@ -1016,8 +1058,8 @@ pub mod supervisor_adapter {
 
                 if persist_hostname.is_none() {
                     if let Ok(map) = self.runtime_meta.lock() {
-                        if let Some((_rp, rh)) = map.get(service_id) {
-                            if let Some(hn) = rh.clone() {
+                        if let Some(entry) = map.get(service_id) {
+                            if let Some(hn) = entry.hostname.clone() {
                                 persist_hostname = Some(hn);
                             }
                         }
@@ -1039,8 +1081,10 @@ pub mod supervisor_adapter {
                         let _ = meta.set_hostname(service_id, Some(hn.as_str())).await;
                     }
                     if let Ok(mut map) = self.runtime_meta.lock() {
-                        let entry = map.entry(service_id.to_string()).or_insert((None, None));
-                        entry.1 = Some(hn);
+                        let entry = map
+                            .entry(service_id.to_string())
+                            .or_insert_with(RuntimeMetaEntry::default);
+                        entry.hostname = Some(hn);
                     }
                 }
             }
@@ -1054,31 +1098,32 @@ pub mod supervisor_adapter {
 
             // Default wait-ready behavior: wait until service reaches Ready state
             let current = *state_rx.borrow();
-            if current == schema::ServiceState::Ready {
-                return Ok(());
-            }
+            let result = if current == schema::ServiceState::Ready {
+                Ok(())
+            } else {
+                let timeout_secs = handle.spec.startup_timeout_secs.saturating_add(5);
+                let wait = async {
+                    loop {
+                        if state_rx.changed().await.is_err() {
+                            return Err(());
+                        }
+                        if *state_rx.borrow() == schema::ServiceState::Ready {
+                            return Ok(());
+                        }
+                    }
+                };
 
-            let timeout_secs = handle.spec.startup_timeout_secs.saturating_add(5);
-            let wait = async {
-                loop {
-                    if state_rx.changed().await.is_err() {
-                        return Err(());
-                    }
-                    if *state_rx.borrow() == schema::ServiceState::Ready {
-                        return Ok(());
-                    }
+                match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), wait).await {
+                    Ok(Ok(())) => Ok(()),
+                    Ok(Err(())) => Err(super::IpcError::ProtocolError(
+                        "service state channel closed".into(),
+                    )),
+                    Err(_) => Err(super::IpcError::ProtocolError(
+                        "timed out waiting for service readiness".into(),
+                    )),
                 }
             };
-
-            match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), wait).await {
-                Ok(Ok(())) => Ok(()),
-                Ok(Err(())) => Err(super::IpcError::ProtocolError(
-                    "service state channel closed".into(),
-                )),
-                Err(_) => Err(super::IpcError::ProtocolError(
-                    "timed out waiting for service readiness".into(),
-                )),
-            }
+            result
         }
 
         async fn status(&self, service_id: &str) -> Result<ServiceDetail> {
@@ -1103,12 +1148,12 @@ pub mod supervisor_adapter {
             // Use volatile runtime metadata if persistent store returned None
             if port.is_none() || hostname.is_none() {
                 if let Ok(map) = self.runtime_meta.lock() {
-                    if let Some((rp, rh)) = map.get(service_id) {
+                    if let Some(entry) = map.get(service_id) {
                         if port.is_none() {
-                            port = *rp;
+                            port = entry.port;
                         }
                         if hostname.is_none() {
-                            hostname.clone_from(rh);
+                            hostname.clone_from(&entry.hostname);
                         }
                     }
                 }
@@ -1162,8 +1207,8 @@ pub mod supervisor_adapter {
 
                 if eff_hostname.is_none() {
                     if let Ok(map) = self.runtime_meta.lock() {
-                        if let Some((_rp, rh)) = map.get(service_id) {
-                            if let Some(hn) = rh.clone() {
+                        if let Some(entry) = map.get(service_id) {
+                            if let Some(hn) = entry.hostname.clone() {
                                 eff_hostname = Some(hn);
                             }
                         }
