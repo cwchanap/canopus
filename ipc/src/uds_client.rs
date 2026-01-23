@@ -308,8 +308,11 @@ impl JsonRpcClient {
         let req = jsonrpc_req(method, params, id);
         write_json(&mut writer, &req).await?;
         let resp = read_json::<JsonRpcResponse, _>(&mut reader).await?;
-        if resp.error.is_some() {
-            return Err(IpcError::ProtocolError(format!("{method} failed")));
+        if let Some(err) = resp.error {
+            let details = serde_json::to_string(&err).unwrap_or_else(|_| format!("{err:?}"));
+            return Err(IpcError::ProtocolError(format!(
+                "{method} failed: {details}"
+            )));
         }
         Ok(())
     }

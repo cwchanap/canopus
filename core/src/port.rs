@@ -92,7 +92,7 @@ impl PortAllocator {
     ///
     /// # Panics
     ///
-    /// Panics in debug builds if `start >= end` (range must be non-empty)
+    /// Panics if `start >= end` (range must be non-empty)
     #[must_use]
     pub const fn with_range(start: u16, end: u16) -> Self {
         assert!(

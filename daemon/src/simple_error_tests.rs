@@ -54,7 +54,7 @@ mod tests {
         let ok: Result<u32> = Ok(42);
         match ok {
             Ok(value) => assert_eq!(value, 42),
-            Err(err) => panic!("returns_ok: {err}"),
+            Err(err) => panic!("unexpected Err: {err}"),
         }
         assert!(returns_err().is_err());
     }
