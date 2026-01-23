@@ -110,14 +110,16 @@ impl ChildProcess {
     #[must_use]
     #[allow(clippy::missing_const_for_fn)]
     pub fn pid(&self) -> u32 {
-        u32::try_from(self.pid.as_raw()).unwrap_or_default()
+        u32::try_from(self.pid.as_raw())
+            .expect("PID should always be non-negative on Unix systems")
     }
 
     /// Get the process group ID (same as PID for session leaders)
     #[must_use]
     #[allow(clippy::missing_const_for_fn)]
     pub fn pgid(&self) -> u32 {
-        u32::try_from(self.pid.as_raw()).unwrap_or_default()
+        u32::try_from(self.pid.as_raw())
+            .expect("PGID should always be non-negative on Unix systems")
     }
 
     /// Wait for the process to exit and return its exit status (async)

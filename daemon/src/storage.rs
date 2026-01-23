@@ -8,6 +8,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tracing::{debug, warn};
 
 /// SQLite-backed storage adapter for daemon service metadata (port/hostname, etc.)
 #[derive(Clone)]
@@ -71,7 +72,12 @@ impl SqliteStorage {
 
         let conn = Connection::open(db_path)?;
         // Enable WAL for better concurrency and durability
-        conn.pragma_update(None, "journal_mode", "WAL").ok();
+        if let Err(e) = conn.pragma_update(None, "journal_mode", "WAL") {
+            warn!(
+                "Failed to enable WAL journal mode: {}. Using default rollback journal.",
+                e
+            );
+        }
         conn.execute_batch(
             r"
             CREATE TABLE IF NOT EXISTS services (
@@ -87,8 +93,20 @@ impl SqliteStorage {
         )?;
 
         // Best-effort migrations for existing DBs missing new columns
-        let _ = conn.execute("ALTER TABLE services ADD COLUMN port INTEGER", []);
-        let _ = conn.execute("ALTER TABLE services ADD COLUMN hostname TEXT", []);
+        match conn.execute("ALTER TABLE services ADD COLUMN port INTEGER", []) {
+            Ok(_) => debug!("Added port column to services table"),
+            Err(e) if e.to_string().contains("duplicate column") => {
+                debug!("Port column already exists")
+            }
+            Err(e) => warn!("Migration failed for port column: {}", e),
+        }
+        match conn.execute("ALTER TABLE services ADD COLUMN hostname TEXT", []) {
+            Ok(_) => debug!("Added hostname column to services table"),
+            Err(e) if e.to_string().contains("duplicate column") => {
+                debug!("Hostname column already exists")
+            }
+            Err(e) => warn!("Migration failed for hostname column: {}", e),
+        }
 
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),

@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use tracing::warn;
 
 use schema::{ServiceSpec, ServiceState};
 
@@ -159,9 +160,21 @@ pub fn write_snapshot_atomic(path: impl AsRef<Path>, snap: &RegistrySnapshot) ->
                 ),
             ))
         })?;
-        f.flush().ok();
+        if let Err(e) = f.flush() {
+            warn!(
+                "Failed to flush snapshot file {}: {}. Data may not be durable.",
+                tmp_path.display(),
+                e
+            );
+        }
         // Best-effort durability
-        let _ = f.sync_all();
+        if let Err(e) = f.sync_all() {
+            warn!(
+                "Failed to sync snapshot file {}: {}. Data may not be durable.",
+                tmp_path.display(),
+                e
+            );
+        }
     }
 
     // Rename over the destination atomically
@@ -179,8 +192,23 @@ pub fn write_snapshot_atomic(path: impl AsRef<Path>, snap: &RegistrySnapshot) ->
 
     // Best-effort fsync of directory to persist rename
     if let Some(parent) = path.parent() {
-        if let Ok(dir) = File::open(parent) {
-            let _ = dir.sync_all();
+        match File::open(parent) {
+            Ok(dir) => {
+                if let Err(e) = dir.sync_all() {
+                    warn!(
+                        "Failed to sync directory {}: {}. Rename may not be durable.",
+                        parent.display(),
+                        e
+                    );
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to open directory {} for sync: {}",
+                    parent.display(),
+                    e
+                );
+            }
         }
     }
 

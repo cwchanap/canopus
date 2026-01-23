@@ -170,10 +170,15 @@ impl JsonRpcClient {
         resp.result.map_or_else(
             || Err(IpcError::ProtocolError("healthCheck call failed".into())),
             |result| {
-                Ok(result
+                let healthy = result
                     .get("healthy")
                     .and_then(Value::as_bool)
-                    .unwrap_or(false))
+                    .ok_or_else(|| {
+                        IpcError::ProtocolError(
+                            "healthCheck response missing 'healthy' boolean field".into(),
+                        )
+                    })?;
+                Ok(healthy)
             },
         )
     }
