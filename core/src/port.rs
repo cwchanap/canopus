@@ -89,8 +89,16 @@ impl PortAllocator {
     }
 
     /// Create a new port allocator with custom port range
+    ///
+    /// # Panics
+    ///
+    /// Panics in debug builds if `start >= end` (range must be non-empty)
     #[must_use]
     pub const fn with_range(start: u16, end: u16) -> Self {
+        assert!(
+            start < end,
+            "Port range start must be less than end (empty or invalid range)"
+        );
         Self {
             range_start: start,
             range_end: end,
@@ -204,7 +212,8 @@ impl PortAllocator {
     fn generate_port_sequence(&self) -> impl Iterator<Item = u16> + '_ {
         let seed = Self::calculate_deterministic_seed();
         let range_size = self.range_end - self.range_start;
-        let start_offset = u16::try_from(seed % u64::from(range_size)).unwrap_or_default();
+        let start_offset = u16::try_from(seed % u64::from(range_size))
+            .expect("modulo ensures value fits in u16");
 
         (0..range_size).map(move |i| {
             let offset = (start_offset + i) % range_size;

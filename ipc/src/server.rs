@@ -368,6 +368,26 @@ async fn route_method(
         }};
     }
 
+    /// Helper macro to parse an optional port parameter from JSON
+    #[allow(unused_macros)]
+    macro_rules! parse_optional_port {
+        ($field_name:expr, $value:expr) => {{
+            match $value {
+                Some(v) if v.is_null() => None,
+                Some(v) => {
+                    let Some(n) = v.as_u64() else {
+                        bad_params!($field_name, "invalid port number");
+                    };
+                    let Ok(port) = u16::try_from(n) else {
+                        bad_params!($field_name, "invalid port number");
+                    };
+                    Some(port)
+                }
+                None => None,
+            }
+        }};
+    }
+
     Ok(Some(match method {
         "canopus.version" => {
             JsonRpcResponse::ok(id, serde_json::json!({"version": config.version }))
@@ -391,19 +411,7 @@ async fn route_method(
                 .get("serviceId")
                 .and_then(Value::as_str)
                 .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
-            let port = match params.get("port") {
-                Some(value) if value.is_null() => None,
-                Some(value) => {
-                    let Some(n) = value.as_u64() else {
-                        bad_params!("port", "invalid port number");
-                    };
-                    let Ok(port) = u16::try_from(n) else {
-                        bad_params!("port", "invalid port number");
-                    };
-                    Some(port)
-                }
-                None => None,
-            };
+            let port = parse_optional_port!("port", params.get("port"));
             let hostname = params
                 .get("hostname")
                 .and_then(Value::as_str)
@@ -452,19 +460,7 @@ async fn route_method(
                 .get("serviceId")
                 .and_then(Value::as_str)
                 .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
-            let preferred = match params.get("preferred") {
-                Some(value) if value.is_null() => None,
-                Some(value) => {
-                    let Some(n) = value.as_u64() else {
-                        bad_params!("preferred", "invalid port number");
-                    };
-                    let Ok(preferred) = u16::try_from(n) else {
-                        bad_params!("preferred", "invalid port number");
-                    };
-                    Some(preferred)
-                }
-                None => None,
-            };
+            let preferred = parse_optional_port!("preferred", params.get("preferred"));
             match router.assign_port(sid, preferred).await {
                 Ok(port) => JsonRpcResponse::ok(id, serde_json::json!({"port": port})),
                 Err(e) => JsonRpcResponse::err(id, -32000, format!("assignPort failed: {e}"), None),
@@ -780,8 +776,18 @@ pub mod supervisor_adapter {
                 new_contents.push('\n');
             }
             if new_contents != contents {
-                if let Ok(mut f) = std::fs::File::create(path) {
-                    let _ = f.write_all(new_contents.as_bytes());
+                match std::fs::File::create(path) {
+                    Ok(mut f) => {
+                        if let Err(e) = f.write_all(new_contents.as_bytes()) {
+                            tracing::error!(
+                                "Failed to write /etc/hosts: {}. File may be corrupted.",
+                                e
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Cannot open /etc/hosts for writing: {}", e);
+                    }
                 }
             }
         }
@@ -797,8 +803,20 @@ pub mod supervisor_adapter {
                     .await
                     .map_err(|e| super::IpcError::ProtocolError(e.to_string()))?;
                 let (mut port, mut hostname) = if let Some(meta) = &self.meta {
-                    let p = meta.get_port(id).await.unwrap_or(None);
-                    let hn = meta.get_hostname(id).await.unwrap_or(None);
+                    let p = match meta.get_port(id).await {
+                        Ok(port) => port,
+                        Err(e) => {
+                            tracing::debug!("Failed to fetch port for {}: {}", id, e);
+                            None
+                        }
+                    };
+                    let hn = match meta.get_hostname(id).await {
+                        Ok(hostname) => hostname,
+                        Err(e) => {
+                            tracing::debug!("Failed to fetch hostname for {}: {}", id, e);
+                            None
+                        }
+                    };
                     (p, hn)
                 } else {
                     (None, None)
