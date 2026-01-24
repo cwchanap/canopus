@@ -6,6 +6,7 @@
 //! becoming Ready, tailing logs, restart/stop calls, and snapshot persistence
 //! across a simulated restart.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use canopus_core::persistence::load_snapshot;
@@ -143,8 +144,11 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
         // Prepare UDS socket path and state snapshot path
         let sock_path = base.join("canopus.sock");
         let state_path = base.join("state.json");
+        let home = base.join("home");
+        fs::create_dir_all(&home).expect("create home dir");
         std::env::set_var("CANOPUS_IPC_SOCKET", &sock_path);
         std::env::set_var("CANOPUS_STATE_FILE", &state_path);
+        std::env::set_var("HOME", &home);
 
         // Resolve toy HTTP test binary path
         let toy_path = toy_bin_path();
@@ -157,8 +161,7 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
 
         // Write services TOML
         let cfg_path = base.join("services.toml");
-        std::fs::write(&cfg_path, make_services_toml(&toy_path, port))
-            .expect("write services.toml");
+        fs::write(&cfg_path, make_services_toml(&toy_path, port)).expect("write services.toml");
 
         // Start bootstrap (supervisors + IPC server) without binding port 80
         let boot = daemon::bootstrap::bootstrap_with_runtime(Some(cfg_path.clone()), None, None)

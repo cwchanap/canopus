@@ -110,8 +110,7 @@ impl ChildProcess {
     #[must_use]
     #[allow(clippy::missing_const_for_fn)]
     pub fn pid(&self) -> u32 {
-        u32::try_from(self.pid.as_raw())
-            .expect("PID should always be non-negative on Unix systems")
+        u32::try_from(self.pid.as_raw()).expect("PID should always be non-negative on Unix systems")
     }
 
     /// Get the process group ID (same as PID for session leaders)

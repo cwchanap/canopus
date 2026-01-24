@@ -2,6 +2,7 @@
 //! E2E: IPC control methods (bindHost, assignPort)
 
 use ipc::uds_client::JsonRpcClient;
+use std::fs;
 use std::time::Duration;
 pub mod common;
 
@@ -14,8 +15,11 @@ async fn e2e_ipc_bind_assign() {
         // UDS + state
         let sock_path = base.join("canopus.sock");
         let state_path = base.join("state.json");
+        let home = base.join("home");
+        fs::create_dir_all(&home).expect("create home dir");
         std::env::set_var("CANOPUS_IPC_SOCKET", &sock_path);
         std::env::set_var("CANOPUS_STATE_FILE", &state_path);
+        std::env::set_var("HOME", &home);
 
         // Minimal bootstrap with no services without binding port 80
         let boot = daemon::bootstrap::bootstrap_with_runtime(None, None, None)

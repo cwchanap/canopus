@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::sync::{mpsc, Mutex};
 
@@ -245,7 +245,8 @@ impl JsonRpcClient {
         let stream = UnixStream::connect(&self.socket_path)
             .await
             .map_err(|e| IpcError::ConnectionFailed(e.to_string()))?;
-        let (mut reader, writer) = stream.into_split();
+        let (reader, writer) = stream.into_split();
+        let mut reader = BufReader::new(reader);
         let writer = Arc::new(Mutex::new(writer));
 
         // Handshake
@@ -320,13 +321,14 @@ impl JsonRpcClient {
     async fn connect_and_handshake(
         &self,
     ) -> Result<(
-        tokio::net::unix::OwnedReadHalf,
+        BufReader<tokio::net::unix::OwnedReadHalf>,
         tokio::net::unix::OwnedWriteHalf,
     )> {
         let stream = UnixStream::connect(&self.socket_path)
             .await
             .map_err(|e| IpcError::ConnectionFailed(e.to_string()))?;
-        let (mut reader, mut writer) = stream.into_split();
+        let (reader, mut writer) = stream.into_split();
+        let mut reader = BufReader::new(reader);
 
         let req = jsonrpc_req(
             "canopus.handshake",
@@ -377,7 +379,9 @@ async fn write_json<S>(writer: &mut S, v: &(impl Serialize + Sync)) -> Result<()
 where
     S: tokio::io::AsyncWrite + Unpin + Send,
 {
-    let data = serde_json::to_vec(v).map_err(|e| IpcError::SerializationFailed(e.to_string()))?;
+    let mut data =
+        serde_json::to_vec(v).map_err(|e| IpcError::SerializationFailed(e.to_string()))?;
+    data.push(b'\n');
     writer
         .write_all(&data)
         .await
@@ -388,7 +392,9 @@ async fn write_json_locked(
     writer: Arc<Mutex<tokio::net::unix::OwnedWriteHalf>>,
     v: &(impl Serialize + Sync),
 ) -> Result<()> {
-    let data = serde_json::to_vec(v).map_err(|e| IpcError::SerializationFailed(e.to_string()))?;
+    let mut data =
+        serde_json::to_vec(v).map_err(|e| IpcError::SerializationFailed(e.to_string()))?;
+    data.push(b'\n');
     let mut guard = writer.lock().await;
     guard
         .write_all(&data)
@@ -396,30 +402,42 @@ async fn write_json_locked(
         .map_err(|e| IpcError::SendFailed(e.to_string()))
 }
 
-async fn read_json<T: for<'de> Deserialize<'de>, S: AsyncReadExt + Unpin>(
+async fn read_json<T: for<'de> Deserialize<'de>, S: tokio::io::AsyncBufRead + Unpin>(
     reader: &mut S,
 ) -> Result<T> {
-    let mut buf = vec![0u8; 65536];
+    let mut buf = Vec::with_capacity(1024);
     let n = reader
-        .read(&mut buf)
+        .read_until(b'\n', &mut buf)
         .await
         .map_err(|e| IpcError::ReceiveFailed(e.to_string()))?;
     if n == 0 {
         return Err(IpcError::EmptyResponse);
     }
-    serde_json::from_slice(&buf[..n]).map_err(|e| IpcError::DeserializationFailed(e.to_string()))
+    if matches!(buf.last(), Some(b'\n')) {
+        buf.pop();
+        if matches!(buf.last(), Some(b'\r')) {
+            buf.pop();
+        }
+    }
+    serde_json::from_slice(&buf).map_err(|e| IpcError::DeserializationFailed(e.to_string()))
 }
 
-async fn read_value<S: AsyncReadExt + Unpin>(reader: &mut S) -> Result<Value> {
-    let mut buf = vec![0u8; 65536];
+async fn read_value<S: tokio::io::AsyncBufRead + Unpin>(reader: &mut S) -> Result<Value> {
+    let mut buf = Vec::with_capacity(1024);
     let n = reader
-        .read(&mut buf)
+        .read_until(b'\n', &mut buf)
         .await
         .map_err(|e| IpcError::ReceiveFailed(e.to_string()))?;
     if n == 0 {
         return Err(IpcError::EmptyResponse);
     }
-    serde_json::from_slice(&buf[..n]).map_err(|e| IpcError::DeserializationFailed(e.to_string()))
+    if matches!(buf.last(), Some(b'\n')) {
+        buf.pop();
+        if matches!(buf.last(), Some(b'\r')) {
+            buf.pop();
+        }
+    }
+    serde_json::from_slice(&buf).map_err(|e| IpcError::DeserializationFailed(e.to_string()))
 }
 
 #[cfg(test)]

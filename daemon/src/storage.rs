@@ -69,7 +69,9 @@ impl SqliteStorage {
     /// created.
     pub fn open_default() -> anyhow::Result<Self> {
         let base = std::env::var("HOME").map(PathBuf::from).map_err(|_| {
-            anyhow::anyhow!("HOME must be set to open default database at $HOME/.canopus/canopus.db")
+            anyhow::anyhow!(
+                "HOME must be set to open default database at $HOME/.canopus/canopus.db"
+            )
         })?;
         let dir = base.join(".canopus");
         std::fs::create_dir_all(&dir)?;
@@ -422,6 +424,5 @@ mod tests {
 
         let err = storage.fetch_port("svc").await.expect_err("invalid port");
         assert!(err.to_string().contains("Invalid port value"));
-
     }
 }

@@ -58,6 +58,12 @@ fn uds_socket_path(label: &str) -> PathBuf {
     PathBuf::from("/tmp").join(filename)
 }
 
+fn init_home(base: &Path) {
+    let home = base.join("home");
+    std::fs::create_dir_all(&home).expect("create home dir");
+    std::env::set_var("HOME", &home);
+}
+
 fn make_services_toml_with_id(bin_path: &Path, service_id: &str) -> String {
     // Placeholder ports; daemon supervisor will override with assigned port at start
     let placeholder_port = 1u16;
@@ -127,6 +133,7 @@ async fn http_start_with_port_and_hostname_and_list_status_show_them() {
     // Temp workspace
     let temp = tempfile::tempdir().expect("tempdir");
     let base = temp.path().to_path_buf();
+    init_home(&base);
 
     // Resolve e2e_http binary and choose service id
     let bin_path = e2e_http_bin_path();
@@ -241,6 +248,7 @@ async fn http_start_without_port_allocator_assigns_and_list_status_show_it() {
     // Temp workspace
     let temp = tempfile::tempdir().expect("tempdir");
     let base = temp.path().to_path_buf();
+    init_home(&base);
 
     // Resolve e2e_http binary and choose service id
     let bin_path = e2e_http_bin_path();
@@ -331,6 +339,7 @@ async fn http_restart_keeps_port_and_hostname_and_ready_again() {
     // Temp workspace
     let temp = tempfile::tempdir().expect("tempdir");
     let base = temp.path().to_path_buf();
+    init_home(&base);
 
     // Resolve e2e_http binary and choose service id
     let bin_path = e2e_http_bin_path();
@@ -447,6 +456,7 @@ async fn http_duplicate_start_is_idempotent_and_keeps_settings() {
     // Temp workspace
     let temp = tempfile::tempdir().expect("tempdir");
     let base = temp.path().to_path_buf();
+    init_home(&base);
 
     // Resolve e2e_http binary and choose service id
     let bin_path = e2e_http_bin_path();
@@ -548,6 +558,7 @@ async fn http_start_with_hostname_only_and_list_status_show_port_and_hostname() 
     // Temp workspace
     let temp = tempfile::tempdir().expect("tempdir");
     let base = temp.path().to_path_buf();
+    init_home(&base);
 
     // Resolve e2e_http binary and choose service id
     let bin_path = e2e_http_bin_path();
