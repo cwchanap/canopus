@@ -1,5 +1,6 @@
 //! Integration tests for daemon bootstrap functionality
 
+use std::env;
 use std::fs;
 // Silence unused crate dependency lints for workspace-wide dev deps
 use anyhow as _;
@@ -18,6 +19,14 @@ use tracing_subscriber as _;
 async fn bootstrap_start_stop() {
     let timeout = std::time::Duration::from_secs(30);
     tokio::time::timeout(timeout, async {
+        // Isolate HOME for SQLite storage in sandboxed test environments
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        env::set_var("HOME", &home);
+        let socket_path = tmp.path().join("canopus.sock");
+        env::set_var("CANOPUS_IPC_SOCKET", &socket_path);
+
         // Prepare a minimal services file
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("services.toml");

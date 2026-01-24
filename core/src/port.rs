@@ -212,8 +212,8 @@ impl PortAllocator {
     fn generate_port_sequence(&self) -> impl Iterator<Item = u16> + '_ {
         let seed = Self::calculate_deterministic_seed();
         let range_size = self.range_end - self.range_start;
-        let start_offset = u16::try_from(seed % u64::from(range_size))
-            .expect("modulo ensures value fits in u16");
+        let start_offset =
+            u16::try_from(seed % u64::from(range_size)).expect("modulo ensures value fits in u16");
 
         (0..range_size).map(move |i| {
             let offset = (start_offset + i) % range_size;

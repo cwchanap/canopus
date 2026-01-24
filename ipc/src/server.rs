@@ -22,7 +22,7 @@ use schema::ServiceEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
@@ -291,7 +291,8 @@ async fn handle_connection_unix(
     router: Arc<dyn ControlPlane>,
 ) -> Result<()> {
     // Handshake: expect a JSON-RPC call canopus.handshake with optional token
-    let (mut reader, writer) = stream.into_split();
+    let (reader, writer) = stream.into_split();
+    let mut reader = BufReader::new(reader);
     let writer = Arc::new(Mutex::new(writer));
 
     let req = read_request(&mut reader).await?;
@@ -511,17 +512,25 @@ async fn route_method(
     }))
 }
 
-async fn read_request<S: AsyncReadExt + Unpin>(stream: &mut S) -> Result<JsonRpcRequest> {
-    // Simple framing: read up to 64KB or until EOF; for real-world use adopt length-prefix or newline-delimited framing
-    let mut buf = vec![0u8; 65536];
+async fn read_request<S: tokio::io::AsyncBufRead + Unpin>(
+    stream: &mut S,
+) -> Result<JsonRpcRequest> {
+    // Simple framing: read one JSON value per line.
+    let mut buf = Vec::with_capacity(1024);
     let n = stream
-        .read(&mut buf)
+        .read_until(b'\n', &mut buf)
         .await
         .map_err(|e| IpcError::ReceiveFailed(e.to_string()))?;
     if n == 0 {
         return Err(IpcError::EmptyResponse);
     }
-    serde_json::from_slice::<JsonRpcRequest>(&buf[..n])
+    if matches!(buf.last(), Some(b'\n')) {
+        buf.pop();
+        if matches!(buf.last(), Some(b'\r')) {
+            buf.pop();
+        }
+    }
+    serde_json::from_slice::<JsonRpcRequest>(&buf)
         .map_err(|e| IpcError::DeserializationFailed(e.to_string()))
 }
 
@@ -529,8 +538,9 @@ async fn write_response_locked(
     writer: Arc<Mutex<tokio::net::unix::OwnedWriteHalf>>,
     resp: &JsonRpcResponse,
 ) -> Result<()> {
-    let data =
+    let mut data =
         serde_json::to_vec(resp).map_err(|e| IpcError::SerializationFailed(e.to_string()))?;
+    data.push(b'\n');
     let mut guard = writer.lock().await;
     guard
         .write_all(&data)
@@ -548,8 +558,9 @@ async fn write_notification_locked(
         "method": method,
         "params": params,
     });
-    let data =
+    let mut data =
         serde_json::to_vec(&notif).map_err(|e| IpcError::SerializationFailed(e.to_string()))?;
+    data.push(b'\n');
     let mut guard = writer.lock().await;
     guard
         .write_all(&data)
@@ -993,7 +1004,8 @@ pub mod supervisor_adapter {
                     }
                     if let Some(guard) = reserved_guard.take() {
                         entry.port_guard = Some(guard);
-                        _port_guard_release = Some(PortGuardRelease::new(&self.runtime_meta, service_id));
+                        _port_guard_release =
+                            Some(PortGuardRelease::new(&self.runtime_meta, service_id));
                     }
                 }
             }
@@ -1113,7 +1125,8 @@ pub mod supervisor_adapter {
                     }
                 };
 
-                match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), wait).await {
+                match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), wait).await
+                {
                     Ok(Ok(())) => Ok(()),
                     Ok(Err(())) => Err(super::IpcError::ProtocolError(
                         "service state channel closed".into(),
@@ -1400,13 +1413,22 @@ mod tests {
                 "method": "canopus.handshake",
                 "id": 1
             });
-            let data = serde_json::to_vec(&req).unwrap();
+            let mut data = serde_json::to_vec(&req).unwrap();
+            data.push(b'\n');
             stream.write_all(&data).await.unwrap();
 
-            let mut buf = [0u8; 4096];
-            let n = stream.read(&mut buf).await.unwrap();
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            let mut reader = BufReader::new(stream);
+            let mut buf = Vec::new();
+            let n = reader.read_until(b'\n', &mut buf).await.unwrap();
             assert!(n > 0);
-            let v: Value = serde_json::from_slice(&buf[..n]).unwrap();
+            if matches!(buf.last(), Some(b'\n')) {
+                buf.pop();
+                if matches!(buf.last(), Some(b'\r')) {
+                    buf.pop();
+                }
+            }
+            let v: Value = serde_json::from_slice(&buf).unwrap();
             assert!(v.get("error").is_some());
         }
     }
