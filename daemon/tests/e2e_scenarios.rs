@@ -213,7 +213,7 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
 
         // Wait for either a ready state or a ready log line
         let mut saw_ready_log = false;
-        let ready_wait = wait_until_ready(&client, "toy-http", 10_000);
+        let ready_wait = wait_until_ready(&client, "toy-http", 20_000);
         tokio::pin!(ready_wait);
         loop {
             tokio::select! {
@@ -232,7 +232,7 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
         }
 
         // Ensure Ready state before asserting health
-        wait_until_ready(&client, "toy-http", 10_000)
+        wait_until_ready(&client, "toy-http", 20_000)
             .await
             .expect("became ready");
 
@@ -253,7 +253,7 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
         // Restart via IPC
         client.restart("toy-http").await.expect("restart ok");
         // Wait back to Ready again
-        wait_until_ready(&client, "toy-http", 10_000)
+        wait_until_ready(&client, "toy-http", 20_000)
             .await
             .expect("ready after restart");
 

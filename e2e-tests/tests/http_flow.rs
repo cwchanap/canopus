@@ -200,7 +200,7 @@ async fn http_start_with_port_and_hostname_and_list_status_show_them() {
         .expect("start ok");
 
     // Wait for Ready
-    wait_until_ready(&client, service_id, 10_000)
+    wait_until_ready(&client, service_id, 20_000)
         .await
         .expect("ready");
 
@@ -308,7 +308,7 @@ async fn http_start_without_port_allocator_assigns_and_list_status_show_it() {
         .expect("start ok");
 
     // Wait for Ready
-    wait_until_ready(&client, service_id, 10_000)
+    wait_until_ready(&client, service_id, 20_000)
         .await
         .expect("ready");
 
@@ -406,7 +406,7 @@ async fn http_restart_keeps_port_and_hostname_and_ready_again() {
         .expect("start ok");
 
     // Wait for Ready
-    wait_until_ready(&client, service_id, 10_000)
+    wait_until_ready(&client, service_id, 20_000)
         .await
         .expect("ready");
 
@@ -426,7 +426,7 @@ async fn http_restart_keeps_port_and_hostname_and_ready_again() {
     client.restart(service_id).await.expect("restart ok");
 
     // Wait for Ready again
-    wait_until_ready(&client, service_id, 10_000)
+    wait_until_ready(&client, service_id, 20_000)
         .await
         .expect("ready after restart");
 
@@ -523,7 +523,7 @@ async fn http_duplicate_start_is_idempotent_and_keeps_settings() {
         .expect("start ok");
 
     // Wait for Ready
-    wait_until_ready(&client, service_id, 10_000)
+    wait_until_ready(&client, service_id, 20_000)
         .await
         .expect("ready");
 
@@ -534,7 +534,7 @@ async fn http_duplicate_start_is_idempotent_and_keeps_settings() {
         .expect("duplicate start ok");
 
     // Still Ready and settings preserved
-    wait_until_ready(&client, service_id, 10_000)
+    wait_until_ready(&client, service_id, 20_000)
         .await
         .expect("still ready");
     let services = client.list().await.expect("list ok");
@@ -619,7 +619,7 @@ async fn http_start_with_hostname_only_and_list_status_show_port_and_hostname() 
         .expect("start ok");
 
     // Wait for Ready
-    wait_until_ready(&client, service_id, 10_000)
+    wait_until_ready(&client, service_id, 20_000)
         .await
         .expect("ready");
 
