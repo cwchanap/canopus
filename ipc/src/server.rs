@@ -512,6 +512,10 @@ async fn route_method(
     }))
 }
 
+/// Maximum allowed frame size for IPC requests (64KB)
+/// This prevents unbounded memory growth from malicious clients
+const MAX_FRAME_SIZE: usize = 64 * 1024;
+
 async fn read_request<S: tokio::io::AsyncBufRead + Unpin>(
     stream: &mut S,
 ) -> Result<JsonRpcRequest> {
@@ -521,6 +525,15 @@ async fn read_request<S: tokio::io::AsyncBufRead + Unpin>(
         .read_until(b'\n', &mut buf)
         .await
         .map_err(|e| IpcError::ReceiveFailed(e.to_string()))?;
+
+    // Check if the frame exceeds maximum size
+    if n > MAX_FRAME_SIZE {
+        return Err(IpcError::ProtocolError(format!(
+            "Frame size {} exceeds maximum allowed size of {} bytes",
+            n, MAX_FRAME_SIZE
+        )));
+    }
+
     if n == 0 {
         return Err(IpcError::EmptyResponse);
     }
@@ -1439,5 +1452,69 @@ mod tests {
             let v: Value = serde_json::from_slice(&buf).unwrap();
             assert!(v.get("error").is_some());
         }
+    }
+
+    #[tokio::test]
+    async fn test_read_request_normal() {
+        use tokio::io::AsyncWriteExt;
+        let (raw_reader, mut writer) = tokio::io::duplex(1024);
+        let mut reader = BufReader::new(raw_reader);
+
+        // Send a valid JSON-RPC request
+        let req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "canopus.version",
+            "id": 1
+        });
+        let data = format!("{}\n", req);
+        writer.write_all(data.as_bytes()).await.unwrap();
+
+        // Read and verify
+        let result = read_request(&mut reader).await;
+        assert!(result.is_ok());
+        let parsed = result.unwrap();
+        assert_eq!(parsed.jsonrpc, "2.0");
+        assert_eq!(parsed.method, "canopus.version");
+    }
+
+    #[tokio::test]
+    async fn test_read_request_exceeds_max_size() {
+        use tokio::io::AsyncWriteExt;
+        let (raw_reader, mut writer) = tokio::io::duplex(MAX_FRAME_SIZE + 1024);
+        let mut reader = BufReader::new(raw_reader);
+
+        // Create a request that exceeds MAX_FRAME_SIZE
+        let large_value = "x".repeat(MAX_FRAME_SIZE + 1);
+        let req = format!(
+            r#"{{"jsonrpc":"2.0","method":"test","id":1,"params":{{"large":"{}"}}}}"#,
+            large_value
+        );
+        let data = format!("{}\n", req);
+
+        // Send the oversized request
+        writer.write_all(data.as_bytes()).await.unwrap();
+
+        // Read should fail with ProtocolError
+        let result = read_request(&mut reader).await;
+        assert!(result.is_err());
+        match result {
+            Err(IpcError::ProtocolError(msg)) => {
+                assert!(msg.contains("exceeds maximum allowed size"));
+            }
+            _ => panic!("Expected ProtocolError for oversized frame"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_request_empty() {
+        let (raw_reader, writer) = tokio::io::duplex(1024);
+        let mut reader = BufReader::new(raw_reader);
+
+        // Close writer to simulate empty input
+        drop(writer);
+
+        // Read should return EmptyResponse
+        let result = read_request(&mut reader).await;
+        assert!(matches!(result, Err(IpcError::EmptyResponse)));
     }
 }
