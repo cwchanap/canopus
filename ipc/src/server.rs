@@ -698,19 +698,28 @@ pub mod supervisor_adapter {
     struct PortGuardRelease<'a> {
         runtime_meta: &'a std::sync::Mutex<RuntimeMeta>,
         service_id: String,
+        active: bool,
     }
 
     impl<'a> PortGuardRelease<'a> {
-        fn new(runtime_meta: &'a std::sync::Mutex<RuntimeMeta>, service_id: &str) -> Self {
+        fn inactive(runtime_meta: &'a std::sync::Mutex<RuntimeMeta>, service_id: &str) -> Self {
             Self {
                 runtime_meta,
                 service_id: service_id.to_string(),
+                active: false,
             }
+        }
+
+        const fn activate(&mut self) {
+            self.active = true;
         }
     }
 
     impl Drop for PortGuardRelease<'_> {
         fn drop(&mut self) {
+            if !self.active {
+                return;
+            }
             if let Ok(mut map) = self.runtime_meta.lock() {
                 if let Some(entry) = map.get_mut(&self.service_id) {
                     entry.port_guard.take();
@@ -935,7 +944,7 @@ pub mod supervisor_adapter {
                 reserved_guard = Some(guard);
                 Some(port)
             };
-            let mut _port_guard_release = None;
+            let mut port_guard_release = PortGuardRelease::inactive(&self.runtime_meta, service_id);
 
             // Possibly update spec with port/hostname and ensure PATH if configured
             {
@@ -1004,8 +1013,7 @@ pub mod supervisor_adapter {
                     }
                     if let Some(guard) = reserved_guard.take() {
                         entry.port_guard = Some(guard);
-                        _port_guard_release =
-                            Some(PortGuardRelease::new(&self.runtime_meta, service_id));
+                        port_guard_release.activate();
                     }
                 }
             }
@@ -1389,6 +1397,7 @@ mod tests {
     async fn test_unix_server_handshake_rejects_without_token_when_required() {
         #[cfg(unix)]
         {
+            use tokio::io::AsyncBufReadExt;
             use tokio::net::UnixStream;
             let dir = tempfile::tempdir().unwrap();
             let sock = dir.path().join("canopus.sock");
@@ -1417,7 +1426,6 @@ mod tests {
             data.push(b'\n');
             stream.write_all(&data).await.unwrap();
 
-            use tokio::io::{AsyncBufReadExt, BufReader};
             let mut reader = BufReader::new(stream);
             let mut buf = Vec::new();
             let n = reader.read_until(b'\n', &mut buf).await.unwrap();

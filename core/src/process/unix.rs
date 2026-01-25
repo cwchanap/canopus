@@ -107,6 +107,10 @@ pub fn spawn_with(
 
 impl ChildProcess {
     /// Get the process ID
+    ///
+    /// # Panics
+    ///
+    /// Panics if the PID cannot be represented as a `u32`. This should not happen on Unix.
     #[must_use]
     #[allow(clippy::missing_const_for_fn)]
     pub fn pid(&self) -> u32 {
@@ -114,6 +118,10 @@ impl ChildProcess {
     }
 
     /// Get the process group ID (same as PID for session leaders)
+    ///
+    /// # Panics
+    ///
+    /// Panics if the PGID cannot be represented as a `u32`. This should not happen on Unix.
     #[must_use]
     #[allow(clippy::missing_const_for_fn)]
     pub fn pgid(&self) -> u32 {

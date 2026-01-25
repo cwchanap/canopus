@@ -103,14 +103,14 @@ impl SqliteStorage {
         match conn.execute("ALTER TABLE services ADD COLUMN port INTEGER", []) {
             Ok(_) => debug!("Added port column to services table"),
             Err(e) if e.to_string().contains("duplicate column") => {
-                debug!("Port column already exists")
+                debug!("Port column already exists");
             }
             Err(e) => warn!("Migration failed for port column: {}", e),
         }
         match conn.execute("ALTER TABLE services ADD COLUMN hostname TEXT", []) {
             Ok(_) => debug!("Added hostname column to services table"),
             Err(e) if e.to_string().contains("duplicate column") => {
-                debug!("Hostname column already exists")
+                debug!("Hostname column already exists");
             }
             Err(e) => warn!("Migration failed for hostname column: {}", e),
         }
@@ -304,12 +304,14 @@ impl SqliteStorage {
                     .optional()
                     .map_err(|e| anyhow::anyhow!(e))?
                 };
-                match val.flatten() {
-                    Some(v) => u16::try_from(v)
-                        .map(Some)
-                        .map_err(|_| anyhow::anyhow!("Invalid port value in database: {v}")),
-                    None => Ok(None),
-                }
+                val.flatten().map_or_else(
+                    || Ok(None),
+                    |v| {
+                        u16::try_from(v)
+                            .map(Some)
+                            .map_err(|_| anyhow::anyhow!("Invalid port value in database: {v}"))
+                    },
+                )
             }
         })
         .await??;
