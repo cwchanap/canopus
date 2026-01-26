@@ -529,8 +529,7 @@ async fn read_request<S: tokio::io::AsyncBufRead + Unpin>(
     // Check if the frame exceeds maximum size
     if n > MAX_FRAME_SIZE {
         return Err(IpcError::ProtocolError(format!(
-            "Frame size {} exceeds maximum allowed size of {} bytes",
-            n, MAX_FRAME_SIZE
+            "Frame size {n} exceeds maximum allowed size of {MAX_FRAME_SIZE} bytes"
         )));
     }
 
@@ -1466,7 +1465,7 @@ mod tests {
             "method": "canopus.version",
             "id": 1
         });
-        let data = format!("{}\n", req);
+        let data = format!("{req}\n");
         writer.write_all(data.as_bytes()).await.unwrap();
 
         // Read and verify
@@ -1486,10 +1485,9 @@ mod tests {
         // Create a request that exceeds MAX_FRAME_SIZE
         let large_value = "x".repeat(MAX_FRAME_SIZE + 1);
         let req = format!(
-            r#"{{"jsonrpc":"2.0","method":"test","id":1,"params":{{"large":"{}"}}}}"#,
-            large_value
+            r#"{{"jsonrpc":"2.0","method":"test","id":1,"params":{{"large":"{large_value}"}}}}"#
         );
-        let data = format!("{}\n", req);
+        let data = format!("{req}\n");
 
         // Send the oversized request
         writer.write_all(data.as_bytes()).await.unwrap();

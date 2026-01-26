@@ -75,7 +75,7 @@ name = "E2E HTTP"
 command = "{bin}"
 restartPolicy = "never"
 gracefulTimeoutSecs = 5
-startupTimeoutSecs = 20
+startupTimeoutSecs = 40
 
 [services.readinessCheck]
 initialDelaySecs = 0
