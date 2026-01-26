@@ -44,7 +44,7 @@ name = "E2E HTTP"
 command = "{bin}"
 restartPolicy = "always"
 gracefulTimeoutSecs = 5
-startupTimeoutSecs = 20
+startupTimeoutSecs = 40
 
 [services.readinessCheck]
 initialDelaySecs = 0
@@ -81,7 +81,7 @@ command = "{bin}"
 args = ["{port}"]
 restartPolicy = "always"
 gracefulTimeoutSecs = 5
-startupTimeoutSecs = 20
+startupTimeoutSecs = 40
 
 [services.environment]
 PORT = "{port}"
