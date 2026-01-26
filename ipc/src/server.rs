@@ -943,9 +943,26 @@ pub mod supervisor_adapter {
                 .get(service_id)
                 .ok_or_else(|| super::IpcError::ProtocolError("unknown service".into()))?;
 
-            // Determine port to use (allocate if not provided)
+            // Determine port to use (allocate only when missing from spec/env)
             let mut reserved_guard: Option<PortGuard> = None;
+            let existing_port = handle
+                .spec
+                .environment
+                .get("PORT")
+                .and_then(|p| p.parse::<u16>().ok())
+                .or_else(|| {
+                    handle
+                        .spec
+                        .readiness_check
+                        .as_ref()
+                        .and_then(|rc| match rc.check_type {
+                            schema::HealthCheckType::Tcp { port } => Some(port),
+                            schema::HealthCheckType::Exec { .. } => None,
+                        })
+                });
             let chosen_port = if let Some(port) = port {
+                Some(port)
+            } else if let Some(port) = existing_port {
                 Some(port)
             } else {
                 let alloc = canopus_core::PortAllocator::new();
