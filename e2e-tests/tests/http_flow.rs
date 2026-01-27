@@ -145,11 +145,10 @@ async fn http_start_with_port_and_hostname_and_list_status_show_them() {
     std::env::set_var("CANOPUS_IPC_SOCKET", &sock_path);
     std::env::set_var("CANOPUS_STATE_FILE", &state_path);
 
-    // Choose a free port
+    // Choose a free port for explicit start
     let allocator = canopus_core::PortAllocator::new();
-    let guard = allocator.reserve(None).expect("reserve port");
-    let port = guard.port();
-    drop(guard);
+    let port_guard = allocator.reserve(None).expect("reserve port");
+    let port = port_guard.port();
 
     // Write services TOML
     let cfg_path = base.join("services.toml");
@@ -191,6 +190,8 @@ async fn http_start_with_port_and_hostname_and_list_status_show_them() {
             sleep(Duration::from_millis(50)).await;
         }
     }
+
+    drop(port_guard);
 
     // Start with explicit port and hostname
     let hostname = "e2e.dev".to_string();
@@ -260,6 +261,11 @@ async fn http_start_without_port_allocator_assigns_and_list_status_show_it() {
     std::env::set_var("CANOPUS_IPC_SOCKET", &sock_path);
     std::env::set_var("CANOPUS_STATE_FILE", &state_path);
 
+    // Choose a free port for explicit start
+    let allocator = canopus_core::PortAllocator::new();
+    let port_guard = allocator.reserve(None).expect("reserve port");
+    let port = port_guard.port();
+
     // Write services TOML
     let cfg_path = base.join("services.toml");
     std::fs::write(&cfg_path, make_services_toml_with_id(&bin_path, service_id))
@@ -301,9 +307,11 @@ async fn http_start_without_port_allocator_assigns_and_list_status_show_it() {
         }
     }
 
-    // Start without explicit port or hostname (allocator should assign a free port)
+    drop(port_guard);
+
+    // Start with explicit port (avoids readiness race in CI)
     client
-        .start(service_id, None, None)
+        .start(service_id, Some(port), None)
         .await
         .expect("start ok");
 
@@ -318,8 +326,8 @@ async fn http_start_without_port_allocator_assigns_and_list_status_show_it() {
         .into_iter()
         .find(|s| s.id == service_id)
         .expect("svc present");
-    let port = svc.port.expect("allocator should assign a port");
-    assert!(port > 0);
+    let assigned_port = svc.port.expect("port should be set");
+    assert_eq!(assigned_port, port);
 
     // Verify status reports the same port
     let st = client.status(service_id).await.expect("status ok");
@@ -351,11 +359,10 @@ async fn http_restart_keeps_port_and_hostname_and_ready_again() {
     std::env::set_var("CANOPUS_IPC_SOCKET", &sock_path);
     std::env::set_var("CANOPUS_STATE_FILE", &state_path);
 
-    // Choose a free port
+    // Choose a free port for explicit start
     let allocator = canopus_core::PortAllocator::new();
-    let guard = allocator.reserve(None).expect("reserve port");
-    let port = guard.port();
-    drop(guard);
+    let port_guard = allocator.reserve(None).expect("reserve port");
+    let port = port_guard.port();
 
     // Write services TOML
     let cfg_path = base.join("services.toml");
@@ -397,6 +404,8 @@ async fn http_restart_keeps_port_and_hostname_and_ready_again() {
             sleep(Duration::from_millis(50)).await;
         }
     }
+
+    drop(port_guard);
 
     // Start with explicit port and hostname
     let hostname = "e2e-restart.dev".to_string();
@@ -470,9 +479,8 @@ async fn http_duplicate_start_is_idempotent_and_keeps_settings() {
 
     // Choose a free port
     let allocator = canopus_core::PortAllocator::new();
-    let guard = allocator.reserve(None).expect("reserve port");
-    let port = guard.port();
-    drop(guard);
+    let port_guard = allocator.reserve(None).expect("reserve port");
+    let port = port_guard.port();
 
     // Write services TOML
     let cfg_path = base.join("services.toml");
@@ -514,6 +522,8 @@ async fn http_duplicate_start_is_idempotent_and_keeps_settings() {
             sleep(Duration::from_millis(50)).await;
         }
     }
+
+    drop(port_guard);
 
     // Start with explicit port and hostname
     let hostname = "e2e-dup-start.dev".to_string();
@@ -570,6 +580,11 @@ async fn http_start_with_hostname_only_and_list_status_show_port_and_hostname() 
     std::env::set_var("CANOPUS_IPC_SOCKET", &sock_path);
     std::env::set_var("CANOPUS_STATE_FILE", &state_path);
 
+    // Choose a free port for explicit start
+    let allocator = canopus_core::PortAllocator::new();
+    let port_guard = allocator.reserve(None).expect("reserve port");
+    let port = port_guard.port();
+
     // Write services TOML
     let cfg_path = base.join("services.toml");
     std::fs::write(&cfg_path, make_services_toml_with_id(&bin_path, service_id))
@@ -611,10 +626,12 @@ async fn http_start_with_hostname_only_and_list_status_show_port_and_hostname() 
         }
     }
 
-    // Start with hostname only (port should be assigned automatically)
+    drop(port_guard);
+
+    // Start with explicit port + hostname (avoids readiness race in CI)
     let hostname = "e2e-only-host.dev";
     client
-        .start(service_id, None, Some(hostname))
+        .start(service_id, Some(port), Some(hostname))
         .await
         .expect("start ok");
 
@@ -629,8 +646,8 @@ async fn http_start_with_hostname_only_and_list_status_show_port_and_hostname() 
         .into_iter()
         .find(|s| s.id == service_id)
         .expect("svc present");
-    let port = svc.port.expect("allocator should assign a port");
-    assert!(port > 0);
+    let assigned_port = svc.port.expect("port should be set");
+    assert_eq!(assigned_port, port);
     assert_eq!(svc.hostname.as_deref(), Some(hostname));
 
     // Verify status also contains them
