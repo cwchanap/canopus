@@ -118,8 +118,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_tcp_probe_connection_refused() {
-        // Try to connect to a port that's definitely not listening
-        let probe = TcpProbe::new("127.0.0.1", 1, Duration::from_secs(1));
+        // Bind and immediately drop a listener to get a likely-free port.
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("Failed to bind");
+        let port = listener.local_addr().expect("local addr").port();
+        drop(listener);
+
+        // Try to connect to a port that should now be closed.
+        let probe = TcpProbe::new("127.0.0.1", port, Duration::from_secs(1));
         let result = probe.check().await;
 
         assert!(
