@@ -947,18 +947,18 @@ pub mod supervisor_adapter {
             let mut reserved_guard: Option<PortGuard> = None;
             let existing_port = handle
                 .spec
-                .environment
-                .get("PORT")
-                .and_then(|p| p.parse::<u16>().ok())
+                .readiness_check
+                .as_ref()
+                .and_then(|rc| match rc.check_type {
+                    schema::HealthCheckType::Tcp { port } => Some(port),
+                    schema::HealthCheckType::Exec { .. } => None,
+                })
                 .or_else(|| {
                     handle
                         .spec
-                        .readiness_check
-                        .as_ref()
-                        .and_then(|rc| match rc.check_type {
-                            schema::HealthCheckType::Tcp { port } => Some(port),
-                            schema::HealthCheckType::Exec { .. } => None,
-                        })
+                        .environment
+                        .get("PORT")
+                        .and_then(|p| p.parse::<u16>().ok())
                 });
             let chosen_port = if let Some(port) = port {
                 Some(port)
