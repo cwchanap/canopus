@@ -519,23 +519,33 @@ const MAX_FRAME_SIZE: usize = 64 * 1024;
 async fn read_request<S: tokio::io::AsyncBufRead + Unpin>(
     stream: &mut S,
 ) -> Result<JsonRpcRequest> {
-    // Simple framing: read one JSON value per line.
+    // Simple framing: read one JSON value per line with bounded buffering.
     let mut buf = Vec::with_capacity(1024);
-    let n = stream
-        .read_until(b'\n', &mut buf)
-        .await
-        .map_err(|e| IpcError::ReceiveFailed(e.to_string()))?;
+    loop {
+        let chunk = stream
+            .fill_buf()
+            .await
+            .map_err(|e| IpcError::ReceiveFailed(e.to_string()))?;
+        if chunk.is_empty() {
+            return Err(IpcError::EmptyResponse);
+        }
 
-    // Check if the frame exceeds maximum size
-    if n > MAX_FRAME_SIZE {
-        return Err(IpcError::ProtocolError(format!(
-            "Frame size {n} exceeds maximum allowed size of {MAX_FRAME_SIZE} bytes"
-        )));
+        let newline_pos = chunk.iter().position(|b| *b == b'\n');
+        let to_copy = newline_pos.map_or(chunk.len(), |idx| idx + 1);
+        let next_len = buf.len() + to_copy;
+        if next_len > MAX_FRAME_SIZE {
+            return Err(IpcError::ProtocolError(format!(
+                "Frame size {next_len} exceeds maximum allowed size of {MAX_FRAME_SIZE} bytes"
+            )));
+        }
+
+        buf.extend_from_slice(&chunk[..to_copy]);
+        stream.consume(to_copy);
+        if newline_pos.is_some() {
+            break;
+        }
     }
 
-    if n == 0 {
-        return Err(IpcError::EmptyResponse);
-    }
     if matches!(buf.last(), Some(b'\n')) {
         buf.pop();
         if matches!(buf.last(), Some(b'\r')) {
