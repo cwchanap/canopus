@@ -275,6 +275,7 @@ async fn e2e_toy_http_flow_ready_logs_restart_stop_persist_recover() {
 
         // Simulate daemon restart: shutdown bootstrap, then bootstrap again with same config
         boot.shutdown();
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         // New bootstrap on same socket/state paths without binding port 80
         let _boot2 = daemon::bootstrap::bootstrap_with_runtime(Some(cfg_path.clone()), None, None)
             .await

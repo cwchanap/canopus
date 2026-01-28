@@ -7,6 +7,7 @@ use std::process::Command;
 use std::sync::OnceLock;
 use tokio::sync::Mutex;
 
+/// Serialize tests that mutate process env in init_home.
 async fn test_lock() -> tokio::sync::MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(())).lock().await
@@ -58,7 +59,8 @@ fn uds_socket_path(label: &str) -> PathBuf {
     PathBuf::from("/tmp").join(filename)
 }
 
-fn init_home(base: &Path) {
+// Callers must hold test_lock while invoking init_home to serialize HOME mutation.
+fn init_home(base: &Path, _lock: &tokio::sync::MutexGuard<'static, ()>) {
     let home = base.join("home");
     std::fs::create_dir_all(&home).expect("create home dir");
     std::env::set_var("HOME", &home);
@@ -129,11 +131,11 @@ async fn wait_until_ready(
 
 #[tokio::test]
 async fn http_start_with_port_and_hostname_and_list_status_show_them() {
-    let _lock = test_lock().await;
+    let lock = test_lock().await;
     // Temp workspace
     let temp = tempfile::tempdir().expect("tempdir");
     let base = temp.path().to_path_buf();
-    init_home(&base);
+    init_home(&base, &lock);
 
     // Resolve e2e_http binary and choose service id
     let bin_path = e2e_http_bin_path();
@@ -244,12 +246,12 @@ async fn http_start_with_port_and_hostname_and_list_status_show_them() {
 }
 
 #[tokio::test]
-async fn http_start_without_port_allocator_assigns_and_list_status_show_it() {
-    let _lock = test_lock().await;
+async fn http_start_with_explicit_port_and_list_status_show_it() {
+    let lock = test_lock().await;
     // Temp workspace
     let temp = tempfile::tempdir().expect("tempdir");
     let base = temp.path().to_path_buf();
-    init_home(&base);
+    init_home(&base, &lock);
 
     // Resolve e2e_http binary and choose service id
     let bin_path = e2e_http_bin_path();
@@ -343,11 +345,11 @@ async fn http_start_without_port_allocator_assigns_and_list_status_show_it() {
 
 #[tokio::test]
 async fn http_restart_keeps_port_and_hostname_and_ready_again() {
-    let _lock = test_lock().await;
+    let lock = test_lock().await;
     // Temp workspace
     let temp = tempfile::tempdir().expect("tempdir");
     let base = temp.path().to_path_buf();
-    init_home(&base);
+    init_home(&base, &lock);
 
     // Resolve e2e_http binary and choose service id
     let bin_path = e2e_http_bin_path();
@@ -461,11 +463,11 @@ async fn http_restart_keeps_port_and_hostname_and_ready_again() {
 
 #[tokio::test]
 async fn http_duplicate_start_is_idempotent_and_keeps_settings() {
-    let _lock = test_lock().await;
+    let lock = test_lock().await;
     // Temp workspace
     let temp = tempfile::tempdir().expect("tempdir");
     let base = temp.path().to_path_buf();
-    init_home(&base);
+    init_home(&base, &lock);
 
     // Resolve e2e_http binary and choose service id
     let bin_path = e2e_http_bin_path();
@@ -563,12 +565,12 @@ async fn http_duplicate_start_is_idempotent_and_keeps_settings() {
 }
 
 #[tokio::test]
-async fn http_start_with_hostname_only_and_list_status_show_port_and_hostname() {
-    let _lock = test_lock().await;
+async fn http_start_with_explicit_port_and_hostname_and_list_status_show_them() {
+    let lock = test_lock().await;
     // Temp workspace
     let temp = tempfile::tempdir().expect("tempdir");
     let base = temp.path().to_path_buf();
-    init_home(&base);
+    init_home(&base, &lock);
 
     // Resolve e2e_http binary and choose service id
     let bin_path = e2e_http_bin_path();
