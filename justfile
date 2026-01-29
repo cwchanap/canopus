@@ -38,7 +38,7 @@ lint:
 # Strict linting with pedantic rules  
 lint-strict:
     @echo "🔍 Running strict linting..."
-    cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::all -D clippy::pedantic -W clippy::nursery -W clippy::cargo
+    cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::all -D clippy::pedantic -W clippy::nursery -W clippy::cargo -A clippy::multiple_crate_versions
     @echo "✅ Strict linting completed"
 
 # Fix linting issues

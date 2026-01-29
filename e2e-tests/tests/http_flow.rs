@@ -7,7 +7,7 @@ use std::process::Command;
 use std::sync::OnceLock;
 use tokio::sync::Mutex;
 
-/// Serialize tests that mutate process env in init_home.
+/// Serialize tests that mutate process env in `init_home`.
 async fn test_lock() -> tokio::sync::MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(())).lock().await

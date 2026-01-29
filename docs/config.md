@@ -163,17 +163,12 @@ Behavior:
 
 ## Hostname aliases and local DNS (Unix)
 
-- The daemon attempts to bind a hostname to 127.0.0.1 by appending a line to `/etc/hosts` (tagged with `# canopus`) when a service is started via the UDS control plane.
+- Canopus does not modify `/etc/hosts`. If you want a hostname alias, add it manually or use a local DNS/resolver setup.
 - The effective hostname is resolved in this precedence order:
   1) Start parameter `--hostname`
   2) Persisted runtime metadata (SQLite)
   3) Volatile in-memory metadata (current daemon process)
   4) Service spec `route` field (e.g., `route = "cetus.local.dev"`)
-- On service stop, the daemon attempts to remove the corresponding `/etc/hosts` line using the same precedence (best-effort cleanup).
-- Editing `/etc/hosts` requires elevated privileges on macOS/Linux. If the daemon does not have permission, it will log a warning and the alias will not be installed. In that case, add an entry manually:
-  ```bash
-  echo "127.0.0.1 cetus.local.dev # canopus" | sudo tee -a /etc/hosts
-  ```
 - Built-in local reverse proxy: the daemon starts a lightweight HTTP reverse proxy bound to `127.0.0.1:80`. This requires elevated privileges on most systems. Run the daemon under sudo, but you can keep CLI service commands unprivileged by adopting a "docker-style" socket group:
   - `sudo groupadd canopus` (Linux) or `sudo dscl . -create /Groups/canopus` (macOS) the first time.
   - Add your user to the group (`sudo usermod -aG canopus $USER` on Linux, or `sudo dscl . -append /Groups/canopus GroupMembership $USER` on macOS) and re-login so group membership applies.
@@ -199,7 +194,7 @@ Behavior:
   ```
 
 Troubleshooting:
-- If `curl http://<alias>` says "Could not resolve host", check that `/etc/hosts` has the alias and that it wasn't removed by a previous stop.
+- If `curl http://<alias>` says "Could not resolve host", ensure the alias exists in `/etc/hosts` or your local DNS setup.
 - If the alias resolves but you get a connection error on `http://<alias>`, try `http://<alias>:<port>` or configure a reverse proxy.
 
 ## Notes

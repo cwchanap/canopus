@@ -790,81 +790,6 @@ pub mod supervisor_adapter {
             self.login_path = path;
             self
         }
-
-        #[cfg(unix)]
-        fn ensure_hostname_binding(hostname: &str) {
-            use std::fs::OpenOptions;
-            use std::io::{Read, Write};
-            let path = "/etc/hosts";
-            let tag = "# canopus";
-            // Read existing contents
-            let mut contents = String::new();
-            if let Ok(mut f) = std::fs::File::open(path) {
-                let _ = f.read_to_string(&mut contents);
-            }
-            // If already present, skip
-            if contents
-                .lines()
-                .any(|l| l.contains(tag) && l.contains(hostname))
-            {
-                return;
-            }
-            let line = format!("127.0.0.1\t{hostname} {tag}\n");
-            match OpenOptions::new().append(true).open(path) {
-                Ok(mut f) => {
-                    if let Err(e) = f.write_all(line.as_bytes()) {
-                        tracing::warn!("Failed to append hostname binding to /etc/hosts: {}", e);
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Cannot open /etc/hosts for appending: {} (binding '{}' not installed)",
-                        e,
-                        hostname
-                    );
-                }
-            }
-        }
-
-        #[cfg(unix)]
-        fn remove_hostname_binding(hostname: &str) {
-            use std::io::{Read, Write};
-            let path = "/etc/hosts";
-            let tag = "# canopus";
-            let mut contents = String::new();
-            match std::fs::File::open(path) {
-                Ok(mut f) => {
-                    if f.read_to_string(&mut contents).is_err() {
-                        return;
-                    }
-                }
-                Err(_) => return,
-            }
-            // Build new contents efficiently without intermediate String allocations per line
-            let mut new_contents = String::with_capacity(contents.len());
-            for s in contents
-                .lines()
-                .filter(|l| !(l.contains(tag) && l.contains(hostname)))
-            {
-                new_contents.push_str(s);
-                new_contents.push('\n');
-            }
-            if new_contents != contents {
-                match std::fs::File::create(path) {
-                    Ok(mut f) => {
-                        if let Err(e) = f.write_all(new_contents.as_bytes()) {
-                            tracing::error!(
-                                "Failed to write /etc/hosts: {}. File may be corrupted.",
-                                e
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!("Cannot open /etc/hosts for writing: {}", e);
-                    }
-                }
-            }
-        }
     }
 
     #[async_trait]
@@ -1057,49 +982,6 @@ pub mod supervisor_adapter {
                 }
             }
 
-            // Best-effort bind hostname via /etc/hosts for local development
-            // Determine the effective hostname in order of precedence:
-            // 1) Start parameter `hostname`
-            // 2) Persisted metadata store
-            // 3) Volatile runtime metadata (this process lifetime)
-            // 4) Service spec `route`
-            #[cfg(unix)]
-            {
-                let mut eff_hostname = hostname.clone();
-
-                if eff_hostname.is_none() {
-                    if let Some(meta) = &self.meta {
-                        if let Ok(Some(hn)) = meta.get_hostname(service_id).await {
-                            eff_hostname = Some(hn);
-                        }
-                    }
-                }
-
-                if eff_hostname.is_none() {
-                    if let Ok(map) = self.runtime_meta.lock() {
-                        if let Some(entry) = map.get(service_id) {
-                            if let Some(hn) = entry.hostname.clone() {
-                                eff_hostname = Some(hn);
-                            }
-                        }
-                    }
-                }
-
-                if eff_hostname.is_none() {
-                    if let Ok(spec) = handle.get_spec().await {
-                        if let Some(route) = spec.route {
-                            if !route.is_empty() {
-                                eff_hostname = Some(route);
-                            }
-                        }
-                    }
-                }
-
-                if let Some(hn) = eff_hostname.as_deref() {
-                    Self::ensure_hostname_binding(hn);
-                }
-            }
-
             // Persist the effective hostname to the metadata store and update runtime metadata
             // This mirrors the same precedence as above but runs on all platforms.
             {
@@ -1250,48 +1132,6 @@ pub mod supervisor_adapter {
         }
 
         async fn stop(&self, service_id: &str) -> Result<()> {
-            // Best-effort unbind hostname via /etc/hosts for local development
-            // Determine the effective hostname in order of precedence:
-            // 1) Persisted metadata store
-            // 2) Volatile runtime metadata
-            // 3) Service spec `route`
-            #[cfg(unix)]
-            {
-                let mut eff_hostname: Option<String> = None;
-
-                if let Some(meta) = &self.meta {
-                    if let Ok(hn) = meta.get_hostname(service_id).await {
-                        eff_hostname = hn;
-                    }
-                }
-
-                if eff_hostname.is_none() {
-                    if let Ok(map) = self.runtime_meta.lock() {
-                        if let Some(entry) = map.get(service_id) {
-                            if let Some(hn) = entry.hostname.clone() {
-                                eff_hostname = Some(hn);
-                            }
-                        }
-                    }
-                }
-
-                if eff_hostname.is_none() {
-                    if let Some(handle) = self.handles.get(service_id) {
-                        if let Ok(spec) = handle.get_spec().await {
-                            if let Some(route) = spec.route {
-                                if !route.is_empty() {
-                                    eff_hostname = Some(route);
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if let Some(hn) = eff_hostname {
-                    Self::remove_hostname_binding(hn.as_str());
-                }
-            }
-
             self.handles
                 .get(service_id)
                 .ok_or_else(|| super::IpcError::ProtocolError("unknown service".into()))?
