@@ -15,7 +15,7 @@ use std::{
     sync::LazyLock,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tracing::{debug, warn};
+use tracing::debug;
 
 /// Port range for automatic allocation - starting port
 pub const DEFAULT_PORT_RANGE_START: u16 = 30_000;
@@ -173,39 +173,36 @@ impl PortAllocator {
 
     /// Try to reserve a specific port (internal implementation)
     fn try_reserve_port_internal(port: u16) -> Result<PortGuard> {
-        // Check if already reserved in-process
-        if RESERVATIONS.contains_key(&port) {
-            return Err(CoreError::PortInUse(port));
-        }
+        use dashmap::mapref::entry::Entry;
 
-        // Try to bind to the port to check OS availability
-        let addr = SocketAddr::from(([0, 0, 0, 0], port));
-        let listener = TcpListener::bind(addr).map_err(|e| {
-            if e.kind() == std::io::ErrorKind::AddrInUse {
-                CoreError::PortInUse(port)
-            } else {
-                CoreError::from(e)
+        // Use entry API for atomic check-and-insert to eliminate race conditions
+        match RESERVATIONS.entry(port) {
+            Entry::Occupied(_) => Err(CoreError::PortInUse(port)),
+            Entry::Vacant(entry) => {
+                // Try to bind to the port to check OS availability
+                let addr = SocketAddr::from(([0, 0, 0, 0], port));
+                let listener = TcpListener::bind(addr).map_err(|e| {
+                    if e.kind() == std::io::ErrorKind::AddrInUse {
+                        CoreError::PortInUse(port)
+                    } else {
+                        CoreError::from(e)
+                    }
+                })?;
+
+                // Reserve the port in our tracking table
+                let meta = ReservationMeta {
+                    pid: process::id(),
+                    thread_id: get_thread_id(),
+                    timestamp: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                };
+
+                entry.insert(meta);
+                Ok(PortGuard { port, listener })
             }
-        })?;
-
-        // Reserve the port in our tracking table
-        let meta = ReservationMeta {
-            pid: process::id(),
-            thread_id: get_thread_id(),
-            timestamp: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
-        };
-
-        // Double-check reservation to handle race conditions
-        if let Some(_existing) = RESERVATIONS.insert(port, meta) {
-            // Someone else reserved it between our check and insert
-            warn!("Race condition detected for port {}, releasing", port);
-            return Err(CoreError::PortInUse(port));
         }
-
-        Ok(PortGuard { port, listener })
     }
 
     /// Generate a deterministic sequence of ports to try

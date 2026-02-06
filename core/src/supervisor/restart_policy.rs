@@ -203,23 +203,9 @@ impl RestartPolicyEngine {
     }
 }
 
-/// Simple pseudo-random number generator for jitter
-/// We use a simple approach to avoid adding external dependencies
+/// Simple pseudo-random f64 in [0.0, 1.0) using the shared LCG
 fn random_f64() -> f64 {
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    static SEED: AtomicU64 = AtomicU64::new(1);
-
-    // Linear congruential generator
-    let prev = SEED.load(Ordering::Relaxed);
-    let next = prev.wrapping_mul(1_103_515_245).wrapping_add(12_345);
-    SEED.store(next, Ordering::Relaxed);
-
-    // Convert to [0, 1) range
-    #[allow(clippy::cast_precision_loss)]
-    {
-        (next as f64) / (u64::MAX as f64)
-    }
+    crate::utilities::simple_rng::next_f64()
 }
 
 #[cfg(test)]

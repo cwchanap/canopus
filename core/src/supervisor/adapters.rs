@@ -129,10 +129,14 @@ impl ManagedProcess for UnixManagedProcess {
     }
 
     fn is_alive(&self) -> bool {
-        // Try a non-blocking wait to see if the process has exited
-        // This is a simple heuristic - in a real implementation we might
-        // want to use a more sophisticated approach
-        true // For now, assume it's alive until we explicitly wait
+        // Use kill(pid, 0) to check if the process still exists.
+        // Signal 0 doesn't send any signal but checks if the process
+        // exists and we have permission to signal it. ESRCH means gone.
+        let pid = self.child.pid();
+        // SAFETY: kill with signal 0 is a standard POSIX probe for process existence.
+        #[allow(unsafe_code)]
+        let ret = unsafe { libc::kill(pid as libc::pid_t, 0) };
+        ret == 0
     }
 
     fn take_stdout(&mut self) -> Option<Pin<Box<dyn AsyncRead + Send + Unpin>>> {
@@ -373,21 +377,13 @@ impl ManagedProcess for MockManagedProcess {
     }
 }
 
-// Simple random number generator for mock PIDs
+// Simple random number generator for mock PIDs using the shared LCG
 mod rand {
-    use std::sync::atomic::{AtomicU32, Ordering};
-
-    static SEED: AtomicU32 = AtomicU32::new(1);
-
     pub(super) fn random<T>() -> T
     where
         T: From<u32>,
     {
-        // Simple linear congruential generator
-        let prev = SEED.load(Ordering::Relaxed);
-        let next = prev.wrapping_mul(1_103_515_245).wrapping_add(12_345);
-        SEED.store(next, Ordering::Relaxed);
-        T::from(next)
+        T::from(crate::utilities::simple_rng::next_u32())
     }
 }
 
