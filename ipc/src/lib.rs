@@ -13,7 +13,7 @@ mod error_tests;
 pub use error::{IpcError, Result};
 
 use schema::{Message, Response};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tracing::debug;
 
@@ -43,23 +43,27 @@ impl IpcClient {
         let addr = format!("{}:{}", self.host, self.port);
 
         debug!("Connecting to daemon at {}", addr);
-        let mut stream = TcpStream::connect(&addr)
+        let stream = TcpStream::connect(&addr)
             .await
             .map_err(|e| IpcError::ConnectionFailed(e.to_string()))?;
 
-        // Send message
-        let message_data = serde_json::to_vec(message)
-            .map_err(|e| IpcError::SerializationFailed(e.to_string()))?;
+        let (reader, mut writer) = stream.into_split();
+        let mut reader = BufReader::new(reader);
 
-        stream
+        // Send message with newline delimiter
+        let mut message_data = serde_json::to_vec(message)
+            .map_err(|e| IpcError::SerializationFailed(e.to_string()))?;
+        message_data.push(b'\n');
+
+        writer
             .write_all(&message_data)
             .await
             .map_err(|e| IpcError::SendFailed(e.to_string()))?;
 
-        // Read response
-        let mut buffer = [0; 4096];
-        let n = stream
-            .read(&mut buffer)
+        // Read response until newline (handles arbitrary message sizes)
+        let mut buffer = Vec::with_capacity(4096);
+        let n = reader
+            .read_until(b'\n', &mut buffer)
             .await
             .map_err(|e| IpcError::ReceiveFailed(e.to_string()))?;
 
@@ -67,7 +71,15 @@ impl IpcClient {
             return Err(IpcError::EmptyResponse);
         }
 
-        let response: Response = serde_json::from_slice(&buffer[..n])
+        // Trim trailing newline/carriage return
+        if matches!(buffer.last(), Some(b'\n')) {
+            buffer.pop();
+            if matches!(buffer.last(), Some(b'\r')) {
+                buffer.pop();
+            }
+        }
+
+        let response: Response = serde_json::from_slice(&buffer)
             .map_err(|e| IpcError::DeserializationFailed(e.to_string()))?;
 
         Ok(response)

@@ -41,7 +41,6 @@ pub use service_task::*;
 
 /// Control messages for supervisor operations
 #[derive(Debug)]
-#[allow(clippy::large_enum_variant)]
 pub enum ControlMsg {
     /// Start the service
     Start,
@@ -49,8 +48,8 @@ pub enum ControlMsg {
     Stop,
     /// Restart the service (stop then start)
     Restart,
-    /// Update the service specification
-    UpdateSpec(ServiceSpec),
+    /// Update the service specification (boxed to avoid large enum variant)
+    UpdateSpec(Box<ServiceSpec>),
     /// Shutdown the supervisor (stop service and terminate task)
     Shutdown,
     /// Get health status information
@@ -215,7 +214,7 @@ impl SupervisorHandle {
     ///
     /// Returns an error if the supervisor task has shut down.
     pub fn update_spec(&self, spec: ServiceSpec) -> Result<()> {
-        self.send(ControlMsg::UpdateSpec(spec))
+        self.send(ControlMsg::UpdateSpec(Box::new(spec)))
     }
 
     /// Shutdown the supervisor

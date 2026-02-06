@@ -34,6 +34,42 @@ pub fn validate_config_data(data: &str) -> crate::Result<()> {
 /// Common result type for utilities
 pub type UtilityResult<T> = Result<T, crate::CoreError>;
 
+/// Simple pseudo-random number generator (linear congruential generator).
+///
+/// Avoids adding external RNG dependencies. Suitable for non-cryptographic
+/// uses like jitter and mock PIDs but NOT for security-sensitive contexts.
+pub mod simple_rng {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static SEED: AtomicU64 = AtomicU64::new(1);
+
+    /// Generate a pseudo-random u64
+    pub fn next_u64() -> u64 {
+        let prev = SEED.load(Ordering::Relaxed);
+        let next = prev.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+        SEED.store(next, Ordering::Relaxed);
+        next
+    }
+
+    /// Generate a pseudo-random u32
+    #[must_use]
+    pub fn next_u32() -> u32 {
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            next_u64() as u32
+        }
+    }
+
+    /// Generate a pseudo-random f64 in the range [0.0, 1.0)
+    #[must_use]
+    pub fn next_f64() -> f64 {
+        #[allow(clippy::cast_precision_loss)]
+        {
+            (next_u64() as f64) / (u64::MAX as f64)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
