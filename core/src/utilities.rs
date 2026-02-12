@@ -39,18 +39,18 @@ pub type UtilityResult<T> = Result<T, crate::CoreError>;
 /// Avoids adding external RNG dependencies. Suitable for non-cryptographic
 /// uses like jitter and mock PIDs but NOT for security-sensitive contexts.
 pub mod simple_rng {
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    const SEED_UNINITIALIZED: u64 = 0;
-
-    static SEED: AtomicU64 = AtomicU64::new(SEED_UNINITIALIZED);
+    static INITIALIZED: AtomicBool = AtomicBool::new(false);
+    static SEED: AtomicU64 = AtomicU64::new(0);
 
     /// Initialize the RNG with a deterministic seed (useful for testing).
     ///
     /// # Arguments
     ///
-    /// * `seed` - The seed value to use for the random number generator
+    /// * `seed` - The seed value to use for the random number generator.
+    ///            Note: 0 is a valid seed value.
     ///
     /// # Examples
     ///
@@ -64,6 +64,7 @@ pub mod simple_rng {
     /// ```
     pub fn init_seed_with_value(seed: u64) {
         SEED.store(seed, Ordering::Relaxed);
+        INITIALIZED.store(true, Ordering::Relaxed);
     }
 
     /// Initialize the RNG with entropy from system time.
@@ -92,20 +93,16 @@ pub mod simple_rng {
     /// operation to avoid race conditions when multiple threads try to initialize
     /// the seed simultaneously.
     fn ensure_seed_initialized() {
-        let current = SEED.load(Ordering::Relaxed);
-        if current == SEED_UNINITIALIZED {
-            // Use compare_exchange (not weak) to ensure reliable initialization
-            let seed = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_nanos() as u64)
-                .unwrap_or(1);
-            let _ = SEED.compare_exchange(
-                SEED_UNINITIALIZED,
-                seed,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            );
+        if INITIALIZED.load(Ordering::Relaxed) {
+            return;
         }
+        // Use compare_exchange to ensure reliable initialization
+        let seed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(1);
+        let _ = SEED.compare_exchange(0, seed, Ordering::Relaxed, Ordering::Relaxed);
+        INITIALIZED.store(true, Ordering::Relaxed);
     }
 
     /// Generate a pseudo-random u64.
@@ -174,6 +171,15 @@ pub mod simple_rng {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::LazyLock;
+    use std::sync::Mutex;
+
+    // Global lock to prevent parallel test execution from corrupting shared RNG state
+    static TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+    fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+        TEST_LOCK.lock().expect("RNG test lock poisoned")
+    }
 
     #[test]
     fn test_validate_config_data_empty() {
@@ -201,6 +207,7 @@ mod tests {
 
     #[test]
     fn test_init_seed_with_value() {
+        let _lock = test_lock();
         use simple_rng::init_seed_with_value;
         use simple_rng::next_u64;
 
@@ -220,6 +227,7 @@ mod tests {
 
     #[test]
     fn test_next_u64_must_use() {
+        let _lock = test_lock();
         use simple_rng::init_seed_with_value;
         use simple_rng::next_u64;
 
@@ -235,6 +243,7 @@ mod tests {
 
     #[test]
     fn test_next_u64_consistency() {
+        let _lock = test_lock();
         use simple_rng::init_seed_with_value;
         use simple_rng::next_u64;
 
@@ -255,6 +264,7 @@ mod tests {
 
     #[test]
     fn test_next_u32_in_range() {
+        let _lock = test_lock();
         use simple_rng::init_seed;
         use simple_rng::next_u32;
 
@@ -265,6 +275,7 @@ mod tests {
 
     #[test]
     fn test_next_f64_in_range() {
+        let _lock = test_lock();
         use simple_rng::init_seed;
         use simple_rng::next_f64;
 
@@ -278,6 +289,7 @@ mod tests {
 
     #[test]
     fn test_lazy_initialization() {
+        let _lock = test_lock();
         use simple_rng::next_u64;
 
         // Reset to uninitialized state by setting to 0
@@ -297,6 +309,7 @@ mod tests {
 
     #[test]
     fn test_thread_safety() {
+        let _lock = test_lock();
         use simple_rng::init_seed_with_value;
         use simple_rng::next_u64;
         use std::sync::Arc;
@@ -338,6 +351,7 @@ mod tests {
 
     #[test]
     fn test_fetch_update_atomicity() {
+        let _lock = test_lock();
         use simple_rng::init_seed_with_value;
         use simple_rng::next_u64;
 

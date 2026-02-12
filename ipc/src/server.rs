@@ -826,8 +826,10 @@ pub mod supervisor_adapter {
         }
 
         /// Wait for a service to reach the Ready state with a timeout.
-        async fn wait_for_readiness(handle: &SupervisorHandle) -> Result<()> {
-            let mut state_rx = handle.subscribe_to_state();
+        async fn wait_for_readiness(
+            handle: &SupervisorHandle,
+            mut state_rx: tokio::sync::watch::Receiver<schema::ServiceState>,
+        ) -> Result<()> {
             let current = *state_rx.borrow();
             if current == schema::ServiceState::Ready {
                 return Ok(());
@@ -1057,11 +1059,15 @@ pub mod supervisor_adapter {
                 }
             }
 
+            // Subscribe to state changes BEFORE calling start() to avoid missing
+            // any state transitions (Ready -> Idle) in fast-exiting services.
+            let state_rx = handle.subscribe_to_state();
+
             handle
                 .start()
                 .map_err(|e| super::IpcError::ProtocolError(e.to_string()))?;
 
-            Self::wait_for_readiness(handle).await
+            Self::wait_for_readiness(handle, state_rx).await
         }
 
         async fn status(&self, service_id: &str) -> Result<ServiceDetail> {

@@ -135,7 +135,10 @@ impl ManagedProcess for UnixManagedProcess {
         let pid = self.child.pid();
         // SAFETY: kill with signal 0 is a standard POSIX probe for process existence.
         #[allow(unsafe_code)]
-        let ret = unsafe { libc::kill(pid as libc::pid_t, 0) };
+        let ret = match i32::try_from(pid) {
+            Ok(pid_i32) => unsafe { libc::kill(pid_i32, 0) },
+            Err(_) => return false, // PID too large, consider process not alive
+        };
         ret == 0
     }
 
