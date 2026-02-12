@@ -64,7 +64,9 @@ pub mod simple_rng {
     /// ```
     pub fn init_seed_with_value(seed: u64) {
         SEED.store(seed, Ordering::Relaxed);
-        INITIALIZED.store(true, Ordering::Relaxed);
+        // Use Release ordering to ensure the SEED store is visible
+        // to other threads before they see INITIALIZED == true
+        INITIALIZED.store(true, Ordering::Release);
     }
 
     /// Initialize the RNG with entropy from system time.
@@ -93,7 +95,9 @@ pub mod simple_rng {
     /// operation to avoid race conditions when multiple threads try to initialize
     /// the seed simultaneously.
     fn ensure_seed_initialized() {
-        if INITIALIZED.load(Ordering::Relaxed) {
+        // Use Acquire ordering to synchronize with the Release store in
+        // init_seed_with_value(), ensuring we see the correct SEED value
+        if INITIALIZED.load(Ordering::Acquire) {
             return;
         }
         // Use compare_exchange to ensure reliable initialization
@@ -102,7 +106,7 @@ pub mod simple_rng {
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(1);
         let _ = SEED.compare_exchange(0, seed, Ordering::Relaxed, Ordering::Relaxed);
-        INITIALIZED.store(true, Ordering::Relaxed);
+        INITIALIZED.store(true, Ordering::Release);
     }
 
     /// Generate a pseudo-random u64.
