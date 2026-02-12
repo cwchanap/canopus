@@ -17,6 +17,10 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tracing::debug;
 
+/// Maximum allowed frame size for IPC messages (64KB)
+/// This prevents unbounded memory growth from malicious or buggy peers
+const MAX_FRAME_SIZE: usize = 64 * 1024;
+
 /// IPC client for communicating with the daemon
 #[derive(Debug)]
 pub struct IpcClient {
@@ -60,15 +64,31 @@ impl IpcClient {
             .await
             .map_err(|e| IpcError::SendFailed(e.to_string()))?;
 
-        // Read response until newline (handles arbitrary message sizes)
+        // Read response until newline with bounded buffering
         let mut buffer = Vec::with_capacity(4096);
-        let n = reader
-            .read_until(b'\n', &mut buffer)
-            .await
-            .map_err(|e| IpcError::ReceiveFailed(e.to_string()))?;
+        loop {
+            let chunk = reader
+                .fill_buf()
+                .await
+                .map_err(|e| IpcError::ReceiveFailed(e.to_string()))?;
+            if chunk.is_empty() {
+                return Err(IpcError::EmptyResponse);
+            }
 
-        if n == 0 {
-            return Err(IpcError::EmptyResponse);
+            let newline_pos = chunk.iter().position(|b| *b == b'\n');
+            let to_copy = newline_pos.map_or(chunk.len(), |idx| idx + 1);
+            let next_len = buffer.len() + to_copy;
+            if next_len > MAX_FRAME_SIZE {
+                return Err(IpcError::ProtocolError(format!(
+                    "Response size {next_len} exceeds maximum allowed size of {MAX_FRAME_SIZE} bytes"
+                )));
+            }
+
+            buffer.extend_from_slice(&chunk[..to_copy]);
+            reader.consume(to_copy);
+            if newline_pos.is_some() {
+                break;
+            }
         }
 
         // Trim trailing newline/carriage return

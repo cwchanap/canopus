@@ -129,15 +129,19 @@ impl ManagedProcess for UnixManagedProcess {
     }
 
     fn is_alive(&self) -> bool {
-        // Use kill(pid, 0) to check if the process still exists.
-        // Signal 0 doesn't send any signal but checks if the process
+        // Use killpg(pgid, 0) to check if the process group still exists.
+        // Signal 0 doesn't send any signal but checks if the process group
         // exists and we have permission to signal it. ESRCH means gone.
-        let pid = self.child.pid();
-        // SAFETY: kill with signal 0 is a standard POSIX probe for process existence.
+        // We use killpg instead of kill because:
+        // 1. The child is spawned with setsid() making it the PG leader
+        // 2. Process groups are recycled less frequently than individual PIDs
+        // 3. This reduces (but doesn't eliminate) PID reuse false positives
+        let pgid = self.child.pgid();
+        // SAFETY: killpg with signal 0 is a standard POSIX probe for process group existence.
         #[allow(unsafe_code)]
-        let ret = match i32::try_from(pid) {
-            Ok(pid_i32) => unsafe { libc::kill(pid_i32, 0) },
-            Err(_) => return false, // PID too large, consider process not alive
+        let ret = match i32::try_from(pgid) {
+            Ok(pgid_i32) => unsafe { libc::killpg(pgid_i32, 0) },
+            Err(_) => return false, // PGID too large, consider process not alive
         };
         ret == 0
     }
