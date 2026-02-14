@@ -71,11 +71,12 @@ pub mod simple_rng {
 
     /// Initialize the RNG with entropy from system time.
     ///
-    /// This is a fallback method when OS random number generator is not available.
-    /// For production use, consider using `init_seed()` which provides better entropy.
+    /// This is the canonical lazy initializer used by `ensure_seed_initialized()`
+    /// when the seed has not been explicitly initialized with `init_seed_with_value()`.
+    /// It uses system time to generate entropy, with a fallback counter if needed.
     ///
-    /// This function is automatically called on first use if the seed has not been
-    /// explicitly initialized with `init_seed_with_value()`.
+    /// Note: This function sets the `INITIALIZED` flag to prevent reinitialization.
+    /// For explicit seed control, use `init_seed_with_value()` instead.
     pub fn init_seed() {
         let seed = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -86,14 +87,19 @@ pub mod simple_rng {
                 FALLBACK_COUNTER.fetch_add(1, Ordering::Relaxed)
             });
         SEED.store(seed, Ordering::Relaxed);
+        // Use Release ordering to ensure the SEED store is visible
+        // to other threads before they see INITIALIZED == true
+        INITIALIZED.store(true, Ordering::Release);
     }
 
     /// Ensure the RNG seed is initialized before use.
     ///
-    /// This performs lazy initialization using system time if the seed hasn't been
-    /// explicitly initialized with `init_seed_with_value()`. Uses a compare-and-swap
-    /// operation to avoid race conditions when multiple threads try to initialize
-    /// the seed simultaneously.
+    /// This performs lazy initialization by calling `init_seed()` if the seed hasn't
+    /// been explicitly initialized with `init_seed_with_value()`. Uses atomic operations
+    /// to avoid race conditions when multiple threads try to initialize the seed
+    /// simultaneously.
+    ///
+    /// Note: `init_seed()` is the canonical lazy initializer called by this function.
     fn ensure_seed_initialized() {
         // Use Acquire ordering to synchronize with the Release store in
         // init_seed_with_value(), ensuring we see the correct SEED value
@@ -169,6 +175,20 @@ pub mod simple_rng {
         {
             (next_u64() as f64) / (u64::MAX as f64)
         }
+    }
+
+    /// Reset the INITIALIZED flag for testing purposes.
+    ///
+    /// This allows tests to verify that `ensure_seed_initialized()` properly
+    /// initializes the seed when called from functions like `next_u64()`.
+    ///
+    /// # Safety
+    ///
+    /// This should only be called in tests with proper synchronization (e.g.,
+    /// under a test lock) to prevent race conditions.
+    #[cfg(test)]
+    pub fn reset_initialized_for_tests() {
+        INITIALIZED.store(false, Ordering::Release);
     }
 }
 
@@ -296,10 +316,12 @@ mod tests {
         let _lock = test_lock();
         use simple_rng::next_u64;
 
-        // Reset to uninitialized state by setting to 0
-        simple_rng::init_seed_with_value(0);
+        // Reset to uninitialized state by clearing the INITIALIZED flag
+        // This ensures ensure_seed_initialized() is actually exercised
+        simple_rng::reset_initialized_for_tests();
 
-        // First call should auto-initialize and NOT return 0
+        // First call should auto-initialize via ensure_seed_initialized()
+        // and NOT return 0 (which would indicate uninitialized state)
         let val1 = next_u64();
         assert_ne!(
             val1, 0,

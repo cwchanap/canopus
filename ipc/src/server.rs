@@ -834,10 +834,10 @@ pub mod supervisor_adapter {
             if current == schema::ServiceState::Ready {
                 return Ok(());
             }
-            if matches!(
-                current,
-                schema::ServiceState::Idle | schema::ServiceState::Stopping
-            ) {
+            // Only treat Stopping as an immediate terminal state.
+            // Idle is the initial pre-start state and should not cause an error
+            // until we observe a transition during the watch loop.
+            if current == schema::ServiceState::Stopping {
                 return Err(super::IpcError::ProtocolError(format!(
                     "service entered terminal state '{current:?}' before readiness"
                 )));
