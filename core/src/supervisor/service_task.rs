@@ -432,6 +432,8 @@ impl ServiceSupervisor {
         info!("Updating spec for service '{}'", self.spec.id);
 
         let changed_fields = self.get_changed_fields(&new_spec);
+        let should_restart =
+            !matches!(self.state, InternalState::Idle) && Self::needs_restart_for_spec_change(&changed_fields);
         self.spec = new_spec;
 
         // Emit configuration updated event
@@ -443,7 +445,7 @@ impl ServiceSupervisor {
         .await;
 
         // If the service is running and critical fields changed, restart it
-        if !matches!(self.state, InternalState::Idle) && Self::needs_restart_for_spec_change() {
+        if should_restart {
             warn!(
                 "Restarting service '{}' due to specification changes",
                 self.spec.id
@@ -722,6 +724,12 @@ impl ServiceSupervisor {
         let old_state = self.state;
         self.state = new_state;
 
+        if matches!(new_state, InternalState::Ready) {
+            // Readiness startup timers are only meaningful while transitioning to Ready.
+            self.startup_timeout_timer = None;
+            self.readiness_check_timer = None;
+        }
+
         debug!(
             "Service '{}' transitioning from {:?} to {:?}",
             self.spec.id, old_state, new_state
@@ -798,11 +806,8 @@ impl ServiceSupervisor {
     }
 
     /// Check if the service needs to be restarted due to spec changes
-    const fn needs_restart_for_spec_change() -> bool {
-        // For now, assume any change requires restart
-        // In a more sophisticated implementation, we might only restart for
-        // certain types of changes (e.g., command/args but not health check config)
-        true
+    fn needs_restart_for_spec_change(changed_fields: &[String]) -> bool {
+        !changed_fields.is_empty()
     }
 
     /// Handle all timers (readiness, health, startup timeout)
@@ -1498,5 +1503,48 @@ mod tests {
 
         control_tx.send(ControlMsg::Shutdown).unwrap();
         sleep(Duration::from_millis(100)).await;
+    }
+
+    #[tokio::test]
+    async fn test_transition_to_ready_clears_startup_timeout_timer() {
+        let mut supervisor = ServiceSupervisor::new(
+            create_test_spec(),
+            Arc::new(MockProcessAdapter::new()),
+            Arc::new(crate::proxy::NoopProxyAdapter),
+            broadcast::channel(16).0,
+            watch::channel(ServiceState::Idle).0,
+        );
+
+        supervisor.startup_timeout_timer = Some(Instant::now() + Duration::from_secs(5));
+        supervisor.readiness_check_timer = Some(Instant::now() + Duration::from_secs(1));
+
+        supervisor
+            .transition_to(InternalState::Ready, Some("test transition".to_string()))
+            .await
+            .expect("transition should succeed");
+
+        assert!(supervisor.startup_timeout_timer.is_none());
+        assert!(supervisor.readiness_check_timer.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_update_spec_does_not_restart_when_spec_unchanged() {
+        let mut supervisor = ServiceSupervisor::new(
+            create_test_spec(),
+            Arc::new(MockProcessAdapter::new()),
+            Arc::new(crate::proxy::NoopProxyAdapter),
+            broadcast::channel(16).0,
+            watch::channel(ServiceState::Idle).0,
+        );
+
+        supervisor.state = InternalState::Ready;
+        let same_spec = supervisor.spec.clone();
+
+        supervisor
+            .update_spec(same_spec)
+            .await
+            .expect("update_spec should succeed");
+
+        assert_eq!(supervisor.state, InternalState::Ready);
     }
 }
