@@ -834,21 +834,34 @@ pub mod supervisor_adapter {
             if current == schema::ServiceState::Ready {
                 return Ok(());
             }
+            if matches!(
+                current,
+                schema::ServiceState::Idle | schema::ServiceState::Stopping
+            ) {
+                return Err(super::IpcError::ProtocolError(format!(
+                    "service entered terminal state '{current:?}' before readiness"
+                )));
+            }
             let timeout_secs = handle.spec.startup_timeout_secs.saturating_add(5);
             let wait = async {
                 loop {
                     if state_rx.changed().await.is_err() {
                         return Err(());
                     }
-                    if *state_rx.borrow() == schema::ServiceState::Ready {
+                    let state = *state_rx.borrow();
+                    if state == schema::ServiceState::Ready {
                         return Ok(());
+                    }
+                    if matches!(state, schema::ServiceState::Idle | schema::ServiceState::Stopping)
+                    {
+                        return Err(());
                     }
                 }
             };
             match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), wait).await {
                 Ok(Ok(())) => Ok(()),
                 Ok(Err(())) => Err(super::IpcError::ProtocolError(
-                    "service state channel closed".into(),
+                    "service failed before reaching readiness".into(),
                 )),
                 Err(_) => Err(super::IpcError::ProtocolError(
                     "timed out waiting for service readiness".into(),

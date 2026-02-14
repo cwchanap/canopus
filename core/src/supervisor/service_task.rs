@@ -321,7 +321,23 @@ impl ServiceSupervisor {
                     Some("Starting service".to_string()),
                 )
                 .await?;
-                self.spawn_process().await?;
+                if let Err(e) = self.spawn_process().await {
+                    error!("Failed to spawn service '{}': {}", self.spec.id, e);
+                    // Recover to a stable state so callers can attempt start again.
+                    self.startup_timeout_timer = None;
+                    self.readiness_check_timer = None;
+                    self.health_check_timer = None;
+                    if let Err(transition_err) = self
+                        .transition_to(InternalState::Idle, Some("Start failed".to_string()))
+                        .await
+                    {
+                        error!(
+                            "Failed to transition service '{}' to Idle after start failure: {}",
+                            self.spec.id, transition_err
+                        );
+                    }
+                    return Err(e);
+                }
 
                 if self.spec.readiness_check.is_some() || self.spec.health_check.is_some() {
                     self.transition_to(
@@ -1205,11 +1221,24 @@ impl ServiceSupervisor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::CoreError;
     use crate::supervisor::adapters::MockProcessAdapter;
     use schema::{BackoffConfig, RestartPolicy};
     use std::collections::HashMap;
     use std::time::Duration;
     use tokio::time::timeout;
+
+    #[derive(Debug)]
+    struct FailingProcessAdapter;
+
+    #[async_trait::async_trait]
+    impl ProcessAdapter for FailingProcessAdapter {
+        async fn spawn(&self, _spec: &ServiceSpec) -> Result<Box<dyn ManagedProcess>> {
+            Err(CoreError::ProcessSpawn(
+                "intentional spawn failure for test".to_string(),
+            ))
+        }
+    }
 
     fn create_test_spec() -> ServiceSpec {
         ServiceSpec {
@@ -1237,6 +1266,18 @@ mod tests {
     ) {
         let spec = create_test_spec();
         let process_adapter = Arc::new(MockProcessAdapter::new());
+        create_supervisor_with(spec, process_adapter)
+    }
+
+    fn create_supervisor_with(
+        spec: ServiceSpec,
+        process_adapter: Arc<dyn ProcessAdapter>,
+    ) -> (
+        ServiceSupervisor,
+        mpsc::UnboundedSender<ControlMsg>,
+        broadcast::Receiver<ServiceEvent>,
+        mpsc::UnboundedReceiver<ControlMsg>,
+    ) {
         let (event_tx, event_rx) = broadcast::channel(100);
         let (state_tx, _state_rx) = watch::channel(ServiceState::Idle);
 
@@ -1250,6 +1291,64 @@ mod tests {
         let (control_tx, control_rx) = mpsc::unbounded_channel();
 
         (supervisor, control_tx, event_rx, control_rx)
+    }
+
+    #[tokio::test]
+    async fn test_start_failure_recovers_to_idle() {
+        let spec = create_test_spec();
+        let process_adapter: Arc<dyn ProcessAdapter> = Arc::new(FailingProcessAdapter);
+        let (mut supervisor, control_tx, mut event_rx, control_rx) =
+            create_supervisor_with(spec, process_adapter);
+
+        tokio::spawn(async move {
+            if let Err(e) = supervisor.run(control_rx).await {
+                debug!("Supervisor terminated: {}", e);
+            }
+        });
+
+        control_tx.send(ControlMsg::Start).unwrap();
+
+        let spawning = timeout(Duration::from_millis(500), event_rx.recv())
+            .await
+            .expect("expected spawning event")
+            .expect("event stream should be open");
+        assert!(matches!(
+            spawning,
+            ServiceEvent::StateChanged {
+                to_state: ServiceState::Spawning,
+                ..
+            }
+        ));
+
+        let idle = timeout(Duration::from_millis(500), event_rx.recv())
+            .await
+            .expect("expected idle recovery event")
+            .expect("event stream should be open");
+        assert!(matches!(
+            idle,
+            ServiceEvent::StateChanged {
+                to_state: ServiceState::Idle,
+                reason: Some(reason),
+                ..
+            } if reason == "Start failed"
+        ));
+
+        // A second start should still be accepted (service is no longer wedged in Spawning).
+        control_tx.send(ControlMsg::Start).unwrap();
+
+        let second_spawning = timeout(Duration::from_millis(500), event_rx.recv())
+            .await
+            .expect("expected second spawning event")
+            .expect("event stream should be open");
+        assert!(matches!(
+            second_spawning,
+            ServiceEvent::StateChanged {
+                to_state: ServiceState::Spawning,
+                ..
+            }
+        ));
+
+        control_tx.send(ControlMsg::Shutdown).unwrap();
     }
 
     #[tokio::test]

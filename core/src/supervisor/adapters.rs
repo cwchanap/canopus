@@ -143,7 +143,15 @@ impl ManagedProcess for UnixManagedProcess {
             Ok(pgid_i32) => unsafe { libc::killpg(pgid_i32, 0) },
             Err(_) => return false, // PGID too large, consider process not alive
         };
-        ret == 0
+        if ret == 0 {
+            return true;
+        }
+
+        match std::io::Error::last_os_error().raw_os_error() {
+            Some(libc::EPERM) => true,
+            Some(libc::ESRCH) => false,
+            _ => false,
+        }
     }
 
     fn take_stdout(&mut self) -> Option<Pin<Box<dyn AsyncRead + Send + Unpin>>> {
