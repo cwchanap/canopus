@@ -989,12 +989,12 @@ pub mod supervisor_adapter {
 
             // Possibly update spec with port/hostname and ensure PATH if configured
             {
-                let mut spec = handle.spec.clone();
+                let original_spec = handle.spec.clone();
+                let mut spec = original_spec.clone();
                 let should_inject_path = self
                     .login_path
                     .as_ref()
                     .map_or(false, |_| !spec.environment.contains_key("PATH"));
-                let need_update = hostname.is_some() || chosen_port.is_some() || should_inject_path;
                 if let Some(hn) = hostname.clone() {
                     // Use route field to carry hostname for proxy integration
                     spec.route = Some(hn);
@@ -1015,6 +1015,8 @@ pub mod supervisor_adapter {
                         spec.environment.insert("PATH".to_string(), lp.clone());
                     }
                 }
+
+                let need_update = spec != original_spec;
 
                 if need_update {
                     handle

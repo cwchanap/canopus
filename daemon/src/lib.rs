@@ -13,9 +13,12 @@ use schema::{DaemonConfig, Message, Response};
 pub use simple_error::{DaemonError, Result};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tracing::{error, info, warn};
+
+/// Maximum allowed frame size for daemon TCP requests (64KB)
+const MAX_FRAME_SIZE: usize = 64 * 1024;
 
 /// The main daemon server
 #[derive(Debug)]
@@ -72,21 +75,42 @@ impl Daemon {
     }
 
     /// Handle incoming connection
-    async fn handle_connection(&self, mut stream: TcpStream) -> Result<()> {
-        let mut buffer = [0; 1024];
+    async fn handle_connection(&self, stream: TcpStream) -> Result<()> {
+        let (reader_half, mut writer_half) = stream.into_split();
+        let mut reader = BufReader::new(reader_half);
+        let mut frame = Vec::with_capacity(1024);
 
         loop {
-            let n = stream.read(&mut buffer).await?;
+            frame.clear();
+            let n = reader.read_until(b'\n', &mut frame).await?;
             if n == 0 {
                 break;
             }
 
-            let request: Message = serde_json::from_slice(&buffer[..n])?;
+            if frame.len() > MAX_FRAME_SIZE {
+                return Err(DaemonError::ConnectionError(format!(
+                    "Request size {} exceeds maximum allowed size of {} bytes",
+                    frame.len(),
+                    MAX_FRAME_SIZE
+                )));
+            }
+
+            if matches!(frame.last(), Some(b'\n')) {
+                frame.pop();
+                if matches!(frame.last(), Some(b'\r')) {
+                    frame.pop();
+                }
+            }
+            if frame.is_empty() {
+                continue;
+            }
+
+            let request: Message = serde_json::from_slice(&frame)?;
             let response = self.process_message(request);
             let mut response_data = serde_json::to_vec(&response)?;
             response_data.push(b'\n');
 
-            stream.write_all(&response_data).await?;
+            writer_half.write_all(&response_data).await?;
         }
 
         Ok(())
@@ -162,7 +186,7 @@ impl Clone for Daemon {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::io::AsyncWriteExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::io::{AsyncBufReadExt, BufReader};
     use tokio::net::TcpListener;
 
@@ -264,5 +288,37 @@ mod tests {
         let result = client_task.await.unwrap();
         assert!(result, "Expected Status response");
         server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn test_daemon_request_parsing_handles_split_frame() {
+        let daemon = Daemon::new(DaemonConfig::default());
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            daemon.handle_connection(stream).await.unwrap();
+        });
+
+        let mut client = TcpStream::connect(addr).await.unwrap();
+        let mut request = serde_json::to_vec(&Message::Status).unwrap();
+        request.push(b'\n');
+
+        let split_at = request.len() / 2;
+        client.write_all(&request[..split_at]).await.unwrap();
+        client.write_all(&request[split_at..]).await.unwrap();
+
+        let mut reader = BufReader::new(client);
+        let mut frame = Vec::new();
+        let n = reader.read_until(b'\n', &mut frame).await.unwrap();
+        assert!(n > 0);
+
+        frame.pop();
+        let response: Response = serde_json::from_slice(&frame).unwrap();
+        assert!(matches!(response, Response::Status { .. }));
+
+        drop(reader);
+        server.await.unwrap();
     }
 }
