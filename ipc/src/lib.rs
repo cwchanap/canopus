@@ -114,7 +114,7 @@ impl IpcClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
     use tokio::net::TcpListener;
 
     #[test]
@@ -130,7 +130,10 @@ mod tests {
         let addr = listener.local_addr().unwrap();
 
         let server = tokio::spawn(async move {
-            let (_stream, _) = listener.accept().await.unwrap();
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut reader = BufReader::new(stream);
+            let mut request = Vec::new();
+            let _ = reader.read_until(b'\n', &mut request).await.unwrap();
         });
 
         let client = IpcClient::new(addr.ip().to_string(), addr.port());
