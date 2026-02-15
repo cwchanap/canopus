@@ -184,45 +184,7 @@ impl ChildProcess {
 /// # Ok::<(), canopus_core::CoreError>(())
 /// ```
 pub fn spawn(cmd: &str, args: &[&str]) -> Result<ChildProcess> {
-    debug!("Spawning process: {} {:?}", cmd, args);
-
-    let mut command = Command::new(cmd);
-    command.args(args);
-    // Detach stdin so services do not block waiting for terminal input
-    command.stdin(Stdio::null());
-    // Pipe stdout/stderr so we can capture logs asynchronously
-    command.stdout(Stdio::piped());
-    command.stderr(Stdio::piped());
-
-    // Use before_exec to call setsid() in the child process
-    // Safety: setsid() is async-signal-safe and appropriate for use in before_exec
-    #[deny(unsafe_op_in_unsafe_fn)]
-    unsafe {
-        command.pre_exec(|| {
-            // Create a new session and process group
-            let result = libc::setsid();
-            if result == -1 {
-                return Err(std::io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
-
-    let child = command.spawn().map_err(|e| {
-        error!("Failed to spawn process '{cmd}': {e}");
-        CoreError::ProcessSpawn(format!("Failed to spawn '{cmd}': {e}"))
-    })?;
-
-    // tokio::process::Child::id() may return Option on some platforms
-    let raw_pid = child
-        .id()
-        .ok_or_else(|| CoreError::ProcessSpawn("Spawned child did not have a PID".to_string()))?;
-    let pid_raw = i32::try_from(raw_pid)
-        .map_err(|e| CoreError::ProcessSpawn(format!("Invalid child PID {raw_pid}: {e}")))?;
-    let pid = Pid::from_raw(pid_raw);
-    debug!("Successfully spawned process {} in new process group", pid);
-
-    Ok(ChildProcess { pid, child })
+    spawn_with(cmd, args, &std::collections::HashMap::new(), None)
 }
 
 impl ChildProcess {

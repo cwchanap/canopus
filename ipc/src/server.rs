@@ -790,6 +790,86 @@ pub mod supervisor_adapter {
             self.login_path = path;
             self
         }
+
+        /// Resolve the effective hostname for a service from all sources.
+        ///
+        /// Checks (in order): explicit hostname, metadata store, runtime metadata, spec route.
+        async fn resolve_hostname(
+            &self,
+            service_id: &str,
+            explicit: Option<String>,
+            handle: &SupervisorHandle,
+        ) -> Option<String> {
+            if explicit.is_some() {
+                return explicit;
+            }
+            if let Some(meta) = &self.meta {
+                if let Ok(Some(hn)) = meta.get_hostname(service_id).await {
+                    return Some(hn);
+                }
+            }
+            if let Ok(map) = self.runtime_meta.lock() {
+                if let Some(entry) = map.get(service_id) {
+                    if let Some(hn) = entry.hostname.clone() {
+                        return Some(hn);
+                    }
+                }
+            }
+            if let Ok(spec) = handle.get_spec().await {
+                if let Some(route) = spec.route {
+                    if !route.is_empty() {
+                        return Some(route);
+                    }
+                }
+            }
+            None
+        }
+
+        /// Wait for a service to reach the Ready state with a timeout.
+        async fn wait_for_readiness(
+            handle: &SupervisorHandle,
+            mut state_rx: tokio::sync::watch::Receiver<schema::ServiceState>,
+        ) -> Result<()> {
+            let current = *state_rx.borrow();
+            if current == schema::ServiceState::Ready {
+                return Ok(());
+            }
+            // Only treat Stopping as an immediate terminal state.
+            // Idle is the initial pre-start state and should not cause an error
+            // until we observe a transition during the watch loop.
+            if current == schema::ServiceState::Stopping {
+                return Err(super::IpcError::ProtocolError(format!(
+                    "service entered terminal state '{current:?}' before readiness"
+                )));
+            }
+            let timeout_secs = handle.spec.startup_timeout_secs.saturating_add(5);
+            let wait = async {
+                loop {
+                    if state_rx.changed().await.is_err() {
+                        return Err(());
+                    }
+                    let state = *state_rx.borrow();
+                    if state == schema::ServiceState::Ready {
+                        return Ok(());
+                    }
+                    if matches!(
+                        state,
+                        schema::ServiceState::Idle | schema::ServiceState::Stopping
+                    ) {
+                        return Err(());
+                    }
+                }
+            };
+            match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), wait).await {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(())) => Err(super::IpcError::ProtocolError(
+                    "service failed before reaching readiness".into(),
+                )),
+                Err(_) => Err(super::IpcError::ProtocolError(
+                    "timed out waiting for service readiness".into(),
+                )),
+            }
+        }
     }
 
     #[async_trait]
@@ -912,12 +992,12 @@ pub mod supervisor_adapter {
 
             // Possibly update spec with port/hostname and ensure PATH if configured
             {
-                let mut spec = handle.spec.clone();
+                let original_spec = handle.spec.clone();
+                let mut spec = original_spec.clone();
                 let should_inject_path = self
                     .login_path
                     .as_ref()
                     .map_or(false, |_| !spec.environment.contains_key("PATH"));
-                let need_update = hostname.is_some() || chosen_port.is_some() || should_inject_path;
                 if let Some(hn) = hostname.clone() {
                     // Use route field to carry hostname for proxy integration
                     spec.route = Some(hn);
@@ -938,6 +1018,8 @@ pub mod supervisor_adapter {
                         spec.environment.insert("PATH".to_string(), lp.clone());
                     }
                 }
+
+                let need_update = spec != original_spec;
 
                 if need_update {
                     handle
@@ -982,90 +1064,28 @@ pub mod supervisor_adapter {
                 }
             }
 
-            // Persist the effective hostname to the metadata store and update runtime metadata
-            // This mirrors the same precedence as above but runs on all platforms.
-            {
-                let mut persist_hostname = hostname.clone();
-
-                if persist_hostname.is_none() {
-                    if let Some(meta) = &self.meta {
-                        if let Ok(hn) = meta.get_hostname(service_id).await {
-                            if hn.is_some() {
-                                persist_hostname = hn;
-                            }
-                        }
-                    }
+            // Resolve and persist the effective hostname from all sources
+            if let Some(hn) = self.resolve_hostname(service_id, hostname, handle).await {
+                if let Some(meta) = &self.meta {
+                    let _ = meta.set_hostname(service_id, Some(hn.as_str())).await;
                 }
-
-                if persist_hostname.is_none() {
-                    if let Ok(map) = self.runtime_meta.lock() {
-                        if let Some(entry) = map.get(service_id) {
-                            if let Some(hn) = entry.hostname.clone() {
-                                persist_hostname = Some(hn);
-                            }
-                        }
-                    }
-                }
-
-                if persist_hostname.is_none() {
-                    if let Ok(spec) = handle.get_spec().await {
-                        if let Some(route) = spec.route {
-                            if !route.is_empty() {
-                                persist_hostname = Some(route);
-                            }
-                        }
-                    }
-                }
-
-                if let Some(hn) = persist_hostname {
-                    if let Some(meta) = &self.meta {
-                        let _ = meta.set_hostname(service_id, Some(hn.as_str())).await;
-                    }
-                    if let Ok(mut map) = self.runtime_meta.lock() {
-                        let entry = map
-                            .entry(service_id.to_string())
-                            .or_insert_with(RuntimeMetaEntry::default);
-                        entry.hostname = Some(hn);
-                    }
+                if let Ok(mut map) = self.runtime_meta.lock() {
+                    let entry = map
+                        .entry(service_id.to_string())
+                        .or_insert_with(RuntimeMetaEntry::default);
+                    entry.hostname = Some(hn);
                 }
             }
 
-            // Subscribe to state changes before starting to avoid missing Ready transition
-            let mut state_rx = handle.subscribe_to_state();
+            // Subscribe to state changes BEFORE calling start() to avoid missing
+            // any state transitions (Ready -> Idle) in fast-exiting services.
+            let state_rx = handle.subscribe_to_state();
 
             handle
                 .start()
                 .map_err(|e| super::IpcError::ProtocolError(e.to_string()))?;
 
-            // Default wait-ready behavior: wait until service reaches Ready state
-            let current = *state_rx.borrow();
-            let result = if current == schema::ServiceState::Ready {
-                Ok(())
-            } else {
-                let timeout_secs = handle.spec.startup_timeout_secs.saturating_add(5);
-                let wait = async {
-                    loop {
-                        if state_rx.changed().await.is_err() {
-                            return Err(());
-                        }
-                        if *state_rx.borrow() == schema::ServiceState::Ready {
-                            return Ok(());
-                        }
-                    }
-                };
-
-                match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), wait).await
-                {
-                    Ok(Ok(())) => Ok(()),
-                    Ok(Err(())) => Err(super::IpcError::ProtocolError(
-                        "service state channel closed".into(),
-                    )),
-                    Err(_) => Err(super::IpcError::ProtocolError(
-                        "timed out waiting for service readiness".into(),
-                    )),
-                }
-            };
-            result
+            Self::wait_for_readiness(handle, state_rx).await
         }
 
         async fn status(&self, service_id: &str) -> Result<ServiceDetail> {

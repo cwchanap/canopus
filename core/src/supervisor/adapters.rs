@@ -129,10 +129,28 @@ impl ManagedProcess for UnixManagedProcess {
     }
 
     fn is_alive(&self) -> bool {
-        // Try a non-blocking wait to see if the process has exited
-        // This is a simple heuristic - in a real implementation we might
-        // want to use a more sophisticated approach
-        true // For now, assume it's alive until we explicitly wait
+        // Use killpg(pgid, 0) to check if the process group still exists.
+        // Signal 0 doesn't send any signal but checks if the process group
+        // exists and we have permission to signal it. ESRCH means gone.
+        // We use killpg instead of kill because:
+        // 1. The child is spawned with setsid() making it the PG leader
+        // 2. Process groups are recycled less frequently than individual PIDs
+        // 3. This reduces (but doesn't eliminate) PID reuse false positives
+        let pgid = self.child.pgid();
+        // SAFETY: killpg with signal 0 is a standard POSIX probe for process group existence.
+        #[allow(unsafe_code)]
+        let ret = match i32::try_from(pgid) {
+            Ok(pgid_i32) => unsafe { libc::killpg(pgid_i32, 0) },
+            Err(_) => return false, // PGID too large, consider process not alive
+        };
+        if ret == 0 {
+            return true;
+        }
+
+        matches!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::EPERM)
+        )
     }
 
     fn take_stdout(&mut self) -> Option<Pin<Box<dyn AsyncRead + Send + Unpin>>> {
@@ -373,21 +391,13 @@ impl ManagedProcess for MockManagedProcess {
     }
 }
 
-// Simple random number generator for mock PIDs
+// Simple random number generator for mock PIDs using the shared LCG
 mod rand {
-    use std::sync::atomic::{AtomicU32, Ordering};
-
-    static SEED: AtomicU32 = AtomicU32::new(1);
-
     pub(super) fn random<T>() -> T
     where
         T: From<u32>,
     {
-        // Simple linear congruential generator
-        let prev = SEED.load(Ordering::Relaxed);
-        let next = prev.wrapping_mul(1_103_515_245).wrapping_add(12_345);
-        SEED.store(next, Ordering::Relaxed);
-        T::from(next)
+        T::from(crate::utilities::simple_rng::next_u32())
     }
 }
 
