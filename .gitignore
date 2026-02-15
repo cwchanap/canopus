@@ -19,6 +19,9 @@
 *.tmp
 *.bak
 
+# AI tools
+.claude/settings.local.json
+
 # OS generated files
 Thumbs.db
 .DS_Store?
