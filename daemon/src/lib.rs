@@ -186,12 +186,12 @@ impl Clone for Daemon {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
     /// Test that daemon responses include a newline terminator.
-    /// This ensures compatibility with IpcClient which expects newline-delimited JSON.
+    /// This ensures compatibility with `IpcClient` which expects newline-delimited JSON.
     #[tokio::test]
     async fn test_daemon_response_includes_newline() {
         let daemon = Daemon::new(DaemonConfig::default());
@@ -223,7 +223,7 @@ mod tests {
         server.await.unwrap();
     }
 
-    /// Test that verifies the handle_connection method adds newline to responses.
+    /// Test that verifies the `handle_connection` method adds newline to responses.
     /// This directly tests the response formatting without starting the full daemon.
     #[tokio::test]
     async fn test_response_format_includes_newline() {
