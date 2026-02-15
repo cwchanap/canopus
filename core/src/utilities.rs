@@ -44,6 +44,7 @@ pub mod simple_rng {
 
     static INITIALIZED: AtomicBool = AtomicBool::new(false);
     static SEED: AtomicU64 = AtomicU64::new(0);
+    static FALLBACK_COUNTER: AtomicU64 = AtomicU64::new(1);
 
     /// Initialize the RNG with a deterministic seed (useful for testing).
     ///
@@ -63,10 +64,14 @@ pub mod simple_rng {
     /// let val2 = canopus_core::utilities::simple_rng::next_u64();
     /// ```
     pub fn init_seed_with_value(seed: u64) {
-        SEED.store(seed, Ordering::Relaxed);
-        // Use Release ordering to ensure the SEED store is visible
-        // to other threads before they see INITIALIZED == true
-        INITIALIZED.store(true, Ordering::Release);
+        if SEED
+            .compare_exchange(0, seed, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+        {
+            // Use Release ordering to ensure the SEED store is visible
+            // to other threads before they see INITIALIZED == true
+            INITIALIZED.store(true, Ordering::Release);
+        }
     }
 
     fn system_seed_or(default: u64) -> u64 {
@@ -83,10 +88,15 @@ pub mod simple_rng {
     /// when the seed has not been explicitly initialized with `init_seed_with_value()`.
     /// It uses system time to generate entropy, with a fallback counter if needed.
     ///
+    /// This function is not protected against concurrent calls. Call it during
+    /// single-threaded startup before other threads may access `SEED`,
+    /// `INITIALIZED`, or `FALLBACK_COUNTER`. For concurrent paths, callers should
+    /// use `ensure_seed_initialized()` so initialization follows the coordinated
+    /// behavior for `SEED`/`INITIALIZED`.
+    ///
     /// Note: This function sets the `INITIALIZED` flag to prevent reinitialization.
     /// For explicit seed control, use `init_seed_with_value()` instead.
     pub fn init_seed() {
-        static FALLBACK_COUNTER: AtomicU64 = AtomicU64::new(1);
         let fallback = FALLBACK_COUNTER.fetch_add(1, Ordering::Relaxed);
         let seed = system_seed_or(fallback);
         SEED.store(seed, Ordering::Relaxed);
@@ -98,21 +108,16 @@ pub mod simple_rng {
     /// Ensure the RNG seed is initialized before use.
     ///
     /// This performs lazy initialization by calling `init_seed()` if the seed hasn't
-    /// been explicitly initialized with `init_seed_with_value()`. Uses atomic operations
-    /// to avoid race conditions when multiple threads try to initialize the seed
-    /// simultaneously.
+    /// been explicitly initialized with `init_seed_with_value()`.
     ///
     /// Note: `init_seed()` is the canonical lazy initializer called by this function.
     fn ensure_seed_initialized() {
         // Use Acquire ordering to synchronize with the Release store in
         // init_seed_with_value(), ensuring we see the correct SEED value
-        if INITIALIZED.load(Ordering::Acquire) {
+        if !INITIALIZED.load(Ordering::Acquire) {
+            init_seed();
             return;
         }
-        // Use compare_exchange to ensure reliable initialization
-        let seed = system_seed_or(1);
-        let _ = SEED.compare_exchange(0, seed, Ordering::Relaxed, Ordering::Relaxed);
-        INITIALIZED.store(true, Ordering::Release);
     }
 
     /// Generate a pseudo-random u64.
@@ -173,7 +178,7 @@ pub mod simple_rng {
     pub fn next_f64() -> f64 {
         #[allow(clippy::cast_precision_loss)]
         {
-            (next_u64() as f64) / (u64::MAX as f64)
+            (next_u64() as f64) / (u64::MAX as f64 + 1.0)
         }
     }
 
@@ -188,13 +193,17 @@ pub mod simple_rng {
     /// under a test lock) to prevent race conditions.
     #[cfg(test)]
     pub fn reset_initialized_for_tests() {
+        SEED.store(0, Ordering::Relaxed);
+        FALLBACK_COUNTER.store(1, Ordering::Relaxed);
         INITIALIZED.store(false, Ordering::Release);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::simple_rng::{init_seed, init_seed_with_value, next_f64, next_u32, next_u64};
+    use super::simple_rng::{
+        init_seed, init_seed_with_value, next_f64, next_u32, next_u64, reset_initialized_for_tests,
+    };
     use super::*;
     use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
     use std::thread;
@@ -203,7 +212,9 @@ mod tests {
     static TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     fn test_lock() -> MutexGuard<'static, ()> {
-        TEST_LOCK.lock().expect("RNG test lock poisoned")
+        let lock = TEST_LOCK.lock().expect("RNG test lock poisoned");
+        reset_initialized_for_tests();
+        lock
     }
 
     #[test]
@@ -239,6 +250,7 @@ mod tests {
         let val2 = next_u64();
 
         // Reset to same seed
+        reset_initialized_for_tests();
         init_seed_with_value(12345);
         let val1_repeat = next_u64();
         let val2_repeat = next_u64();
@@ -271,6 +283,7 @@ mod tests {
         let sequence: Vec<u64> = (0..5).map(|_| next_u64()).collect();
 
         // Reset to same seed and verify sequence is reproducible
+        reset_initialized_for_tests();
         init_seed_with_value(42);
         for (i, expected) in sequence.iter().enumerate() {
             let actual = next_u64();
@@ -307,7 +320,7 @@ mod tests {
 
         // Reset to uninitialized state by clearing the INITIALIZED flag
         // This ensures ensure_seed_initialized() is actually exercised
-        simple_rng::reset_initialized_for_tests();
+        reset_initialized_for_tests();
 
         // First call should auto-initialize via ensure_seed_initialized()
         // and NOT return 0 (which would indicate uninitialized state)
@@ -372,6 +385,7 @@ mod tests {
         init_seed_with_value(1);
         let seq1: Vec<u64> = (0..10).map(|_| next_u64()).collect();
 
+        reset_initialized_for_tests();
         init_seed_with_value(1);
         let seq2: Vec<u64> = (0..10).map(|_| next_u64()).collect();
 
@@ -389,5 +403,83 @@ mod tests {
                 window[0], window[1]
             );
         }
+    }
+
+    #[test]
+    fn test_seed_zero_deterministic() {
+        let _lock = test_lock();
+
+        // Seed 0 is a valid deterministic seed, not an uninitialized sentinel
+        init_seed_with_value(0);
+        let seq1: Vec<u64> = (0..10).map(|_| next_u64()).collect();
+
+        // Reset and verify same sequence
+        reset_initialized_for_tests();
+        init_seed_with_value(0);
+        let seq2: Vec<u64> = (0..10).map(|_| next_u64()).collect();
+
+        assert_eq!(seq1, seq2, "Seed 0 should produce deterministic sequence");
+    }
+
+    #[test]
+    fn test_seed_zero_with_concurrent_access() {
+        let _lock = test_lock();
+
+        // Verify seed 0 produces deterministic sequence even with concurrent next_u64 calls
+        // This tests the fix for the race condition where seed 0 could be overwritten
+        init_seed_with_value(0);
+
+        let results = Arc::new(Mutex::new(Vec::new()));
+        let mut handles = vec![];
+
+        for _ in 0..5 {
+            let results_clone = Arc::clone(&results);
+            let handle = thread::spawn(move || {
+                for _ in 0..20 {
+                    let val = next_u64();
+                    let mut results = results_clone.lock().unwrap();
+                    results.push(val);
+                }
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // Now reset to seed 0 and verify we get the same sequence
+        reset_initialized_for_tests();
+        init_seed_with_value(0);
+
+        let results2 = Arc::new(Mutex::new(Vec::new()));
+        let mut handles2 = vec![];
+
+        for _ in 0..5 {
+            let results_clone = Arc::clone(&results2);
+            let handle = thread::spawn(move || {
+                for _ in 0..20 {
+                    let val = next_u64();
+                    let mut results = results_clone.lock().unwrap();
+                    results.push(val);
+                }
+            });
+            handles2.push(handle);
+        }
+
+        for handle in handles2 {
+            handle.join().unwrap();
+        }
+
+        // Compare sorted results (order may differ due to thread scheduling)
+        let mut seq1 = results.lock().unwrap().clone();
+        let mut seq2 = results2.lock().unwrap().clone();
+        seq1.sort();
+        seq2.sort();
+
+        assert_eq!(
+            seq1, seq2,
+            "Seed 0 should produce same values regardless of thread interleaving"
+        );
     }
 }

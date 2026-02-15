@@ -72,7 +72,12 @@ impl IpcClient {
                 .await
                 .map_err(|e| IpcError::ReceiveFailed(e.to_string()))?;
             if chunk.is_empty() {
-                return Err(IpcError::EmptyResponse);
+                if buffer.is_empty() {
+                    return Err(IpcError::EmptyResponse);
+                }
+                return Err(IpcError::ProtocolError(
+                    "incomplete frame: connection closed before newline terminator".to_string(),
+                ));
             }
 
             let newline_pos = chunk.iter().position(|b| *b == b'\n');
@@ -109,11 +114,65 @@ impl IpcClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
 
     #[test]
     fn test_ipc_client_creation() {
         let client = IpcClient::new("localhost", 8080);
         assert_eq!(client.host, "localhost");
         assert_eq!(client.port, 8080);
+    }
+
+    #[tokio::test]
+    async fn test_send_message_returns_empty_response_on_immediate_eof() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.unwrap();
+        });
+
+        let client = IpcClient::new(addr.ip().to_string(), addr.port());
+        let result = client.send_message(&Message::Status).await;
+        assert!(matches!(result, Err(IpcError::EmptyResponse)));
+
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_send_message_returns_protocol_error_on_incomplete_frame() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            let mut byte = [0_u8; 1];
+            loop {
+                let n = stream.read(&mut byte).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                request.push(byte[0]);
+                if byte[0] == b'\n' {
+                    break;
+                }
+            }
+
+            let partial = br#"{\"type\":\"Ok\",\"message\":\"partial\"}"#;
+            stream.write_all(partial).await.unwrap();
+        });
+
+        let client = IpcClient::new(addr.ip().to_string(), addr.port());
+        let result = client.send_message(&Message::Status).await;
+        match result {
+            Err(IpcError::ProtocolError(msg)) => {
+                assert!(msg.contains("incomplete frame"));
+            }
+            other => panic!("expected ProtocolError for incomplete frame, got {other:?}"),
+        }
+
+        server.await.unwrap();
     }
 }
