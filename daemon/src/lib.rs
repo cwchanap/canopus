@@ -82,20 +82,37 @@ impl Daemon {
 
         loop {
             frame.clear();
-            let n = reader.read_until(b'\n', &mut frame).await?;
-            if n == 0 {
+            let mut saw_newline = false;
+
+            loop {
+                let chunk = reader.fill_buf().await?;
+                if chunk.is_empty() {
+                    break;
+                }
+
+                let newline_pos = chunk.iter().position(|b| *b == b'\n');
+                let to_copy = newline_pos.map_or(chunk.len(), |idx| idx + 1);
+                let next_len = frame.len() + to_copy;
+                if next_len > MAX_FRAME_SIZE {
+                    return Err(DaemonError::ConnectionError(format!(
+                        "Request size {} exceeds maximum allowed size of {} bytes",
+                        next_len, MAX_FRAME_SIZE
+                    )));
+                }
+
+                frame.extend_from_slice(&chunk[..to_copy]);
+                reader.consume(to_copy);
+                if newline_pos.is_some() {
+                    saw_newline = true;
+                    break;
+                }
+            }
+
+            if frame.is_empty() {
                 break;
             }
 
-            if frame.len() > MAX_FRAME_SIZE {
-                return Err(DaemonError::ConnectionError(format!(
-                    "Request size {} exceeds maximum allowed size of {} bytes",
-                    frame.len(),
-                    MAX_FRAME_SIZE
-                )));
-            }
-
-            if matches!(frame.last(), Some(b'\n')) {
+            if saw_newline {
                 frame.pop();
                 if matches!(frame.last(), Some(b'\r')) {
                     frame.pop();
@@ -320,5 +337,29 @@ mod tests {
 
         drop(reader);
         server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_daemon_rejects_oversized_request_incrementally() {
+        let daemon = Daemon::new(DaemonConfig::default());
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            daemon.handle_connection(stream).await
+        });
+
+        let mut client = TcpStream::connect(addr).await.unwrap();
+        let oversized = vec![b'x'; MAX_FRAME_SIZE + 1];
+        client.write_all(&oversized).await.unwrap();
+
+        let result = server.await.unwrap();
+        match result {
+            Err(DaemonError::ConnectionError(msg)) => {
+                assert!(msg.contains("exceeds maximum allowed size"));
+            }
+            other => panic!("expected ConnectionError for oversized request, got {other:?}"),
+        }
     }
 }
