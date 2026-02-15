@@ -89,7 +89,7 @@ impl ProbeExecution {
         }
     }
 
-    /// Get duration in milliseconds, clamped to u64::MAX
+    /// Get duration in milliseconds, clamped to `u64::MAX`
     fn duration_ms(&self) -> u64 {
         u64::try_from(self.duration.as_millis()).unwrap_or(u64::MAX)
     }
@@ -432,8 +432,8 @@ impl ServiceSupervisor {
         info!("Updating spec for service '{}'", self.spec.id);
 
         let changed_fields = self.get_changed_fields(&new_spec);
-        let should_restart =
-            !matches!(self.state, InternalState::Idle) && Self::needs_restart_for_spec_change(&changed_fields);
+        let should_restart = !matches!(self.state, InternalState::Idle)
+            && Self::needs_restart_for_spec_change(&changed_fields);
         self.spec = new_spec;
 
         // Emit configuration updated event
@@ -806,7 +806,7 @@ impl ServiceSupervisor {
     }
 
     /// Check if the service needs to be restarted due to spec changes
-    fn needs_restart_for_spec_change(changed_fields: &[String]) -> bool {
+    const fn needs_restart_for_spec_change(changed_fields: &[String]) -> bool {
         !changed_fields.is_empty()
     }
 
@@ -1226,8 +1226,8 @@ impl ServiceSupervisor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::CoreError;
     use crate::supervisor::adapters::MockProcessAdapter;
+    use crate::CoreError;
     use schema::{BackoffConfig, RestartPolicy};
     use std::collections::HashMap;
     use std::time::Duration;

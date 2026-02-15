@@ -147,11 +147,10 @@ impl ManagedProcess for UnixManagedProcess {
             return true;
         }
 
-        match std::io::Error::last_os_error().raw_os_error() {
-            Some(libc::EPERM) => true,
-            Some(libc::ESRCH) => false,
-            _ => false,
-        }
+        matches!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::EPERM)
+        )
     }
 
     fn take_stdout(&mut self) -> Option<Pin<Box<dyn AsyncRead + Send + Unpin>>> {

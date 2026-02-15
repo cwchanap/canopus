@@ -852,8 +852,10 @@ pub mod supervisor_adapter {
                     if state == schema::ServiceState::Ready {
                         return Ok(());
                     }
-                    if matches!(state, schema::ServiceState::Idle | schema::ServiceState::Stopping)
-                    {
+                    if matches!(
+                        state,
+                        schema::ServiceState::Idle | schema::ServiceState::Stopping
+                    ) {
                         return Err(());
                     }
                 }
@@ -944,6 +946,7 @@ pub mod supervisor_adapter {
             Ok(out)
         }
 
+        #[allow(clippy::too_many_lines)]
         async fn start(
             &self,
             service_id: &str,
