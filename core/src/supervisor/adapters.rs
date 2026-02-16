@@ -146,7 +146,9 @@ impl ManagedProcess for UnixManagedProcess {
                 unsafe { libc::killpg(pgid_i32, 0) }
             }
             Err(e) => {
-                tracing::warn!("PGID {pgid} cannot be converted to i32: {e}. Treating process as not alive.");
+                tracing::warn!(
+                    "PGID {pgid} cannot be converted to i32: {e}. Treating process as not alive."
+                );
                 return false;
             }
         };

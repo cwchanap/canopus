@@ -504,10 +504,7 @@ mod tests {
         let seq_42: Vec<u64> = (0..5).map(|_| next_u64()).collect();
 
         // Second call with different seed should be rejected
-        assert!(
-            !init_seed_with_value(99),
-            "Second init should be rejected"
-        );
+        assert!(!init_seed_with_value(99), "Second init should be rejected");
 
         // Verify sequence still matches seed 42
         reset_initialized_for_tests();
