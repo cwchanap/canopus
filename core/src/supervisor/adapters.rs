@@ -134,14 +134,21 @@ impl ManagedProcess for UnixManagedProcess {
         // exists and we have permission to signal it. ESRCH means gone.
         // We use killpg instead of kill because:
         // 1. The child is spawned with setsid() making it the PG leader
-        // 2. Process groups are recycled less frequently than individual PIDs
+        // 2. Since the child is the PG leader, the PGID equals its PID and
+        //    checking the group confirms the leader is still present
         // 3. This reduces (but doesn't eliminate) PID reuse false positives
         let pgid = self.child.pgid();
-        // SAFETY: killpg with signal 0 is a standard POSIX probe for process group existence.
         #[allow(unsafe_code)]
         let ret = match i32::try_from(pgid) {
-            Ok(pgid_i32) => unsafe { libc::killpg(pgid_i32, 0) },
-            Err(_) => return false, // PGID too large, consider process not alive
+            Ok(pgid_i32) => {
+                // SAFETY: killpg with signal 0 is a standard POSIX probe for
+                // process group existence. It does not send any actual signal.
+                unsafe { libc::killpg(pgid_i32, 0) }
+            }
+            Err(e) => {
+                tracing::warn!("PGID {pgid} cannot be converted to i32: {e}. Treating process as not alive.");
+                return false;
+            }
         };
         if ret == 0 {
             return true;
@@ -520,5 +527,37 @@ mod tests {
         let mut process = adapter.spawn(&spec).await.unwrap();
         let exit = process.wait().await.unwrap();
         assert_eq!(exit.exit_code, Some(1));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_unix_is_alive_after_termination() {
+        let adapter = UnixProcessAdapter::new();
+        let spec = ServiceSpec {
+            id: "test-alive".to_string(),
+            name: "Test Alive".to_string(),
+            command: "sleep".to_string(),
+            args: vec!["60".to_string()],
+            environment: HashMap::default(),
+            working_directory: None,
+            route: None,
+            restart_policy: schema::RestartPolicy::Never,
+            backoff_config: BackoffConfig::default(),
+            health_check: None,
+            readiness_check: None,
+            graceful_timeout_secs: 5,
+            startup_timeout_secs: 10,
+        };
+
+        let mut process = adapter.spawn(&spec).await.unwrap();
+        assert!(process.is_alive(), "Process should be alive after spawn");
+
+        process.terminate().await.unwrap();
+        let _exit = process.wait().await.unwrap();
+
+        assert!(
+            !process.is_alive(),
+            "Process should not be alive after terminate + wait"
+        );
     }
 }

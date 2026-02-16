@@ -163,7 +163,7 @@ mod tests {
                 }
             }
 
-            let partial = br#"{\"type\":\"Ok\",\"message\":\"partial\"}"#;
+            let partial = br#"{"type":"Ok","message":"partial"}"#;
             stream.write_all(partial).await.unwrap();
         });
 

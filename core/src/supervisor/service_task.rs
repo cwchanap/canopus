@@ -76,7 +76,6 @@ struct ProbeExecution {
 }
 
 impl ProbeExecution {
-    /// Execute a probe and return the result
     async fn run(check: &schema::HealthCheck) -> Self {
         let start_time = Instant::now();
         let result = health::run_probe(check).await;
@@ -89,7 +88,7 @@ impl ProbeExecution {
         }
     }
 
-    /// Get duration in milliseconds, clamped to `u64::MAX`
+    /// Get duration in milliseconds. Returns `u64::MAX` if the duration exceeds the `u64` range.
     fn duration_ms(&self) -> u64 {
         u64::try_from(self.duration.as_millis()).unwrap_or(u64::MAX)
     }
@@ -821,7 +820,7 @@ impl ServiceSupervisor {
         self.handle_restart_timer(now).await?;
         self.handle_startup_timeout(now).await?;
         self.handle_readiness_timer(now).await?;
-        self.handle_health_timer(now).await;
+        self.handle_health_timer(now).await?;
 
         Ok(())
     }
@@ -920,15 +919,15 @@ impl ServiceSupervisor {
     }
 
     /// Handle health check scheduling and execution
-    async fn handle_health_timer(&mut self, now: Instant) {
+    async fn handle_health_timer(&mut self, now: Instant) -> Result<()> {
         if !matches!(self.state, InternalState::Ready) {
-            return;
+            return Ok(());
         }
 
         if let Some(check_time) = self.health_check_timer {
             if now >= check_time {
                 self.health_check_timer = None;
-                self.perform_health_check().await;
+                self.perform_health_check().await?;
             }
         } else if let Some(ref health_check) = self.spec.health_check {
             self.health_check_timer = Some(now + health_check.interval());
@@ -938,6 +937,7 @@ impl ServiceSupervisor {
                 health_check.interval()
             );
         }
+        Ok(())
     }
 
     /// Get a snapshot of the current health status
@@ -1057,7 +1057,7 @@ impl ServiceSupervisor {
     }
 
     /// Perform a health check for liveness
-    async fn perform_health_check(&mut self) {
+    async fn perform_health_check(&mut self) -> Result<()> {
         if let Some(ref health_check) = self.spec.health_check {
             debug!("Performing health check for service '{}'", self.spec.id);
 
@@ -1137,18 +1137,13 @@ impl ServiceSupervisor {
                     // Ensure detachment before restart (idempotent)
                     self.detach_from_proxy_if_attached().await;
 
-                    // Reset the failure counter
+                    // Restart the service due to health check failures.
+                    // Only reset the failure counter after a successful restart
+                    // to avoid masking persistent restart failures.
+                    self.restart_service().await?;
                     self.health_failure_count = 0;
 
-                    // Restart the service due to health check failures
-                    if let Err(e) = self.restart_service().await {
-                        error!(
-                            "Failed to restart unhealthy service '{}': {}",
-                            self.spec.id, e
-                        );
-                    }
-
-                    return; // Skip scheduling next check as we're restarting
+                    return Ok(()); // Skip scheduling next check as we're restarting
                 }
             }
 
@@ -1160,6 +1155,7 @@ impl ServiceSupervisor {
                 health_check.interval()
             );
         }
+        Ok(())
     }
 
     /// Attempt to attach to reverse proxy using readiness configuration

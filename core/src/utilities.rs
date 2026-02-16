@@ -38,6 +38,10 @@ pub type UtilityResult<T> = Result<T, crate::CoreError>;
 ///
 /// Avoids adding external RNG dependencies. Suitable for non-cryptographic
 /// uses like jitter and mock PIDs but NOT for security-sensitive contexts.
+///
+/// Note: The LCG constants used (1,103,515,245 and 12,345) are the classic
+/// 32-bit constants from Numerical Recipes. Applied to 64-bit state, the
+/// statistical quality is low but adequate for jitter and mock PIDs.
 pub mod simple_rng {
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -48,10 +52,13 @@ pub mod simple_rng {
 
     /// Initialize the RNG with a deterministic seed (useful for testing).
     ///
+    /// Returns `true` if the seed was accepted, `false` if the RNG was already
+    /// initialized (by a prior call to this function or by lazy initialization).
+    /// Only the first caller wins; subsequent calls are no-ops.
+    ///
     /// # Arguments
     ///
-    /// * `seed` - The seed value to use for the random number generator.
-    ///   Note: 0 is a valid seed value.
+    /// * `seed` - The seed value to use. All `u64` values including 0 are valid.
     ///
     /// # Examples
     ///
@@ -59,18 +66,21 @@ pub mod simple_rng {
     /// use canopus_core::utilities::simple_rng::init_seed_with_value;
     ///
     /// // For reproducible test results
-    /// init_seed_with_value(42);
+    /// assert!(init_seed_with_value(42));
     /// let val1 = canopus_core::utilities::simple_rng::next_u64();
     /// let val2 = canopus_core::utilities::simple_rng::next_u64();
     /// ```
-    pub fn init_seed_with_value(seed: u64) {
-        if SEED
-            .compare_exchange(0, seed, Ordering::Relaxed, Ordering::Relaxed)
+    pub fn init_seed_with_value(seed: u64) -> bool {
+        // Use INITIALIZED as the guard (not SEED) so that seed value 0 works correctly
+        if INITIALIZED
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()
         {
-            // Use Release ordering to ensure the SEED store is visible
-            // to other threads before they see INITIALIZED == true
-            INITIALIZED.store(true, Ordering::Release);
+            // Release ensures other threads see this store before INITIALIZED == true
+            SEED.store(seed, Ordering::Release);
+            true
+        } else {
+            false
         }
     }
 
@@ -88,20 +98,17 @@ pub mod simple_rng {
     /// when the seed has not been explicitly initialized with `init_seed_with_value()`.
     /// It uses system time to generate entropy, with a fallback counter if needed.
     ///
-    /// This function is not protected against concurrent calls. Call it during
-    /// single-threaded startup before other threads may access `SEED`,
-    /// `INITIALIZED`, or `FALLBACK_COUNTER`. For concurrent paths, callers should
-    /// use `ensure_seed_initialized()` so initialization follows the coordinated
-    /// behavior for `SEED`/`INITIALIZED`.
+    /// Multiple threads may race through `ensure_seed_initialized()` and call this
+    /// function concurrently. In that case, the last writer wins and the seed is
+    /// non-deterministic. This is acceptable for the non-cryptographic use cases
+    /// this module serves.
     ///
     /// Note: This function sets the `INITIALIZED` flag to prevent reinitialization.
     /// For explicit seed control, use `init_seed_with_value()` instead.
     pub fn init_seed() {
         let fallback = FALLBACK_COUNTER.fetch_add(1, Ordering::Relaxed);
         let seed = system_seed_or(fallback);
-        SEED.store(seed, Ordering::Relaxed);
-        // Use Release ordering to ensure the SEED store is visible
-        // to other threads before they see INITIALIZED == true
+        SEED.store(seed, Ordering::Release);
         INITIALIZED.store(true, Ordering::Release);
     }
 
@@ -109,13 +116,19 @@ pub mod simple_rng {
     ///
     /// This performs lazy initialization by calling `init_seed()` if the seed hasn't
     /// been explicitly initialized with `init_seed_with_value()`.
-    ///
-    /// Note: `init_seed()` is the canonical lazy initializer called by this function.
     fn ensure_seed_initialized() {
-        // Use Acquire ordering to synchronize with the Release store in
-        // init_seed_with_value(), ensuring we see the correct SEED value
         if !INITIALIZED.load(Ordering::Acquire) {
-            init_seed();
+            // Use CAS to ensure only one thread performs initialization.
+            // Losing threads see INITIALIZED == true via the Acquire load above
+            // on their next call.
+            if INITIALIZED
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                let fallback = FALLBACK_COUNTER.fetch_add(1, Ordering::Relaxed);
+                let seed = system_seed_or(fallback);
+                SEED.store(seed, Ordering::Release);
+            }
         }
     }
 
@@ -142,19 +155,17 @@ pub mod simple_rng {
     pub fn next_u64() -> u64 {
         ensure_seed_initialized();
 
-        // fetch_update returns the previous value before the update
+        // fetch_update atomically advances SEED from `prev` to `prev * A + C`
+        // and returns `Ok(prev)` (the value before the update). The closure
+        // always returns Some, so this cannot fail.
         let prev = SEED
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |curr| {
-                let next = curr.wrapping_mul(1_103_515_245).wrapping_add(12_345);
-                Some(next)
+                Some(curr.wrapping_mul(1_103_515_245).wrapping_add(12_345))
             })
-            .unwrap_or_else(|_| {
-                // If compare_exchange fails (should not happen), compute from current seed
-                let curr = SEED.load(Ordering::Relaxed);
-                curr.wrapping_mul(1_103_515_245).wrapping_add(12_345)
-            });
+            .expect("closure always returns Some");
 
-        // Return the newly generated value (not the previous one)
+        // Recompute prev * A + C to return the newly stored value, not the stale
+        // pre-update value. This avoids returning a value that was the seed itself.
         prev.wrapping_mul(1_103_515_245).wrapping_add(12_345)
     }
 
@@ -186,14 +197,16 @@ pub mod simple_rng {
     /// This allows tests to verify that `ensure_seed_initialized()` properly
     /// initializes the seed when called from functions like `next_u64()`.
     ///
-    /// # Safety
+    /// # Preconditions
     ///
     /// This should only be called in tests with proper synchronization (e.g.,
     /// under a test lock) to prevent race conditions.
     #[cfg(test)]
     pub fn reset_initialized_for_tests() {
-        SEED.store(0, Ordering::Relaxed);
-        FALLBACK_COUNTER.store(1, Ordering::Relaxed);
+        SEED.store(0, Ordering::Release);
+        FALLBACK_COUNTER.store(1, Ordering::Release);
+        // Release ensures the SEED/FALLBACK stores above are visible before
+        // other threads see INITIALIZED == false
         INITIALIZED.store(false, Ordering::Release);
     }
 }
@@ -478,7 +491,42 @@ mod tests {
 
         assert_eq!(
             seq1, seq2,
-            "Seed 0 should produce same values regardless of thread interleaving"
+            "Seed 0 should produce same multiset of values regardless of thread interleaving"
         );
+    }
+
+    #[test]
+    fn test_init_seed_with_value_returns_false_on_second_call() {
+        let _lock = test_lock();
+
+        // First call should succeed
+        assert!(init_seed_with_value(42), "First init should succeed");
+        let seq_42: Vec<u64> = (0..5).map(|_| next_u64()).collect();
+
+        // Second call with different seed should be rejected
+        assert!(
+            !init_seed_with_value(99),
+            "Second init should be rejected"
+        );
+
+        // Verify sequence still matches seed 42
+        reset_initialized_for_tests();
+        assert!(init_seed_with_value(42));
+        let seq_verify: Vec<u64> = (0..5).map(|_| next_u64()).collect();
+        assert_eq!(seq_42, seq_verify, "Sequence should match original seed 42");
+    }
+
+    #[test]
+    fn test_next_f64_multiple_samples_in_range() {
+        let _lock = test_lock();
+
+        init_seed_with_value(12345);
+        for i in 0..100 {
+            let val = next_f64();
+            assert!(
+                (0.0..1.0).contains(&val),
+                "Sample {i}: next_f64() returned {val}, expected [0.0, 1.0)"
+            );
+        }
     }
 }

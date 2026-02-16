@@ -804,23 +804,37 @@ pub mod supervisor_adapter {
                 return explicit;
             }
             if let Some(meta) = &self.meta {
-                if let Ok(Some(hn)) = meta.get_hostname(service_id).await {
-                    return Some(hn);
+                match meta.get_hostname(service_id).await {
+                    Ok(Some(hn)) => return Some(hn),
+                    Ok(None) => {}
+                    Err(e) => tracing::warn!(
+                        "Failed to read hostname for '{service_id}' from metadata store: {e}"
+                    ),
                 }
             }
-            if let Ok(map) = self.runtime_meta.lock() {
-                if let Some(entry) = map.get(service_id) {
-                    if let Some(hn) = entry.hostname.clone() {
-                        return Some(hn);
+            match self.runtime_meta.lock() {
+                Ok(map) => {
+                    if let Some(entry) = map.get(service_id) {
+                        if let Some(hn) = entry.hostname.clone() {
+                            return Some(hn);
+                        }
                     }
                 }
+                Err(e) => tracing::error!(
+                    "Runtime metadata mutex poisoned while resolving hostname for '{service_id}': {e}"
+                ),
             }
-            if let Ok(spec) = handle.get_spec().await {
-                if let Some(route) = spec.route {
-                    if !route.is_empty() {
-                        return Some(route);
+            match handle.get_spec().await {
+                Ok(spec) => {
+                    if let Some(route) = spec.route {
+                        if !route.is_empty() {
+                            return Some(route);
+                        }
                     }
                 }
+                Err(e) => tracing::warn!(
+                    "Failed to get spec for '{service_id}' while resolving hostname: {e}"
+                ),
             }
             None
         }
@@ -846,25 +860,30 @@ pub mod supervisor_adapter {
             let wait = async {
                 loop {
                     if state_rx.changed().await.is_err() {
-                        return Err(());
+                        return Err(
+                            "supervisor state channel closed unexpectedly".to_string(),
+                        );
                     }
                     let state = *state_rx.borrow();
                     if state == schema::ServiceState::Ready {
                         return Ok(());
                     }
-                    if matches!(
-                        state,
-                        schema::ServiceState::Idle | schema::ServiceState::Stopping
-                    ) {
-                        return Err(());
+                    if state == schema::ServiceState::Idle {
+                        return Err(
+                            "service exited before reaching readiness (returned to Idle)"
+                                .to_string(),
+                        );
+                    }
+                    if state == schema::ServiceState::Stopping {
+                        return Err(
+                            "service is stopping before reaching readiness".to_string(),
+                        );
                     }
                 }
             };
             match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), wait).await {
                 Ok(Ok(())) => Ok(()),
-                Ok(Err(())) => Err(super::IpcError::ProtocolError(
-                    "service failed before reaching readiness".into(),
-                )),
+                Ok(Err(reason)) => Err(super::IpcError::ProtocolError(reason)),
                 Err(_) => Err(super::IpcError::ProtocolError(
                     "timed out waiting for service readiness".into(),
                 )),
@@ -1038,42 +1057,64 @@ pub mod supervisor_adapter {
             // Persist metadata if store present
             if let Some(meta) = &self.meta {
                 if let Some(p) = chosen_port {
-                    let _ = meta.set_port(service_id, Some(p)).await;
+                    if let Err(e) = meta.set_port(service_id, Some(p)).await {
+                        tracing::warn!(
+                            "Failed to persist port {p} for service '{service_id}': {e}"
+                        );
+                    }
                 }
                 if let Some(hn) = &hostname {
-                    let _ = meta.set_hostname(service_id, Some(hn.as_str())).await;
+                    if let Err(e) = meta.set_hostname(service_id, Some(hn.as_str())).await {
+                        tracing::warn!(
+                            "Failed to persist hostname '{hn}' for service '{service_id}': {e}"
+                        );
+                    }
                 }
             }
 
             // Update in-memory runtime metadata immediately
             {
-                if let Ok(mut map) = self.runtime_meta.lock() {
-                    let entry = map
-                        .entry(service_id.to_string())
-                        .or_insert_with(RuntimeMetaEntry::default);
-                    if chosen_port.is_some() {
-                        entry.port = chosen_port;
+                match self.runtime_meta.lock() {
+                    Ok(mut map) => {
+                        let entry = map
+                            .entry(service_id.to_string())
+                            .or_insert_with(RuntimeMetaEntry::default);
+                        if chosen_port.is_some() {
+                            entry.port = chosen_port;
+                        }
+                        if let Some(hn) = &hostname {
+                            entry.hostname = Some(hn.clone());
+                        }
+                        if let Some(guard) = reserved_guard.take() {
+                            entry.port_guard = Some(guard);
+                            port_guard_release.activate();
+                        }
                     }
-                    if let Some(hn) = &hostname {
-                        entry.hostname = Some(hn.clone());
-                    }
-                    if let Some(guard) = reserved_guard.take() {
-                        entry.port_guard = Some(guard);
-                        port_guard_release.activate();
-                    }
+                    Err(e) => tracing::error!(
+                        "Runtime metadata mutex poisoned for service '{service_id}': {e}"
+                    ),
                 }
             }
 
             // Resolve and persist the effective hostname from all sources
             if let Some(hn) = self.resolve_hostname(service_id, hostname, handle).await {
                 if let Some(meta) = &self.meta {
-                    let _ = meta.set_hostname(service_id, Some(hn.as_str())).await;
+                    if let Err(e) = meta.set_hostname(service_id, Some(hn.as_str())).await {
+                        tracing::warn!(
+                            "Failed to persist resolved hostname '{hn}' for service '{service_id}': {e}"
+                        );
+                    }
                 }
-                if let Ok(mut map) = self.runtime_meta.lock() {
-                    let entry = map
-                        .entry(service_id.to_string())
-                        .or_insert_with(RuntimeMetaEntry::default);
-                    entry.hostname = Some(hn);
+                match self.runtime_meta.lock() {
+                    Ok(mut map) => {
+                        let entry = map
+                            .entry(service_id.to_string())
+                            .or_insert_with(RuntimeMetaEntry::default);
+                        entry.hostname = Some(hn);
+                    }
+                    Err(e) => tracing::error!(
+                        "Runtime metadata mutex poisoned for service '{service_id}': {e}"
+                    ),
                 }
             }
 
