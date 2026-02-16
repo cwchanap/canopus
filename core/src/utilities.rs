@@ -116,7 +116,6 @@ pub mod simple_rng {
         // init_seed_with_value(), ensuring we see the correct SEED value
         if !INITIALIZED.load(Ordering::Acquire) {
             init_seed();
-            return;
         }
     }
 
