@@ -143,6 +143,11 @@ pub mod simple_rng {
     /// This function uses atomic operations to ensure thread-safe access to the seed.
     /// The read-modify-write operation is performed atomically using `fetch_update`.
     ///
+    /// # Panics
+    ///
+    /// This function will panic if the internal `fetch_update` closure fails to return
+    /// `Some`, which should never occur in practice as the closure always returns `Some`.
+    ///
     /// # Examples
     ///
     /// ```
