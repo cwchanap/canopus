@@ -860,9 +860,7 @@ pub mod supervisor_adapter {
             let wait = async {
                 loop {
                     if state_rx.changed().await.is_err() {
-                        return Err(
-                            "supervisor state channel closed unexpectedly".to_string(),
-                        );
+                        return Err("supervisor state channel closed unexpectedly".to_string());
                     }
                     let state = *state_rx.borrow();
                     if state == schema::ServiceState::Ready {
@@ -875,9 +873,7 @@ pub mod supervisor_adapter {
                         );
                     }
                     if state == schema::ServiceState::Stopping {
-                        return Err(
-                            "service is stopping before reaching readiness".to_string(),
-                        );
+                        return Err("service is stopping before reaching readiness".to_string());
                     }
                 }
             };
