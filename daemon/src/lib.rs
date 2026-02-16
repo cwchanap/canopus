@@ -117,6 +117,11 @@ impl Daemon {
                 if matches!(frame.last(), Some(b'\r')) {
                     frame.pop();
                 }
+            } else {
+                warn!(
+                    "Received {} bytes without newline terminator -- processing as legacy frame",
+                    frame.len()
+                );
             }
             if frame.is_empty() {
                 continue;

@@ -45,10 +45,13 @@ pub struct ChildProcess {
     child: Child,
 }
 
-/// Spawn a new process with environment variables and working directory
+/// Spawn a new process in its own process group with environment variables and working directory
 ///
-/// This variant extends [`spawn`] by allowing the caller to specify environment
-/// variables and an optional working directory for the child process.
+/// The process is placed in its own process group via `setsid()`, which:
+///
+/// - Creates a new session with the process as session leader
+/// - Creates a new process group with the process as group leader
+/// - Detaches from the controlling terminal
 ///
 /// # Errors
 ///
@@ -77,7 +80,7 @@ pub fn spawn_with(
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
 
-    // Use before_exec to call setsid() in the child process
+    // Use pre_exec to call setsid() in the child process
     #[deny(unsafe_op_in_unsafe_fn)]
     unsafe {
         command.pre_exec(|| {
@@ -152,37 +155,12 @@ impl ChildProcess {
     }
 }
 
-/// Spawn a new process in its own process group
-///
-/// This function spawns a new process using the specified command and arguments.
-/// The process is placed in its own process group via `setsid()`, which:
-///
-/// - Creates a new session with the process as session leader
-/// - Creates a new process group with the process as group leader
-/// - Detaches from the controlling terminal
-///
-/// ## Arguments
-///
-/// * `cmd` - The command to execute (must be in PATH or an absolute path)
-/// * `args` - Command line arguments for the process
+/// Convenience wrapper around [`spawn_with`] with no environment variables or working directory.
 ///
 /// # Errors
 ///
 /// Returns an error if the process fails to spawn or if the child PID cannot be
 /// retrieved.
-/// - `setsid()` is called in the child process before `exec()`
-/// - `setsid()` is async-signal-safe and appropriate for use in `before_exec`
-/// - Error handling properly converts C errors to Rust errors
-///
-/// ## Example
-///
-/// ```rust,no_run
-/// use canopus_core::process::unix::spawn;
-///
-/// let child = spawn("echo", &["hello", "world"])?;
-/// println!("Spawned process with PID: {}", child.pid());
-/// # Ok::<(), canopus_core::CoreError>(())
-/// ```
 pub fn spawn(cmd: &str, args: &[&str]) -> Result<ChildProcess> {
     spawn_with(cmd, args, &std::collections::HashMap::new(), None)
 }
