@@ -64,6 +64,10 @@ pub mod simple_rng {
     ///
     /// * `seed` - The seed value to use. All `u64` values including 0 are valid.
     ///
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned by another thread.
+    ///
     /// # Examples
     ///
     /// ```
@@ -106,6 +110,10 @@ pub mod simple_rng {
     ///
     /// Note: This function uses Mutex for atomic initialization.
     /// For explicit seed control, use `init_seed_with_value()` instead.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned by another thread.
     pub fn init_seed() {
         let fallback = FALLBACK_COUNTER.fetch_add(1, Ordering::Relaxed);
         let seed = system_seed_or(fallback);
@@ -171,11 +179,13 @@ pub mod simple_rng {
         let prev = {
             let guard = SEED.lock().unwrap();
             let seed_atomic = guard.as_ref().expect("SEED must be initialized");
-            seed_atomic
+            #[allow(clippy::significant_drop_tightening)]
+            let result = seed_atomic
                 .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |curr| {
                     Some(curr.wrapping_mul(1_103_515_245).wrapping_add(12_345))
                 })
-                .expect("closure always returns Some")
+                .expect("closure always returns Some");
+            result
         };
 
         // Recompute prev * A + C to return the newly stored value, not the stale
