@@ -43,11 +43,15 @@ pub type UtilityResult<T> = Result<T, crate::CoreError>;
 /// 32-bit constants from Numerical Recipes. Applied to 64-bit state, the
 /// statistical quality is low but adequate for jitter and mock PIDs.
 pub mod simple_rng {
-    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Mutex;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    static INITIALIZED: AtomicBool = AtomicBool::new(false);
-    static SEED: AtomicU64 = AtomicU64::new(0);
+    /// Mutex-wrapped Option<AtomicU64> for atomic initialization with test reset capability.
+    /// Using a single atomic guard ensures the seed value is fully visible to readers
+    /// once the Option is Some - no intermediate state where "initialized" is true but
+    /// the seed is stale. The Mutex ensures only one thread performs initialization.
+    static SEED: Mutex<Option<AtomicU64>> = Mutex::new(None);
     static FALLBACK_COUNTER: AtomicU64 = AtomicU64::new(1);
 
     /// Initialize the RNG with a deterministic seed (useful for testing).
@@ -71,16 +75,13 @@ pub mod simple_rng {
     /// let val2 = canopus_core::utilities::simple_rng::next_u64();
     /// ```
     pub fn init_seed_with_value(seed: u64) -> bool {
-        // Use INITIALIZED as the guard (not SEED) so that seed value 0 works correctly
-        if INITIALIZED
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
-        {
-            // Release ensures other threads see this store before INITIALIZED == true
-            SEED.store(seed, Ordering::Release);
-            true
-        } else {
+        let mut guard = SEED.lock().unwrap();
+        if guard.is_some() {
+            // Already initialized, another thread beat us or already set
             false
+        } else {
+            *guard = Some(AtomicU64::new(seed));
+            true
         }
     }
 
@@ -103,13 +104,15 @@ pub mod simple_rng {
     /// non-deterministic. This is acceptable for the non-cryptographic use cases
     /// this module serves.
     ///
-    /// Note: This function sets the `INITIALIZED` flag to prevent reinitialization.
+    /// Note: This function uses Mutex for atomic initialization.
     /// For explicit seed control, use `init_seed_with_value()` instead.
     pub fn init_seed() {
         let fallback = FALLBACK_COUNTER.fetch_add(1, Ordering::Relaxed);
         let seed = system_seed_or(fallback);
-        SEED.store(seed, Ordering::Release);
-        INITIALIZED.store(true, Ordering::Release);
+        let mut guard = SEED.lock().unwrap();
+        if guard.is_none() {
+            *guard = Some(AtomicU64::new(seed));
+        }
     }
 
     /// Ensure the RNG seed is initialized before use.
@@ -117,18 +120,19 @@ pub mod simple_rng {
     /// This performs lazy initialization by calling `init_seed()` if the seed hasn't
     /// been explicitly initialized with `init_seed_with_value()`.
     fn ensure_seed_initialized() {
-        if !INITIALIZED.load(Ordering::Acquire) {
-            // Use CAS to ensure only one thread performs initialization.
-            // Losing threads see INITIALIZED == true via the Acquire load above
-            // on their next call.
-            if INITIALIZED
-                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                .is_ok()
-            {
-                let fallback = FALLBACK_COUNTER.fetch_add(1, Ordering::Relaxed);
-                let seed = system_seed_or(fallback);
-                SEED.store(seed, Ordering::Release);
+        // Check if already initialized (fast path without lock)
+        {
+            let guard = SEED.lock().unwrap();
+            if guard.is_some() {
+                return;
             }
+        }
+        // Need to initialize - acquire lock and double-check
+        let fallback = FALLBACK_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let seed = system_seed_or(fallback);
+        let mut guard = SEED.lock().unwrap();
+        if guard.is_none() {
+            *guard = Some(AtomicU64::new(seed));
         }
     }
 
@@ -160,14 +164,19 @@ pub mod simple_rng {
     pub fn next_u64() -> u64 {
         ensure_seed_initialized();
 
-        // fetch_update atomically advances SEED from `prev` to `prev * A + C`
-        // and returns `Ok(prev)` (the value before the update). The closure
-        // always returns Some, so this cannot fail.
-        let prev = SEED
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |curr| {
-                Some(curr.wrapping_mul(1_103_515_245).wrapping_add(12_345))
-            })
-            .expect("closure always returns Some");
+        // Perform atomic fetch_update while holding the lock.
+        // The lock is held only for the duration of the atomic operation,
+        // which is very fast. This avoids the complexity of taking ownership
+        // and risking poisoning.
+        let prev = {
+            let guard = SEED.lock().unwrap();
+            let seed_atomic = guard.as_ref().expect("SEED must be initialized");
+            seed_atomic
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |curr| {
+                    Some(curr.wrapping_mul(1_103_515_245).wrapping_add(12_345))
+                })
+                .expect("closure always returns Some")
+        };
 
         // Recompute prev * A + C to return the newly stored value, not the stale
         // pre-update value. This avoids returning a value that was the seed itself.
@@ -197,7 +206,7 @@ pub mod simple_rng {
         }
     }
 
-    /// Reset the INITIALIZED flag for testing purposes.
+    /// Reset the seed for testing purposes.
     ///
     /// This allows tests to verify that `ensure_seed_initialized()` properly
     /// initializes the seed when called from functions like `next_u64()`.
@@ -208,11 +217,9 @@ pub mod simple_rng {
     /// under a test lock) to prevent race conditions.
     #[cfg(test)]
     pub fn reset_initialized_for_tests() {
-        SEED.store(0, Ordering::Release);
+        let mut guard = SEED.lock().unwrap();
+        *guard = None;
         FALLBACK_COUNTER.store(1, Ordering::Release);
-        // Release ensures the SEED/FALLBACK stores above are visible before
-        // other threads see INITIALIZED == false
-        INITIALIZED.store(false, Ordering::Release);
     }
 }
 
