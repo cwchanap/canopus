@@ -95,8 +95,7 @@ impl Daemon {
                 let next_len = frame.len() + to_copy;
                 if next_len > MAX_FRAME_SIZE {
                     return Err(DaemonError::ConnectionError(format!(
-                        "Request size {} exceeds maximum allowed size of {} bytes",
-                        next_len, MAX_FRAME_SIZE
+                        "Request size {next_len} exceeds maximum allowed size of {MAX_FRAME_SIZE} bytes"
                     )));
                 }
 
