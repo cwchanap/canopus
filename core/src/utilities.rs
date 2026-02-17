@@ -491,8 +491,8 @@ mod tests {
         // Compare sorted results (order may differ due to thread scheduling)
         let mut seq1 = results.lock().unwrap().clone();
         let mut seq2 = results2.lock().unwrap().clone();
-        seq1.sort();
-        seq2.sort();
+        seq1.sort_unstable();
+        seq2.sort_unstable();
 
         assert_eq!(
             seq1, seq2,

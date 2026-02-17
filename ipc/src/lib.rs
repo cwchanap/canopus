@@ -150,14 +150,12 @@ mod tests {
 
         let server = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
-            let mut request = Vec::new();
             let mut byte = [0_u8; 1];
             loop {
                 let n = stream.read(&mut byte).await.unwrap();
                 if n == 0 {
                     break;
                 }
-                request.push(byte[0]);
                 if byte[0] == b'\n' {
                     break;
                 }
