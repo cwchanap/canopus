@@ -177,15 +177,14 @@ pub mod simple_rng {
         // which is very fast. This avoids the complexity of taking ownership
         // and risking poisoning.
         let prev = {
+            #[allow(clippy::significant_drop_tightening)]
             let guard = SEED.lock().unwrap();
             let seed_atomic = guard.as_ref().expect("SEED must be initialized");
-            #[allow(clippy::significant_drop_tightening)]
-            let result = seed_atomic
+            seed_atomic
                 .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |curr| {
                     Some(curr.wrapping_mul(1_103_515_245).wrapping_add(12_345))
                 })
-                .expect("closure always returns Some");
-            result
+                .expect("closure always returns Some")
         };
 
         // Recompute prev * A + C to return the newly stored value, not the stale
