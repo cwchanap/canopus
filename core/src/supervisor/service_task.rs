@@ -1612,7 +1612,9 @@ mod tests {
         // We verify this by sending a control message and getting a response
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         control_tx
-            .send(ControlMsg::GetSpec { response: response_tx })
+            .send(ControlMsg::GetSpec {
+                response: response_tx,
+            })
             .unwrap();
 
         // Should receive a response, proving supervisor is still alive

@@ -82,10 +82,11 @@ impl IpcClient {
                     "Connection closed without newline, attempting legacy parse of {} bytes",
                     buffer.len()
                 );
-                let response: Response = serde_json::from_slice(&buffer)
-                    .map_err(|e| IpcError::ProtocolError(format!(
+                let response: Response = serde_json::from_slice(&buffer).map_err(|e| {
+                    IpcError::ProtocolError(format!(
                         "Failed to parse response without newline delimiter: {e}"
-                    )))?;
+                    ))
+                })?;
                 return Ok(response);
             }
 
@@ -181,7 +182,10 @@ mod tests {
         let client = IpcClient::new(addr.ip().to_string(), addr.port());
         let result = client.send_message(&Message::Status).await;
         // With legacy fallback, this should now succeed
-        assert!(result.is_ok(), "expected Ok with legacy fallback, got {result:?}");
+        assert!(
+            result.is_ok(),
+            "expected Ok with legacy fallback, got {result:?}"
+        );
 
         server.await.unwrap();
     }
@@ -220,7 +224,9 @@ mod tests {
                     "expected parse error message, got: {msg}"
                 );
             }
-            other => panic!("expected ProtocolError for invalid JSON without newline, got {other:?}"),
+            other => {
+                panic!("expected ProtocolError for invalid JSON without newline, got {other:?}")
+            }
         }
 
         server.await.unwrap();
