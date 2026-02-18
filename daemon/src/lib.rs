@@ -244,8 +244,9 @@ mod tests {
         server.await.unwrap();
     }
 
-    /// Test that verifies the `handle_connection` method adds newline to responses.
-    /// This directly tests the response formatting without starting the full daemon.
+    /// Test that verifies responses are formatted with a trailing newline.
+    /// This exercises the response formatting logic by simulating `handle_connection`
+    /// behavior over in-memory streams, without starting the full daemon.
     #[tokio::test]
     async fn test_response_format_includes_newline() {
         // Create a duplex stream to simulate client-server communication
