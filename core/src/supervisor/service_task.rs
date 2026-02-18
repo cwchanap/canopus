@@ -1134,13 +1134,38 @@ impl ServiceSupervisor {
                     })
                     .await;
 
+                    // Extract interval before mutable operations to avoid borrow checker issues
+                    let health_check_interval = health_check.interval();
+
                     // Ensure detachment before restart (idempotent)
                     self.detach_from_proxy_if_attached().await;
 
                     // Restart the service due to health check failures.
                     // Only reset the failure counter after a successful restart
                     // to avoid masking persistent restart failures.
-                    self.restart_service().await?;
+                    // Note: We handle restart failures gracefully here to prevent
+                    // the supervisor loop from exiting. This allows the supervisor
+                    // to continue managing retries and respond to control messages.
+                    if let Err(e) = self.restart_service().await {
+                        error!(
+                            "Failed to restart service '{}' after health check failure: {}",
+                            self.spec.id, e
+                        );
+                        // Ensure we're in a stable state for retry
+                        if let Err(transition_err) = self
+                            .transition_to(InternalState::Idle, Some("Restart failed".to_string()))
+                            .await
+                        {
+                            error!(
+                                "Failed to transition service '{}' to Idle after restart failure: {}",
+                                self.spec.id, transition_err
+                            );
+                        }
+                        // Do NOT reset failure count - keep tracking failures for observability
+                        // Schedule next health check to allow retry attempts
+                        self.health_check_timer = Some(Instant::now() + health_check_interval);
+                        return Ok(());
+                    }
                     self.health_failure_count = 0;
 
                     return Ok(()); // Skip scheduling next check as we're restarting
@@ -1542,5 +1567,116 @@ mod tests {
             .expect("update_spec should succeed");
 
         assert_eq!(supervisor.state, InternalState::Ready);
+    }
+
+    #[tokio::test]
+    async fn test_health_check_restart_failure_does_not_kill_supervisor() {
+        // This test verifies that when a health check triggers a restart and the restart fails,
+        // the supervisor continues running and can respond to control messages.
+        use schema::{HealthCheck, HealthCheckType};
+
+        let mut spec = create_test_spec();
+        spec.health_check = Some(HealthCheck {
+            check_type: HealthCheckType::Tcp { port: 12345 }, // Port that won't have a listener
+            interval_secs: 1,
+            timeout_secs: 1,
+            failure_threshold: 1, // Trigger restart on first failure
+            success_threshold: 1,
+        });
+
+        // Use FailingProcessAdapter so restart will fail
+        let process_adapter: Arc<dyn ProcessAdapter> = Arc::new(FailingProcessAdapter);
+        let (mut supervisor, control_tx, _event_rx, control_rx) =
+            create_supervisor_with(spec, process_adapter);
+
+        // Set up supervisor in Ready state with health check timer set
+        // This simulates a running service that will fail health checks
+        supervisor.state = InternalState::Ready;
+        supervisor.health_failure_count = 0;
+        supervisor.health_check_timer = Some(Instant::now());
+
+        // Spawn the supervisor task
+        let supervisor_handle = tokio::spawn(async move {
+            if let Err(e) = supervisor.run(control_rx).await {
+                debug!("Supervisor terminated with error: {}", e);
+                Err(e)
+            } else {
+                Ok(())
+            }
+        });
+
+        // Give the supervisor time to process health check timer and trigger restart
+        sleep(Duration::from_millis(300)).await;
+
+        // The supervisor should still be running (not exited due to restart failure)
+        // We verify this by sending a control message and getting a response
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        control_tx
+            .send(ControlMsg::GetSpec { response: response_tx })
+            .unwrap();
+
+        // Should receive a response, proving supervisor is still alive
+        let spec_result = timeout(Duration::from_millis(500), response_rx).await;
+        assert!(
+            spec_result.is_ok(),
+            "Supervisor should still be running and respond to control messages"
+        );
+
+        // Clean up - abort the supervisor task instead of waiting for shutdown
+        // (shutdown path is tested elsewhere)
+        supervisor_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn test_health_check_restart_failure_recovers_to_idle() {
+        // Test that after a health-check triggered restart fails,
+        // the service ends up in Idle state and can accept new start commands
+        use schema::{HealthCheck, HealthCheckType};
+
+        let mut spec = create_test_spec();
+        spec.health_check = Some(HealthCheck {
+            check_type: HealthCheckType::Tcp { port: 12346 },
+            interval_secs: 1,
+            timeout_secs: 1,
+            failure_threshold: 1,
+            success_threshold: 1,
+        });
+
+        let process_adapter: Arc<dyn ProcessAdapter> = Arc::new(FailingProcessAdapter);
+        let mut supervisor = ServiceSupervisor::new(
+            spec,
+            process_adapter,
+            Arc::new(crate::proxy::NoopProxyAdapter),
+            broadcast::channel(16).0,
+            watch::channel(ServiceState::Idle).0,
+        );
+
+        // Set up in Ready state with health check timer
+        supervisor.state = InternalState::Ready;
+        supervisor.health_failure_count = 1; // Simulate being at failure threshold
+        supervisor.health_check_timer = Some(Instant::now());
+
+        // Directly call perform_health_check which should trigger restart
+        let result = supervisor.perform_health_check().await;
+
+        // The restart will fail, but perform_health_check should return Ok(())
+        // (not propagate the error)
+        assert!(
+            result.is_ok(),
+            "perform_health_check should return Ok after handling restart failure"
+        );
+
+        // Supervisor should be in Idle state after restart failure
+        assert_eq!(
+            supervisor.state,
+            InternalState::Idle,
+            "Service should be in Idle state after restart failure"
+        );
+
+        // Health check timer should be set for retry
+        assert!(
+            supervisor.health_check_timer.is_some(),
+            "Health check timer should be set for retry after restart failure"
+        );
     }
 }
