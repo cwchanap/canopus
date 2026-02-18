@@ -75,9 +75,18 @@ impl IpcClient {
                 if buffer.is_empty() {
                     return Err(IpcError::EmptyResponse);
                 }
-                return Err(IpcError::ProtocolError(
-                    "incomplete frame: connection closed before newline terminator".to_string(),
-                ));
+                // Legacy fallback: if connection closed without newline but we have data,
+                // attempt to parse it as JSON for backward compatibility with older daemons
+                // that return plain JSON without newline delimiter.
+                debug!(
+                    "Connection closed without newline, attempting legacy parse of {} bytes",
+                    buffer.len()
+                );
+                let response: Response = serde_json::from_slice(&buffer)
+                    .map_err(|e| IpcError::ProtocolError(format!(
+                        "Failed to parse response without newline delimiter: {e}"
+                    )))?;
+                return Ok(response);
             }
 
             let newline_pos = chunk.iter().position(|b| *b == b'\n');
@@ -144,7 +153,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_send_message_returns_protocol_error_on_incomplete_frame() {
+    async fn test_send_message_legacy_fallback_without_newline() {
+        // Test backward compatibility: older daemons may return plain JSON without newline
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
 
@@ -161,17 +171,56 @@ mod tests {
                 }
             }
 
-            let partial = br#"{"type":"Ok","message":"partial"}"#;
+            // Send valid JSON without newline (legacy daemon behavior)
+            // Use correct Response format: {"ok":{"message":"success"}}
+            let response = br#"{"ok":{"message":"success"}}"#;
+            stream.write_all(response).await.unwrap();
+            // Connection closes here without newline
+        });
+
+        let client = IpcClient::new(addr.ip().to_string(), addr.port());
+        let result = client.send_message(&Message::Status).await;
+        // With legacy fallback, this should now succeed
+        assert!(result.is_ok(), "expected Ok with legacy fallback, got {result:?}");
+
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_send_message_returns_protocol_error_on_invalid_json_without_newline() {
+        // Test that invalid JSON without newline still returns an error
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut byte = [0_u8; 1];
+            loop {
+                let n = stream.read(&mut byte).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                if byte[0] == b'\n' {
+                    break;
+                }
+            }
+
+            // Send invalid JSON without newline
+            let partial = br#"{"type":"Ok","message":"partial"#;
             stream.write_all(partial).await.unwrap();
+            // Connection closes here without newline
         });
 
         let client = IpcClient::new(addr.ip().to_string(), addr.port());
         let result = client.send_message(&Message::Status).await;
         match result {
             Err(IpcError::ProtocolError(msg)) => {
-                assert!(msg.contains("incomplete frame"));
+                assert!(
+                    msg.contains("Failed to parse response without newline delimiter"),
+                    "expected parse error message, got: {msg}"
+                );
             }
-            other => panic!("expected ProtocolError for incomplete frame, got {other:?}"),
+            other => panic!("expected ProtocolError for invalid JSON without newline, got {other:?}"),
         }
 
         server.await.unwrap();
