@@ -220,14 +220,17 @@ pub mod simple_rng {
     /// This allows tests to verify that `ensure_seed_initialized()` properly
     /// initializes the seed when called from functions like `next_u64()`.
     ///
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned.
+    ///
     /// # Preconditions
     ///
     /// This should only be called in tests with proper synchronization (e.g.,
     /// under a test lock) to prevent race conditions.
     #[cfg(test)]
     pub fn reset_initialized_for_tests() {
-        let mut guard = SEED.lock().unwrap();
-        *guard = None;
+        *SEED.lock().unwrap() = None;
         FALLBACK_COUNTER.store(1, Ordering::Release);
     }
 }
