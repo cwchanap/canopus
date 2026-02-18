@@ -104,9 +104,9 @@ pub mod simple_rng {
     /// It uses system time to generate entropy, with a fallback counter if needed.
     ///
     /// Multiple threads may race through `ensure_seed_initialized()` and call this
-    /// function concurrently. In that case, the last writer wins and the seed is
-    /// non-deterministic. This is acceptable for the non-cryptographic use cases
-    /// this module serves.
+    /// function concurrently. In that case, the first initializer wins (subsequent
+    /// calls are no-ops) and the seed is set only once. This is acceptable for the
+    /// non-cryptographic use cases this module serves.
     ///
     /// Note: This function uses Mutex for atomic initialization.
     /// For explicit seed control, use `init_seed_with_value()` instead.
