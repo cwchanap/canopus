@@ -105,6 +105,12 @@ impl Daemon {
                     saw_newline = true;
                     break;
                 }
+                // Legacy support: detect complete JSON Message without newline.
+                // This prevents deadlocks with clients that send valid JSON but
+                // wait for a response while keeping the connection open.
+                if serde_json::from_slice::<Message>(&frame).is_ok() {
+                    break;
+                }
             }
 
             if frame.is_empty() {
