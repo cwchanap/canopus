@@ -621,7 +621,7 @@ impl ServiceSupervisor {
     }
 
     /// Perform readiness check
-    async fn perform_readiness_check(&mut self) {
+    async fn perform_readiness_check(&mut self) -> Result<()> {
         if let Some(ref readiness_check) = self.spec.readiness_check {
             debug!("Performing readiness check for service '{}'", self.spec.id);
 
@@ -677,15 +677,11 @@ impl ServiceSupervisor {
                         self.attach_to_proxy_with_port(port).await;
                     }
                     // Transition to Ready state
-                    if let Err(e) = self
-                        .transition_to(
-                            InternalState::Ready,
-                            Some("Readiness check passed".to_string()),
-                        )
-                        .await
-                    {
-                        error!("Failed to transition to Ready state: {}", e);
-                    }
+                    self.transition_to(
+                        InternalState::Ready,
+                        Some("Readiness check passed".to_string()),
+                    )
+                    .await?;
                 } else {
                     // Need more successes - schedule next check
                     self.readiness_check_timer = Some(Instant::now() + readiness_check.interval());
@@ -702,12 +698,18 @@ impl ServiceSupervisor {
                 // Don't transition to Ready
             }
         } else {
-            // No readiness check configured - become ready immediately
+            // No readiness check configured — become ready immediately
             debug!(
                 "No readiness check configured for service '{}', marking as ready",
                 self.spec.id
             );
+            self.transition_to(
+                InternalState::Ready,
+                Some("Service is ready (no readiness check)".to_string()),
+            )
+            .await?;
         }
+        Ok(())
     }
 
     /// Transition to a new state and emit events
@@ -893,7 +895,7 @@ impl ServiceSupervisor {
                     self.spec.id
                 );
                 self.readiness_check_timer = None;
-                self.perform_readiness_check().await;
+                self.perform_readiness_check().await?;
             }
         } else if let Some(ref readiness_check) = self.spec.readiness_check {
             debug!("No readiness check timer set, scheduling initial check");
@@ -1162,8 +1164,10 @@ impl ServiceSupervisor {
                             );
                         }
                         // Do NOT reset failure count - keep tracking failures for observability
-                        // Schedule next health check to allow retry attempts
-                        self.health_check_timer = Some(Instant::now() + health_check_interval);
+                        // Schedule restart timer (not health_check_timer) since we're in Idle state.
+                        // handle_restart_timer acts on Idle state, while handle_health_timer only
+                        // acts on Ready state. Using restart_timer ensures the retry actually executes.
+                        self.restart_timer = Some(Instant::now() + health_check_interval);
                         return Ok(());
                     }
                     self.health_failure_count = 0;
@@ -1675,10 +1679,37 @@ mod tests {
             "Service should be in Idle state after restart failure"
         );
 
-        // Health check timer should be set for retry
+        // Restart timer should be set for retry (not health_check_timer, since we're in Idle state)
         assert!(
-            supervisor.health_check_timer.is_some(),
-            "Health check timer should be set for retry after restart failure"
+            supervisor.restart_timer.is_some(),
+            "Restart timer should be set for retry after restart failure"
         );
+    }
+
+    #[tokio::test]
+    async fn test_perform_readiness_check_no_check_transitions_to_ready() {
+        // A service with no readiness_check configured should immediately transition
+        // to Ready when perform_readiness_check is called.
+        let (event_tx, _) = broadcast::channel(16);
+        let (state_tx, state_rx) = watch::channel(ServiceState::Idle);
+        let spec = ServiceSpec {
+            readiness_check: None,
+            ..create_test_spec()
+        };
+        let mut supervisor = ServiceSupervisor::new(
+            spec,
+            Arc::new(MockProcessAdapter::new()),
+            Arc::new(crate::proxy::NoopProxyAdapter),
+            event_tx,
+            state_tx,
+        );
+        supervisor.state = InternalState::Starting;
+
+        supervisor
+            .perform_readiness_check()
+            .await
+            .expect("should succeed with no readiness check");
+
+        assert_eq!(*state_rx.borrow(), ServiceState::Ready);
     }
 }
