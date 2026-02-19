@@ -47,11 +47,11 @@ pub mod simple_rng {
     use std::sync::Mutex;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    /// Mutex-wrapped Option<AtomicU64> for atomic initialization with test reset capability.
-    /// Using a single atomic guard ensures the seed value is fully visible to readers
-    /// once the Option is Some - no intermediate state where "initialized" is true but
-    /// the seed is stale. The Mutex ensures only one thread performs initialization.
-    static SEED: Mutex<Option<AtomicU64>> = Mutex::new(None);
+    /// Mutex-wrapped Option<u64> for lazy initialization with test reset capability.
+    /// The Mutex ensures only one thread performs initialization and that the seed
+    /// value is fully visible to readers once the Option is Some - no intermediate
+    /// state where "initialized" is true but the seed is stale.
+    static SEED: Mutex<Option<u64>> = Mutex::new(None);
     static FALLBACK_COUNTER: AtomicU64 = AtomicU64::new(1);
 
     /// Initialize the RNG with a deterministic seed (useful for testing).
@@ -84,7 +84,7 @@ pub mod simple_rng {
             // Already initialized, another thread beat us or already set
             false
         } else {
-            *guard = Some(AtomicU64::new(seed));
+            *guard = Some(seed);
             true
         }
     }
@@ -119,7 +119,7 @@ pub mod simple_rng {
         let seed = system_seed_or(fallback);
         let mut guard = SEED.lock().unwrap();
         if guard.is_none() {
-            *guard = Some(AtomicU64::new(seed));
+            *guard = Some(seed);
         }
     }
 
@@ -128,7 +128,7 @@ pub mod simple_rng {
     /// This performs lazy initialization by calling `init_seed()` if the seed hasn't
     /// been explicitly initialized with `init_seed_with_value()`.
     fn ensure_seed_initialized() {
-        // Check if already initialized (fast path without lock)
+        // Acquire lock and check whether already initialized.
         {
             let guard = SEED.lock().unwrap();
             if guard.is_some() {
@@ -140,7 +140,7 @@ pub mod simple_rng {
         let seed = system_seed_or(fallback);
         let mut guard = SEED.lock().unwrap();
         if guard.is_none() {
-            *guard = Some(AtomicU64::new(seed));
+            *guard = Some(seed);
         }
     }
 
@@ -152,44 +152,30 @@ pub mod simple_rng {
     ///
     /// # Thread Safety
     ///
-    /// This function uses atomic operations to ensure thread-safe access to the seed.
-    /// The read-modify-write operation is performed atomically using `fetch_update`.
+    /// This function acquires the SEED mutex for the full LCG update step,
+    /// ensuring thread-safe access to the shared seed state.
     ///
     /// # Panics
     ///
-    /// This function will panic if the internal `fetch_update` closure fails to return
-    /// `Some`, which should never occur in practice as the closure always returns `Some`.
+    /// Panics if the internal mutex is poisoned by another thread.
     ///
     /// # Examples
     ///
     /// ```
     /// use canopus_core::utilities::simple_rng::next_u64;
     ///
-    /// let val = next_u64();
-    /// assert!(val < u64::MAX);
+    /// let val1 = next_u64();
+    /// let val2 = next_u64();
+    /// assert_ne!(val1, val2, "consecutive calls produce different values");
     /// ```
     #[must_use]
     pub fn next_u64() -> u64 {
         ensure_seed_initialized();
-
-        // Perform atomic fetch_update while holding the lock.
-        // The lock is held only for the duration of the atomic operation,
-        // which is very fast. This avoids the complexity of taking ownership
-        // and risking poisoning.
-        let prev = {
-            let guard = SEED.lock().unwrap();
-            guard
-                .as_ref()
-                .expect("SEED must be initialized")
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |curr| {
-                    Some(curr.wrapping_mul(1_103_515_245).wrapping_add(12_345))
-                })
-        }
-        .expect("closure always returns Some");
-
-        // Recompute prev * A + C to return the newly stored value, not the stale
-        // pre-update value. This avoids returning a value that was the seed itself.
-        prev.wrapping_mul(1_103_515_245).wrapping_add(12_345)
+        let mut guard = SEED.lock().unwrap();
+        let seed = guard.as_mut().expect("SEED must be initialized");
+        let new_seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+        *seed = new_seed;
+        new_seed
     }
 
     /// Generate a pseudo-random u32.
@@ -297,7 +283,7 @@ mod tests {
     }
 
     #[test]
-    fn test_next_u64_must_use() {
+    fn test_next_u64_consecutive_calls_differ() {
         let _lock = test_lock();
 
         init_seed_with_value(100);
@@ -354,7 +340,7 @@ mod tests {
     fn test_lazy_initialization() {
         let _lock = test_lock();
 
-        // Reset to uninitialized state by clearing the INITIALIZED flag
+        // Reset to uninitialized state (sets SEED back to None)
         // This ensures ensure_seed_initialized() is actually exercised
         reset_initialized_for_tests();
 
@@ -414,7 +400,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fetch_update_atomicity() {
+    fn test_lcg_sequence_is_deterministic_and_non_repeating() {
         let _lock = test_lock();
 
         // Test that fetch_update produces correct sequence
