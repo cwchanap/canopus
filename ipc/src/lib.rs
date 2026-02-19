@@ -65,21 +65,22 @@ impl IpcClient {
             .map_err(|e| IpcError::SendFailed(e.to_string()))?;
 
         // Read response until newline with bounded buffering
+        // Also supports legacy daemons that return JSON without newline delimiter
         let mut buffer = Vec::with_capacity(4096);
         loop {
             let chunk = reader
                 .fill_buf()
                 .await
                 .map_err(|e| IpcError::ReceiveFailed(e.to_string()))?;
+
             if chunk.is_empty() {
+                // Connection closed (EOF)
                 if buffer.is_empty() {
                     return Err(IpcError::EmptyResponse);
                 }
-                // Legacy fallback: if connection closed without newline but we have data,
-                // attempt to parse it as JSON for backward compatibility with older daemons
-                // that return plain JSON without newline delimiter.
+                // Legacy fallback: parse whatever we have as JSON
                 debug!(
-                    "Connection closed without newline, attempting legacy parse of {} bytes",
+                    "Connection closed, parsing {} bytes as legacy response",
                     buffer.len()
                 );
                 let response: Response = serde_json::from_slice(&buffer).map_err(|e| {
@@ -101,9 +102,24 @@ impl IpcClient {
 
             buffer.extend_from_slice(&chunk[..to_copy]);
             reader.consume(to_copy);
+
             if newline_pos.is_some() {
+                // Found newline delimiter - standard protocol path
                 break;
             }
+
+            // Legacy compatibility: try to parse accumulated data as JSON.
+            // This handles older daemons that return complete JSON without a newline
+            // but keep the connection open. Without this check, we'd block forever
+            // waiting for more data that will never arrive.
+            if let Ok(response) = serde_json::from_slice::<Response>(&buffer) {
+                debug!(
+                    "Parsed legacy response (no newline delimiter) of {} bytes",
+                    buffer.len()
+                );
+                return Ok(response);
+            }
+            // JSON incomplete - continue waiting for more data or newline
         }
 
         // Trim trailing newline/carriage return
@@ -154,8 +170,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_send_message_legacy_fallback_without_newline() {
+    async fn test_send_message_legacy_fallback_without_newline_connection_closed() {
         // Test backward compatibility: older daemons may return plain JSON without newline
+        // and then close the connection (original legacy fallback path)
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
 
@@ -188,6 +205,74 @@ mod tests {
         );
 
         server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_send_message_legacy_fallback_without_newline_connection_open() {
+        // Critical test: older daemons may return plain JSON without newline
+        // and KEEP the connection open for reuse. Without proactive JSON parsing,
+        // the client would block indefinitely waiting for more data.
+        // This simulates a rolling upgrade scenario (new CLI / old daemon).
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut byte = [0_u8; 1];
+            loop {
+                let n = stream.read(&mut byte).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                if byte[0] == b'\n' {
+                    break;
+                }
+            }
+
+            // Send valid JSON without newline (legacy daemon behavior)
+            let response = br#"{"ok":{"message":"rolling-upgrade-success"}}"#;
+            stream.write_all(response).await.unwrap();
+            // DO NOT close the connection - keep it open
+
+            // Signal that response was sent
+            let _ = tx.send(());
+
+            // Keep connection alive for a while to verify client doesn't block
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        });
+
+        let client = IpcClient::new(addr.ip().to_string(), addr.port());
+
+        // This should NOT hang - should return immediately with parsed response
+        let result = tokio::time::timeout(
+            tokio::time::Duration::from_secs(2),
+            client.send_message(&Message::Status),
+        )
+        .await;
+
+        // Verify server sent the response
+        rx.await.expect("Server should have sent response");
+
+        match result {
+            Ok(Ok(response)) => {
+                // Success - client parsed response without blocking
+                assert!(
+                    matches!(response, Response::Ok { .. }),
+                    "expected Ok response, got {response:?}"
+                );
+            }
+            Ok(Err(e)) => {
+                panic!("Expected successful response, got error: {e:?}");
+            }
+            Err(_) => {
+                panic!("Client timed out - legacy parse didn't work with open connection");
+            }
+        }
+
+        server.abort();
+        let _ = server.await;
     }
 
     #[tokio::test]
