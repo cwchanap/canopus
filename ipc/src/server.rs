@@ -1086,9 +1086,11 @@ pub mod supervisor_adapter {
                             port_guard_release.activate();
                         }
                     }
-                    Err(e) => tracing::error!(
-                        "Runtime metadata mutex poisoned for service '{service_id}': {e}"
-                    ),
+                    Err(e) => {
+                        return Err(IpcError::ProtocolError(format!(
+                            "Cannot start service '{service_id}': runtime metadata is corrupted (mutex poisoned): {e}"
+                        )));
+                    }
                 }
             }
 
@@ -1108,9 +1110,11 @@ pub mod supervisor_adapter {
                             .or_insert_with(RuntimeMetaEntry::default);
                         entry.hostname = Some(hn);
                     }
-                    Err(e) => tracing::error!(
-                        "Runtime metadata mutex poisoned for service '{service_id}': {e}"
-                    ),
+                    Err(e) => {
+                        return Err(IpcError::ProtocolError(format!(
+                            "Cannot start service '{service_id}': runtime metadata is corrupted after port reservation (mutex poisoned): {e}"
+                        )));
+                    }
                 }
             }
 
