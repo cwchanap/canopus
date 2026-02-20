@@ -791,54 +791,6 @@ pub mod supervisor_adapter {
             self
         }
 
-        /// Resolve the effective hostname for a service from all sources.
-        ///
-        /// Checks (in order): explicit hostname, metadata store, runtime metadata, spec route.
-        async fn resolve_hostname(
-            &self,
-            service_id: &str,
-            explicit: Option<String>,
-            handle: &SupervisorHandle,
-        ) -> Option<String> {
-            if explicit.is_some() {
-                return explicit;
-            }
-            if let Some(meta) = &self.meta {
-                match meta.get_hostname(service_id).await {
-                    Ok(Some(hn)) => return Some(hn),
-                    Ok(None) => {}
-                    Err(e) => tracing::warn!(
-                        "Failed to read hostname for '{service_id}' from metadata store: {e}"
-                    ),
-                }
-            }
-            match self.runtime_meta.lock() {
-                Ok(map) => {
-                    if let Some(entry) = map.get(service_id) {
-                        if let Some(hn) = entry.hostname.clone() {
-                            return Some(hn);
-                        }
-                    }
-                }
-                Err(e) => tracing::error!(
-                    "Runtime metadata mutex poisoned while resolving hostname for '{service_id}': {e}"
-                ),
-            }
-            match handle.get_spec().await {
-                Ok(spec) => {
-                    if let Some(route) = spec.route {
-                        if !route.is_empty() {
-                            return Some(route);
-                        }
-                    }
-                }
-                Err(e) => tracing::warn!(
-                    "Failed to get spec for '{service_id}' while resolving hostname: {e}"
-                ),
-            }
-            None
-        }
-
         /// Wait for a service to reach the Ready state with a timeout.
         async fn wait_for_readiness(
             startup_timeout_secs: u64,
@@ -1093,31 +1045,6 @@ pub mod supervisor_adapter {
                     }
                 }
             }
-
-            // Resolve and persist the effective hostname from all sources
-            if let Some(hn) = self.resolve_hostname(service_id, hostname, handle).await {
-                if let Some(meta) = &self.meta {
-                    if let Err(e) = meta.set_hostname(service_id, Some(hn.as_str())).await {
-                        tracing::warn!(
-                            "Failed to persist resolved hostname '{hn}' for service '{service_id}': {e}"
-                        );
-                    }
-                }
-                match self.runtime_meta.lock() {
-                    Ok(mut map) => {
-                        let entry = map
-                            .entry(service_id.to_string())
-                            .or_insert_with(RuntimeMetaEntry::default);
-                        entry.hostname = Some(hn);
-                    }
-                    Err(e) => {
-                        return Err(super::IpcError::ProtocolError(format!(
-                            "Cannot start service '{service_id}': runtime metadata is corrupted after port reservation (mutex poisoned): {e}"
-                        )));
-                    }
-                }
-            }
-
             // Subscribe to state changes BEFORE calling start() to avoid missing
             // any state transitions (Ready -> Idle) in fast-exiting services.
             let state_rx = handle.subscribe_to_state();
