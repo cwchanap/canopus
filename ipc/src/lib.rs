@@ -341,7 +341,7 @@ mod tests {
             // 64 * 1024 + 1 = 65537 bytes — one byte over the limit.
             let oversized = vec![b'x'; 64 * 1024 + 1];
             stream.write_all(&oversized).await.unwrap();
-            // Drop stream (EOF) so the client loop terminates after the size check.
+            // The size check fires immediately upon accumulating enough bytes; dropping the stream here is just cleanup.
         });
 
         let client = IpcClient::new(addr.ip().to_string(), addr.port());
