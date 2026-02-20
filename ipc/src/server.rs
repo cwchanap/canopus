@@ -841,7 +841,7 @@ pub mod supervisor_adapter {
 
         /// Wait for a service to reach the Ready state with a timeout.
         async fn wait_for_readiness(
-            handle: &SupervisorHandle,
+            startup_timeout_secs: u64,
             mut state_rx: tokio::sync::watch::Receiver<schema::ServiceState>,
         ) -> Result<()> {
             let current = *state_rx.borrow();
@@ -856,7 +856,7 @@ pub mod supervisor_adapter {
                     "service entered terminal state '{current:?}' before readiness"
                 )));
             }
-            let timeout_secs = handle.spec.startup_timeout_secs.saturating_add(5);
+            let timeout_secs = startup_timeout_secs.saturating_add(5);
             let wait = async {
                 loop {
                     if state_rx.changed().await.is_err() {
@@ -1087,7 +1087,7 @@ pub mod supervisor_adapter {
                         }
                     }
                     Err(e) => {
-                        return Err(IpcError::ProtocolError(format!(
+                        return Err(super::IpcError::ProtocolError(format!(
                             "Cannot start service '{service_id}': runtime metadata is corrupted (mutex poisoned): {e}"
                         )));
                     }
@@ -1111,7 +1111,7 @@ pub mod supervisor_adapter {
                         entry.hostname = Some(hn);
                     }
                     Err(e) => {
-                        return Err(IpcError::ProtocolError(format!(
+                        return Err(super::IpcError::ProtocolError(format!(
                             "Cannot start service '{service_id}': runtime metadata is corrupted after port reservation (mutex poisoned): {e}"
                         )));
                     }
@@ -1126,7 +1126,7 @@ pub mod supervisor_adapter {
                 .start()
                 .map_err(|e| super::IpcError::ProtocolError(e.to_string()))?;
 
-            Self::wait_for_readiness(handle, state_rx).await
+            Self::wait_for_readiness(handle.spec.startup_timeout_secs, state_rx).await
         }
 
         async fn status(&self, service_id: &str) -> Result<ServiceDetail> {
@@ -1269,6 +1269,167 @@ pub mod supervisor_adapter {
                 meta.delete(service_id).await?;
             }
             Ok(())
+        }
+    }
+
+    #[cfg(test)]
+    mod wait_for_readiness_tests {
+        use super::SupervisorControlPlane;
+        use schema::ServiceState;
+        use tokio::sync::watch;
+
+        /// Helper: create a watch channel seeded with a given state.
+        fn make_state_channel(initial: ServiceState) -> (watch::Sender<ServiceState>, watch::Receiver<ServiceState>) {
+            watch::channel(initial)
+        }
+
+        // ── Outcome 1: Already in Ready state ────────────────────────────────────
+        /// If the channel already carries `ServiceState::Ready` the function must
+        /// return `Ok(())` without waiting.
+        #[tokio::test]
+        async fn already_ready_returns_ok_immediately() {
+            let (_tx, rx) = make_state_channel(ServiceState::Ready);
+            let result = SupervisorControlPlane::wait_for_readiness(0, rx).await;
+            assert!(result.is_ok(), "expected Ok(()), got: {result:?}");
+        }
+
+        // ── Outcome 2: Transitions from Starting → Ready ──────────────────────────
+        /// Starting in a non-ready state and then transitioning to `Ready` must
+        /// resolve to `Ok(())`.
+        #[tokio::test]
+        async fn transitions_to_ready_returns_ok() {
+            let (tx, rx) = make_state_channel(ServiceState::Starting);
+
+            // Drive the transition in a background task so the future can make
+            // progress.
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                let _ = tx.send(ServiceState::Ready);
+            });
+
+            let result = SupervisorControlPlane::wait_for_readiness(0, rx).await;
+            assert!(result.is_ok(), "expected Ok(()), got: {result:?}");
+        }
+
+        // ── Outcome 3: Timeout ────────────────────────────────────────────────────
+        /// When the service never reaches `Ready` within the timeout window the
+        /// function must return an error whose message contains "timed out".
+        ///
+        /// We use `startup_timeout_secs = 0` so the effective timeout is 5 s, then
+        /// override the tokio clock with a paused clock and advance it to trigger
+        /// the timeout almost immediately — keeping the test fast.
+        #[tokio::test(start_paused = true)]
+        async fn timeout_returns_error() {
+            let (_tx, rx) = make_state_channel(ServiceState::Starting);
+
+            // startup_timeout_secs=0 → effective timeout = 0.saturating_add(5) = 5 s.
+            // Advance the paused clock past 5 s so tokio::time::timeout fires.
+            let fut = SupervisorControlPlane::wait_for_readiness(0, rx);
+            let drive = async {
+                tokio::time::advance(std::time::Duration::from_secs(6)).await;
+            };
+            let (result, _) = tokio::join!(fut, drive);
+
+            match result {
+                Err(super::super::IpcError::ProtocolError(msg)) => {
+                    assert!(
+                        msg.contains("timed out"),
+                        "expected timeout message, got: {msg}"
+                    );
+                }
+                other => panic!("expected ProtocolError(timed out), got: {other:?}"),
+            }
+        }
+
+        // ── Outcome 4: Channel closed (sender dropped) ───────────────────────────
+        /// Dropping the `Sender` half closes the channel; the function must return
+        /// a `ProtocolError` explaining that the channel closed.
+        #[tokio::test]
+        async fn channel_closed_returns_error() {
+            let (tx, rx) = make_state_channel(ServiceState::Starting);
+
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                drop(tx); // close the channel
+            });
+
+            let result = SupervisorControlPlane::wait_for_readiness(0, rx).await;
+            match result {
+                Err(super::super::IpcError::ProtocolError(msg)) => {
+                    assert!(
+                        msg.contains("closed"),
+                        "expected 'closed' in error message, got: {msg}"
+                    );
+                }
+                other => panic!("expected ProtocolError about closed channel, got: {other:?}"),
+            }
+        }
+
+        // ── Outcome 5a: Immediate terminal state (Stopping at entry) ─────────────
+        /// `Stopping` at the time the function is called is treated as a terminal
+        /// state immediately, without waiting for the timeout.
+        #[tokio::test]
+        async fn stopping_state_at_entry_returns_error_immediately() {
+            let (_tx, rx) = make_state_channel(ServiceState::Stopping);
+
+            let result = SupervisorControlPlane::wait_for_readiness(0, rx).await;
+            match result {
+                Err(super::super::IpcError::ProtocolError(msg)) => {
+                    assert!(
+                        msg.contains("terminal state"),
+                        "expected 'terminal state' in error message, got: {msg}"
+                    );
+                }
+                other => panic!("expected ProtocolError for Stopping at entry, got: {other:?}"),
+            }
+        }
+
+        // ── Outcome 5b: Transition to non-ready terminal state (Idle) ────────────
+        /// If the service transitions to `Idle` (exited without reaching readiness)
+        /// the function must return a `ProtocolError` — not wait for the timeout.
+        #[tokio::test]
+        async fn transition_to_idle_returns_error() {
+            let (tx, rx) = make_state_channel(ServiceState::Starting);
+
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                let _ = tx.send(ServiceState::Idle);
+            });
+
+            let result = SupervisorControlPlane::wait_for_readiness(0, rx).await;
+            match result {
+                Err(super::super::IpcError::ProtocolError(msg)) => {
+                    assert!(
+                        msg.contains("Idle") || msg.contains("exited"),
+                        "expected error about Idle / exited, got: {msg}"
+                    );
+                }
+                other => panic!("expected ProtocolError for Idle transition, got: {other:?}"),
+            }
+        }
+
+        // ── Outcome 5c: Transition to Stopping state during watch ─────────────────
+        /// If the service transitions to `Stopping` while we are waiting, the
+        /// function must return a `ProtocolError` immediately.
+        #[tokio::test]
+        async fn transition_to_stopping_returns_error() {
+            let (tx, rx) = make_state_channel(ServiceState::Starting);
+
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                let _ = tx.send(ServiceState::Stopping);
+            });
+
+            let result = SupervisorControlPlane::wait_for_readiness(0, rx).await;
+            match result {
+                Err(super::super::IpcError::ProtocolError(msg)) => {
+                    assert!(
+                        msg.contains("stopping") || msg.contains("Stopping"),
+                        "expected error about stopping, got: {msg}"
+                    );
+                }
+                other => panic!("expected ProtocolError for Stopping transition, got: {other:?}"),
+            }
         }
     }
 }
