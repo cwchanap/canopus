@@ -526,9 +526,13 @@ impl ServiceSupervisor {
                     if let Err(e) = process.kill().await {
                         error!("Failed to kill process: {}", e);
                     } else {
-                        // Wait for kill to take effect
-                        if let Ok(exit_info) = process.wait().await {
-                            self.emit_process_exit_event(exit_info).await;
+                        // Wait for SIGKILL to take effect
+                        match process.wait().await {
+                            Ok(exit_info) => self.emit_process_exit_event(exit_info).await,
+                            Err(e) => error!(
+                                "Failed to wait for process {} after SIGKILL: {}",
+                                process.pid(), e
+                            ),
                         }
                     }
                 }
@@ -602,8 +606,17 @@ impl ServiceSupervisor {
                     info!("Starting immediate restart for service '{}'", self.spec.id);
                     if let Err(e) = self.start_service().await {
                         error!("Failed to restart service '{}': {}", self.spec.id, e);
-                        self.transition_to(InternalState::Idle, Some("Restart failed".to_string()))
-                            .await?;
+                        // Attempt recovery to Idle. If this also fails, log and continue so the
+                        // supervisor task stays alive to process future control messages.
+                        if let Err(transition_err) = self
+                            .transition_to(InternalState::Idle, Some("Restart failed".to_string()))
+                            .await
+                        {
+                            error!(
+                                "Failed to transition service '{}' to Idle after restart failure: {}",
+                                self.spec.id, transition_err
+                            );
+                        }
                     }
                 } else {
                     // Schedule restart after delay
@@ -838,8 +851,17 @@ impl ServiceSupervisor {
                     info!("Starting automatic restart for service '{}'", self.spec.id);
                     if let Err(e) = self.start_service().await {
                         error!("Failed to restart service '{}': {}", self.spec.id, e);
-                        self.transition_to(InternalState::Idle, Some("Restart failed".to_string()))
-                            .await?;
+                        // Attempt recovery to Idle. If this also fails, log and continue so the
+                        // supervisor task stays alive to process future control messages.
+                        if let Err(transition_err) = self
+                            .transition_to(InternalState::Idle, Some("Restart failed".to_string()))
+                            .await
+                        {
+                            error!(
+                                "Failed to transition service '{}' to Idle after restart failure: {}",
+                                self.spec.id, transition_err
+                            );
+                        }
                     }
                 } else {
                     debug!("Service state changed during restart delay, canceling restart");
