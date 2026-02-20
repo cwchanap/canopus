@@ -456,4 +456,68 @@ mod tests {
         // Should be killed by signal (exit code 128 + signal number)
         assert!(!status.success());
     }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_spawn_with_environment_variable() {
+        use tokio::io::AsyncReadExt;
+
+        let mut envs = std::collections::HashMap::new();
+        envs.insert("MY_TEST_VAR".to_string(), "hello_canopus".to_string());
+
+        let mut child = spawn_with("printenv", &["MY_TEST_VAR"], &envs, None)
+            .expect("Failed to spawn printenv");
+
+        // Capture stdout before waiting, since wait() consumes the child's I/O
+        let mut stdout = child.take_stdout().expect("stdout should be piped");
+
+        let status = child.wait().await.expect("Failed to wait for process");
+
+        let mut output = String::new();
+        stdout
+            .read_to_string(&mut output)
+            .await
+            .expect("Failed to read stdout");
+
+        assert!(
+            status.success(),
+            "printenv should succeed when MY_TEST_VAR is set; exit status: {status}"
+        );
+        assert_eq!(
+            output.trim(),
+            "hello_canopus",
+            "stdout should contain the value of MY_TEST_VAR"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_spawn_with_working_directory() {
+        use tokio::io::AsyncReadExt;
+
+        let mut child =
+            spawn_with("pwd", &[], &std::collections::HashMap::new(), Some("/tmp"))
+                .expect("Failed to spawn pwd");
+
+        let mut stdout = child.take_stdout().expect("stdout should be piped");
+
+        let status = child.wait().await.expect("Failed to wait for process");
+
+        let mut output = String::new();
+        stdout
+            .read_to_string(&mut output)
+            .await
+            .expect("Failed to read stdout");
+
+        assert!(
+            status.success(),
+            "pwd should succeed; exit status: {status}"
+        );
+        // On macOS /tmp is a symlink to /private/tmp; accept either form.
+        let trimmed = output.trim();
+        assert!(
+            trimmed == "/tmp" || trimmed.ends_with("/tmp"),
+            "pwd output should resolve to /tmp, got: {trimmed:?}"
+        );
+    }
+
 }
