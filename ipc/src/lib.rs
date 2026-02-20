@@ -316,4 +316,49 @@ mod tests {
 
         server.await.unwrap();
     }
+
+    #[tokio::test]
+    async fn test_send_message_rejects_oversized_response() {
+        // Verify that IpcClient enforces the MAX_FRAME_SIZE limit.
+        // When the server sends more than 64KB without a newline, the client
+        // must return IpcError::ProtocolError with "exceeds maximum allowed size".
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+
+            // Drain the client's request (read until newline)
+            let mut byte = [0_u8; 1];
+            loop {
+                let n = stream.read(&mut byte).await.unwrap();
+                if n == 0 || byte[0] == b'\n' {
+                    break;
+                }
+            }
+
+            // Send MAX_FRAME_SIZE + 1 bytes of garbage without a newline.
+            // 64 * 1024 + 1 = 65537 bytes — one byte over the limit.
+            let oversized = vec![b'x'; 64 * 1024 + 1];
+            stream.write_all(&oversized).await.unwrap();
+            // Drop stream (EOF) so the client loop terminates after the size check.
+        });
+
+        let client = IpcClient::new(addr.ip().to_string(), addr.port());
+        let result = client.send_message(&Message::Status).await;
+
+        match result {
+            Err(IpcError::ProtocolError(msg)) => {
+                assert!(
+                    msg.contains("exceeds maximum allowed size"),
+                    "expected 'exceeds maximum allowed size' in error, got: {msg}"
+                );
+            }
+            other => {
+                panic!("expected ProtocolError for oversized response, got {other:?}");
+            }
+        }
+
+        server.await.unwrap();
+    }
 }
