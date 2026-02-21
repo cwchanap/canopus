@@ -194,12 +194,15 @@ pub mod simple_rng {
     ///
     /// Returns a random floating-point value uniformly distributed in the
     /// half-open interval [0.0, 1.0).
+    ///
+    /// This implementation uses a 53-bit mantissa to avoid precision loss
+    /// that would occur when casting a full 64-bit value to f64, which could
+    /// otherwise result in returning exactly 1.0.
     #[must_use]
     pub fn next_f64() -> f64 {
-        #[allow(clippy::cast_precision_loss)]
-        {
-            (next_u64() as f64) / (u64::MAX as f64 + 1.0)
-        }
+        // Use only the top 53 bits to stay within f64's mantissa precision.
+        // This ensures the result is strictly less than 1.0.
+        f64::from_bits((next_u64() >> 11) | 0x3FF0_0000_0000_0000_u64) - 1.0
     }
 
     /// Reset the seed for testing purposes.
