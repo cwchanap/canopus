@@ -822,8 +822,14 @@ impl ServiceSupervisor {
         if self.spec.working_directory != new_spec.working_directory {
             changed.push("workingDirectory".to_string());
         }
+        if self.spec.route != new_spec.route {
+            changed.push("route".to_string());
+        }
         if self.spec.restart_policy != new_spec.restart_policy {
             changed.push("restartPolicy".to_string());
+        }
+        if self.spec.backoff_config != new_spec.backoff_config {
+            changed.push("backoffConfig".to_string());
         }
         if self.spec.health_check != new_spec.health_check {
             changed.push("healthCheck".to_string());
@@ -1755,5 +1761,103 @@ mod tests {
             .expect("should succeed with no readiness check");
 
         assert_eq!(*state_rx.borrow(), ServiceState::Ready);
+    }
+
+    #[tokio::test]
+    async fn test_update_spec_detects_route_change() {
+        // Verify that route changes are detected and included in changed_fields
+        let mut supervisor = ServiceSupervisor::new(
+            create_test_spec(),
+            Arc::new(MockProcessAdapter::new()),
+            Arc::new(crate::proxy::NoopProxyAdapter),
+            broadcast::channel(16).0,
+            watch::channel(ServiceState::Idle).0,
+        );
+
+        supervisor.state = InternalState::Ready;
+        let mut new_spec = supervisor.spec.clone();
+        new_spec.route = Some("new-hostname.example.com".to_string());
+
+        supervisor
+            .update_spec(new_spec)
+            .await
+            .expect("update_spec should succeed");
+
+        // State should transition due to restart triggered by route change
+        // Since restart is triggered, it will go through restart cycle
+        // For this test, we just verify the spec was updated
+        assert_eq!(
+            supervisor.spec.route,
+            Some("new-hostname.example.com".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_update_spec_detects_backoff_config_change() {
+        // Verify that backoff_config changes are detected
+        let mut supervisor = ServiceSupervisor::new(
+            create_test_spec(),
+            Arc::new(MockProcessAdapter::new()),
+            Arc::new(crate::proxy::NoopProxyAdapter),
+            broadcast::channel(16).0,
+            watch::channel(ServiceState::Idle).0,
+        );
+
+        supervisor.state = InternalState::Ready;
+        let mut new_spec = supervisor.spec.clone();
+        new_spec.backoff_config.base_delay_secs = 10;
+
+        supervisor
+            .update_spec(new_spec)
+            .await
+            .expect("update_spec should succeed");
+
+        assert_eq!(supervisor.spec.backoff_config.base_delay_secs, 10);
+    }
+
+    #[test]
+    fn test_get_changed_fields_includes_route() {
+        // Unit test for get_changed_fields to verify route is tracked
+        let spec = create_test_spec();
+        let supervisor = ServiceSupervisor::new(
+            spec.clone(),
+            Arc::new(MockProcessAdapter::new()),
+            Arc::new(crate::proxy::NoopProxyAdapter),
+            broadcast::channel(16).0,
+            watch::channel(ServiceState::Idle).0,
+        );
+
+        let mut new_spec = spec.clone();
+        new_spec.route = Some("api.example.com".to_string());
+
+        let changed = supervisor.get_changed_fields(&new_spec);
+        assert!(
+            changed.contains(&"route".to_string()),
+            "route should be in changed_fields: {:?}",
+            changed
+        );
+    }
+
+    #[test]
+    fn test_get_changed_fields_includes_backoff_config() {
+        // Unit test for get_changed_fields to verify backoff_config is tracked
+        let spec = create_test_spec();
+        let supervisor = ServiceSupervisor::new(
+            spec.clone(),
+            Arc::new(MockProcessAdapter::new()),
+            Arc::new(crate::proxy::NoopProxyAdapter),
+            broadcast::channel(16).0,
+            watch::channel(ServiceState::Idle).0,
+        );
+
+        let mut new_spec = spec.clone();
+        new_spec.backoff_config.max_delay_secs = 600;
+
+        let changed = supervisor.get_changed_fields(&new_spec);
+        assert!(
+            changed.contains(&"backoffConfig".to_string()),
+            "backoffConfig should be in changed_fields: {:?}",
+            changed
+        );
     }
 }
