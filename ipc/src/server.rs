@@ -1206,7 +1206,9 @@ pub mod supervisor_adapter {
         use tokio::sync::watch;
 
         /// Helper: create a watch channel seeded with a given state.
-        fn make_state_channel(initial: ServiceState) -> (watch::Sender<ServiceState>, watch::Receiver<ServiceState>) {
+        fn make_state_channel(
+            initial: ServiceState,
+        ) -> (watch::Sender<ServiceState>, watch::Receiver<ServiceState>) {
             watch::channel(initial)
         }
 
