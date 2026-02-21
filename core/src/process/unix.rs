@@ -494,9 +494,8 @@ mod tests {
     async fn test_spawn_with_working_directory() {
         use tokio::io::AsyncReadExt;
 
-        let mut child =
-            spawn_with("pwd", &[], &std::collections::HashMap::new(), Some("/tmp"))
-                .expect("Failed to spawn pwd");
+        let mut child = spawn_with("pwd", &[], &std::collections::HashMap::new(), Some("/tmp"))
+            .expect("Failed to spawn pwd");
 
         let mut stdout = child.take_stdout().expect("stdout should be piped");
 
@@ -519,5 +518,4 @@ mod tests {
             "pwd output should resolve to /tmp, got: {trimmed:?}"
         );
     }
-
 }

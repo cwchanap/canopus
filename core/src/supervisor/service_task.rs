@@ -534,7 +534,8 @@ impl ServiceSupervisor {
                             Ok(Err(e)) => {
                                 error!(
                                     "Failed to wait for process {} after SIGKILL: {}",
-                                    process.pid(), e
+                                    process.pid(),
+                                    e
                                 );
                             }
                             Err(_) => {
@@ -551,7 +552,8 @@ impl ServiceSupervisor {
                                     exit_code: None,
                                     signal: Some(9), // SIGKILL
                                     timestamp: ServiceEvent::current_timestamp(),
-                                }).await;
+                                })
+                                .await;
                             }
                         }
                     }

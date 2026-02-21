@@ -175,6 +175,7 @@ pub mod simple_rng {
         let seed = guard.as_mut().expect("SEED must be initialized");
         let new_seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
         *seed = new_seed;
+        drop(guard);
         new_seed
     }
 
