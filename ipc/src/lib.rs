@@ -266,8 +266,8 @@ mod tests {
             Ok(Err(e)) => {
                 panic!("Expected successful response, got error: {e:?}");
             }
-            Err(_) => {
-                panic!("Client timed out - legacy parse didn't work with open connection");
+            Err(e) => {
+                panic!("Client timed out - legacy parse didn't work with open connection: {e:?}");
             }
         }
 

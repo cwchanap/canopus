@@ -1257,7 +1257,7 @@ pub mod supervisor_adapter {
             let drive = async {
                 tokio::time::advance(std::time::Duration::from_secs(6)).await;
             };
-            let (result, _) = tokio::join!(fut, drive);
+            let (result, ()) = tokio::join!(fut, drive);
 
             match result {
                 Err(super::super::IpcError::ProtocolError(msg)) => {
