@@ -526,13 +526,33 @@ impl ServiceSupervisor {
                     if let Err(e) = process.kill().await {
                         error!("Failed to kill process: {}", e);
                     } else {
-                        // Wait for SIGKILL to take effect
-                        match process.wait().await {
-                            Ok(exit_info) => self.emit_process_exit_event(exit_info).await,
-                            Err(e) => error!(
-                                "Failed to wait for process {} after SIGKILL: {}",
-                                process.pid(), e
-                            ),
+                        // Wait for SIGKILL to take effect with a timeout to avoid
+                        // blocking indefinitely on zombie processes
+                        let sigkill_timeout = Duration::from_secs(5);
+                        match timeout(sigkill_timeout, process.wait()).await {
+                            Ok(Ok(exit_info)) => self.emit_process_exit_event(exit_info).await,
+                            Ok(Err(e)) => {
+                                error!(
+                                    "Failed to wait for process {} after SIGKILL: {}",
+                                    process.pid(), e
+                                );
+                            }
+                            Err(_) => {
+                                // Timeout waiting for process after SIGKILL - log and proceed
+                                // The process may be a zombie or in an unknown state
+                                error!(
+                                    "Timeout waiting for process {} to exit after SIGKILL (zombie process?)",
+                                    process.pid()
+                                );
+                                // Emit a synthetic exit event to mark the process as failed
+                                // and ensure proper state transition
+                                self.emit_process_exit_event(ServiceExit {
+                                    pid: process.pid(),
+                                    exit_code: None,
+                                    signal: Some(9), // SIGKILL
+                                    timestamp: ServiceEvent::current_timestamp(),
+                                }).await;
+                            }
                         }
                     }
                 }
