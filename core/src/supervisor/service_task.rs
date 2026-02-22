@@ -1827,14 +1827,13 @@ mod tests {
             watch::channel(ServiceState::Idle).0,
         );
 
-        let mut new_spec = spec.clone();
+        let mut new_spec = spec;
         new_spec.route = Some("api.example.com".to_string());
 
         let changed = supervisor.get_changed_fields(&new_spec);
         assert!(
             changed.contains(&"route".to_string()),
-            "route should be in changed_fields: {:?}",
-            changed
+            "route should be in changed_fields: {changed:?}",
         );
     }
 
@@ -1850,14 +1849,13 @@ mod tests {
             watch::channel(ServiceState::Idle).0,
         );
 
-        let mut new_spec = spec.clone();
+        let mut new_spec = spec;
         new_spec.backoff_config.max_delay_secs = 600;
 
         let changed = supervisor.get_changed_fields(&new_spec);
         assert!(
             changed.contains(&"backoffConfig".to_string()),
-            "backoffConfig should be in changed_fields: {:?}",
-            changed
+            "backoffConfig should be in changed_fields: {changed:?}",
         );
     }
 }
