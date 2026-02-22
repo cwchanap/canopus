@@ -128,20 +128,12 @@ pub mod simple_rng {
     /// This performs lazy initialization by calling `init_seed()` if the seed hasn't
     /// been explicitly initialized with `init_seed_with_value()`.
     fn ensure_seed_initialized() {
-        // Acquire lock and check whether already initialized.
-        {
-            let guard = SEED.lock().unwrap();
-            if guard.is_some() {
-                return;
-            }
+        // Fast path: check if already initialized without generating entropy.
+        if SEED.lock().unwrap().is_some() {
+            return;
         }
-        // Need to initialize - acquire lock and double-check
-        let fallback = FALLBACK_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let seed = system_seed_or(fallback);
-        let mut guard = SEED.lock().unwrap();
-        if guard.is_none() {
-            *guard = Some(seed);
-        }
+        // Slow path: delegate to init_seed for initialization.
+        init_seed();
     }
 
     /// Generate a pseudo-random u64.
