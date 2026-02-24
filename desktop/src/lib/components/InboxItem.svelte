@@ -1,0 +1,160 @@
+<script lang="ts">
+  import { markInboxRead, dismissInboxItem } from "../api";
+  import { inboxItems } from "../stores";
+  import type { InboxItem } from "../types";
+
+  export let item: InboxItem;
+
+  const agentLabel: Record<string, string> = {
+    claudeCode: "Claude Code",
+    codex: "Codex CLI",
+    windsurf: "Windsurf",
+    openCode: "OpenCode",
+    other: "Agent",
+  };
+
+  const agentColor: Record<string, string> = {
+    claudeCode: "#f97316",
+    codex: "#3b82f6",
+    windsurf: "#06b6d4",
+    openCode: "#8b5cf6",
+    other: "#64748b",
+  };
+
+  function timeAgo(iso: string): string {
+    const diff = Date.now() - new Date(iso).getTime();
+    const min = Math.floor(diff / 60000);
+    const hr = Math.floor(min / 60);
+    const day = Math.floor(hr / 24);
+    if (day > 0) return `${day}d ago`;
+    if (hr > 0) return `${hr}h ago`;
+    if (min > 0) return `${min}m ago`;
+    return "just now";
+  }
+
+  async function read() {
+    await markInboxRead(item.id);
+    inboxItems.update((items) =>
+      items.map((i) => (i.id === item.id ? { ...i, status: "read" } : i)),
+    );
+  }
+
+  async function dismiss() {
+    await dismissInboxItem(item.id);
+    inboxItems.update((items) => items.filter((i) => i.id !== item.id));
+  }
+</script>
+
+<div class="item" class:unread={item.status === "unread"} on:click={read}>
+  <div class="agent-badge" style:background={agentColor[item.sourceAgent] ?? "#64748b"}>
+    {agentLabel[item.sourceAgent] ?? "Agent"}
+  </div>
+
+  <div class="body">
+    <div class="top">
+      <span class="project">{item.projectName}</span>
+      <span class="time">{timeAgo(item.createdAt)}</span>
+    </div>
+    <p class="summary">{item.statusSummary}</p>
+    <p class="action">{item.actionRequired}</p>
+  </div>
+
+  <button
+    class="dismiss-btn"
+    title="Dismiss"
+    on:click|stopPropagation={dismiss}
+  >✕</button>
+</div>
+
+<style>
+  .item {
+    display: flex;
+    gap: 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid #1e2130;
+    cursor: pointer;
+    transition: background 0.15s;
+    position: relative;
+  }
+
+  .item:hover {
+    background: #1a1d27;
+  }
+
+  .item.unread {
+    border-left: 3px solid #7c3aed;
+  }
+
+  .agent-badge {
+    flex-shrink: 0;
+    align-self: flex-start;
+    margin-top: 2px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    color: white;
+    opacity: 0.9;
+    white-space: nowrap;
+  }
+
+  .body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  .project {
+    font-size: 12px;
+    font-weight: 500;
+    color: #94a3b8;
+  }
+
+  .time {
+    font-size: 11px;
+    color: #475569;
+    flex-shrink: 0;
+  }
+
+  .summary {
+    font-size: 13px;
+    color: #e2e8f0;
+    margin: 0 0 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .action {
+    font-size: 12px;
+    color: #64748b;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .dismiss-btn {
+    align-self: center;
+    background: none;
+    border: none;
+    color: #334155;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 4px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    transition: color 0.15s;
+  }
+
+  .dismiss-btn:hover {
+    color: #64748b;
+  }
+</style>

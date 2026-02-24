@@ -10,6 +10,17 @@ members = [
     "xtask",
     "e2e-tests",
     "hooks",
+    "desktop/src-tauri",
+]
+default-members = [
+    "core",
+    "ipc",
+    "daemon",
+    "cli",
+    "schema",
+    "inbox",
+    "xtask",
+    "hooks",
 ]
 
 [workspace.package]

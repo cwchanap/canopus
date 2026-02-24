@@ -29,22 +29,22 @@ test-ci:
 test-coverage:
     cargo test --all-features -- --nocapture
 
-# Lint the code (basic level)
+# Lint the code (basic level, excludes desktop which requires Tauri CLI)
 lint:
     @echo "🔍 Running basic linting..."
-    cargo clippy --workspace --all-targets --all-features -- -D warnings
+    cargo clippy --workspace --all-targets --all-features --exclude canopus-desktop -- -D warnings
     @echo "✅ Basic linting completed"
 
-# Strict linting with pedantic rules  
+# Strict linting with pedantic rules
 lint-strict:
     @echo "🔍 Running strict linting..."
-    cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::all -D clippy::pedantic -W clippy::nursery -W clippy::cargo -A clippy::multiple_crate_versions
+    cargo clippy --workspace --all-targets --all-features --exclude canopus-desktop -- -D warnings -D clippy::all -D clippy::pedantic -W clippy::nursery -W clippy::cargo -A clippy::multiple_crate_versions
     @echo "✅ Strict linting completed"
 
 # Fix linting issues
 lint-fix:
     @echo "🔧 Fixing linting issues..."
-    cargo clippy --workspace --all-targets --all-features --fix --allow-dirty -- -D warnings
+    cargo clippy --workspace --all-targets --all-features --exclude canopus-desktop --fix --allow-dirty -- -D warnings
     cargo fmt
     @echo "✅ Linting fixes applied"
 
@@ -55,10 +55,10 @@ lint-all: lint fmt-check
     cargo audit || echo "⚠️  cargo-audit not installed, skipping security audit"
     @echo "✅ All linting checks completed"
 
-# Check code without building
+# Check code without building (excludes desktop which requires Tauri CLI)
 check:
     @echo "🔍 Checking code..."
-    cargo check --workspace --all-targets --all-features
+    cargo check --workspace --all-targets --all-features --exclude canopus-desktop
     @echo "✅ Check completed"
 
 # Check formatting only
@@ -134,6 +134,14 @@ setup-hooks:
     chmod +x .git-hooks/pre-commit
     ln -sf ../../.git-hooks/pre-commit .git/hooks/pre-commit
     @echo "✅ Git hooks installed"
+
+# Run the Canopus desktop app in development mode (requires Node.js + Tauri CLI)
+desktop:
+    cd desktop && npm install && npm run tauri dev
+
+# Build the Canopus desktop app for release
+desktop-build:
+    cd desktop && npm install && npm run tauri build
 
 # Example: Run the daemon and CLI in separate terminals
 demo:
