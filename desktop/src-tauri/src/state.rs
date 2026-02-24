@@ -2,6 +2,7 @@ use canopus_inbox::store::SqliteStore;
 use ipc::uds_client::JsonRpcClient;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 use std::path::PathBuf;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
@@ -48,5 +49,20 @@ impl AppState {
             projects_path,
             log_tails: Mutex::new(HashMap::new()),
         })
+    }
+}
+
+impl fmt::Debug for AppState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let tails_summary = match self.log_tails.try_lock() {
+            Ok(guard) => format!("{} active", guard.len()),
+            Err(_) => "<locked>".to_string(),
+        };
+        f.debug_struct("AppState")
+            .field("projects_path", &self.projects_path)
+            .field("ipc", &"<redacted ipc>")
+            .field("inbox", &"<redacted inbox>")
+            .field("log_tails", &tails_summary)
+            .finish()
     }
 }

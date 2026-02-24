@@ -1,5 +1,5 @@
-import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { defineConfig } from "vite";
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -21,10 +21,15 @@ export default defineConfig({
       ignored: ["**/src-tauri/**"],
     },
   },
-  envPrefix: ["VITE_", "TAURI_ENV_*"],
+  envPrefix: ["VITE_", "TAURI_ENV_"],
   build: {
-    target: process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari13",
-    minify: !process.env.TAURI_ENV_DEBUG ? "esbuild" : false,
-    sourcemap: !!process.env.TAURI_ENV_DEBUG,
+    target:
+      process.env.TAURI_ENV_PLATFORM === "windows"
+        ? "chrome105"
+        : process.env.TAURI_ENV_PLATFORM === "linux"
+          ? "chrome105"
+          : "safari13",
+    minify: process.env.TAURI_ENV_DEBUG === "true" ? false : "esbuild",
+    sourcemap: process.env.TAURI_ENV_DEBUG === "true",
   },
 });

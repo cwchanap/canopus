@@ -41,9 +41,9 @@ lint-strict:
     cargo clippy --workspace --all-targets --all-features --exclude canopus-desktop -- -D warnings -D clippy::all -D clippy::pedantic -W clippy::nursery -W clippy::cargo -A clippy::multiple_crate_versions
     @echo "✅ Strict linting completed"
 
-# Fix linting issues
+# Fix linting issues (excludes canopus-desktop)
 lint-fix:
-    @echo "🔧 Fixing linting issues..."
+    @echo "🔧 Fixing linting issues (excluding canopus-desktop)..."
     cargo clippy --workspace --all-targets --all-features --exclude canopus-desktop --fix --allow-dirty -- -D warnings
     cargo fmt
     @echo "✅ Linting fixes applied"
@@ -139,9 +139,15 @@ setup-hooks:
 desktop:
     cd desktop && npm install && npm run tauri dev
 
+# Lint the Canopus desktop Tauri crate (runs clippy inside desktop/src-tauri)
+desktop-lint:
+    @echo "🔍 Linting canopus-desktop crate..."
+    cd desktop/src-tauri && cargo clippy --all-targets -- -D warnings
+    @echo "✅ Desktop linting completed"
+
 # Build the Canopus desktop app for release
 desktop-build:
-    cd desktop && npm install && npm run tauri build
+    cd desktop && npm ci && npm run tauri build
 
 # Example: Run the daemon and CLI in separate terminals
 demo:

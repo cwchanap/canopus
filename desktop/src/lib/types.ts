@@ -1,6 +1,11 @@
 // ── Canopus service types ────────────────────────────────────────────────────
 
-export type ServiceState = "Idle" | "Spawning" | "Starting" | "Ready" | "Stopping";
+export type ServiceState =
+  | "Idle"
+  | "Spawning"
+  | "Starting"
+  | "Ready"
+  | "Stopping";
 
 export interface ServiceSummary {
   id: string;
@@ -25,7 +30,12 @@ export interface ProjectConfig {
 // ── Inbox types ───────────────────────────────────────────────────────────────
 
 export type InboxStatus = "unread" | "read" | "dismissed";
-export type SourceAgent = "claudeCode" | "codex" | "windsurf" | "openCode" | "other";
+export type SourceAgent =
+  | "claudeCode"
+  | "codex"
+  | "windsurf"
+  | "openCode"
+  | "other";
 
 export interface InboxItem {
   id: string;
@@ -43,7 +53,7 @@ export interface InboxItem {
 
 export interface InboxFilter {
   status?: InboxStatus;
-  sourceAgent?: string;
+  sourceAgent?: SourceAgent;
   project?: string;
   limit?: number;
 }

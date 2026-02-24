@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onDestroy, afterUpdate } from "svelte";
+  import { afterUpdate, onDestroy } from "svelte";
   import { stopLogTail } from "../api";
-  import { logs, logPanelServiceId, clearLogs } from "../stores";
+  import { clearLogs, logPanelServiceId, logs } from "../stores";
 
   export let serviceId: string;
 
@@ -17,9 +17,12 @@
   });
 
   async function close() {
-    await stopLogTail(serviceId);
-    clearLogs(serviceId);
-    logPanelServiceId.set(null);
+    try {
+      await stopLogTail(serviceId);
+    } finally {
+      clearLogs(serviceId);
+      logPanelServiceId.set(null);
+    }
   }
 
   onDestroy(() => {
