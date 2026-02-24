@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { startService, stopService, restartService, startLogTail } from "../api";
+  import { restartService, startLogTail, startService, stopService } from "../api";
   import { logPanelServiceId } from "../stores";
   import type { ServiceSummary } from "../types";
 
@@ -7,6 +7,7 @@
   export let onRefresh: () => void;
 
   let loading = false;
+  let actionError = "";
 
   const stateColor: Record<string, string> = {
     Ready: "#22c55e",
@@ -18,19 +19,29 @@
 
   async function handle(action: () => Promise<void>) {
     loading = true;
+    actionError = "";
     try {
       await action();
-      setTimeout(onRefresh, 400);
+      await new Promise<void>((resolve) => setTimeout(resolve, 400));
+      onRefresh();
     } catch (e) {
       console.error(e);
+      actionError = e instanceof Error ? e.message : String(e);
+      setTimeout(() => { actionError = ""; }, 4000);
     } finally {
       loading = false;
     }
   }
 
   async function openLogs() {
-    await startLogTail(service.id);
-    logPanelServiceId.set(service.id);
+    try {
+      await startLogTail(service.id);
+      logPanelServiceId.set(service.id);
+    } catch (e) {
+      console.error(e);
+      actionError = e instanceof Error ? e.message : String(e);
+      setTimeout(() => { actionError = ""; }, 4000);
+    }
   }
 
   const isRunning = () =>
@@ -49,7 +60,7 @@
     <span class="state-label">{service.state}</span>
   </div>
 
-  {#if service.pid || service.port}
+  {#if service.pid || service.port || service.hostname}
     <div class="details">
       {#if service.pid}<span class="detail-tag">pid {service.pid}</span>{/if}
       {#if service.port}<span class="detail-tag">:{service.port}</span>{/if}
@@ -74,6 +85,10 @@
       Logs
     </button>
   </div>
+
+  {#if actionError}
+    <div class="action-error">{actionError}</div>
+  {/if}
 </div>
 
 <style>
@@ -210,5 +225,11 @@
 
   .btn-ghost:hover {
     color: #94a3b8;
+  }
+
+  .action-error {
+    font-size: 11px;
+    color: #ef4444;
+    margin-top: 2px;
   }
 </style>

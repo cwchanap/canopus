@@ -1,18 +1,22 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { listProjects, listServices, saveProjects } from "../api";
-  import { services, projects, logPanelServiceId } from "../stores";
-  import ServiceCard from "./ServiceCard.svelte";
-  import LogViewer from "./LogViewer.svelte";
+  import { logPanelServiceId, projects, services } from "../stores";
   import type { Project, ServiceSummary } from "../types";
+  import LogViewer from "./LogViewer.svelte";
+  import ServiceCard from "./ServiceCard.svelte";
 
   let loading = true;
   let error = "";
   let showAddProject = false;
   let newProjectName = "";
   let refreshInterval: ReturnType<typeof setInterval>;
+  let isLoading = false;
 
   async function load() {
+    if (isLoading) return;
+    isLoading = true;
+    error = "";
     try {
       const [svcList, projConfig] = await Promise.all([listServices(), listProjects()]);
       services.set(svcList);
@@ -21,6 +25,7 @@
       error = String(e);
     } finally {
       loading = false;
+      isLoading = false;
     }
   }
 

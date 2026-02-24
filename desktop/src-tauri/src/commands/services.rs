@@ -68,10 +68,13 @@ pub async fn start_log_tail(
     state: State<'_, AppState>,
     service_id: String,
 ) -> Result<(), String> {
-    let mut tails = state.log_tails.lock().await;
-
-    // Cancel any existing tail for this service.
-    if let Some(handle) = tails.remove(&service_id) {
+    // Acquire the lock only to remove any existing handle, then drop it before
+    // awaiting tail_logs so we don't hold the mutex across an await point.
+    let old_handle = {
+        let mut tails = state.log_tails.lock().await;
+        tails.remove(&service_id)
+    };
+    if let Some(handle) = old_handle {
         handle.abort();
     }
 
@@ -102,7 +105,7 @@ pub async fn start_log_tail(
         }
     });
 
-    tails.insert(service_id, handle);
+    state.log_tails.lock().await.insert(service_id, handle);
     Ok(())
 }
 
@@ -117,4 +120,36 @@ pub async fn stop_log_tail(
         handle.abort();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn log_event_payload_serializes_correctly() {
+        let payload = LogEventPayload {
+            service_id: "my-service".to_string(),
+            stream: "stdout".to_string(),
+            content: "hello world".to_string(),
+            timestamp: "2026-01-01T00:00:00Z".to_string(),
+        };
+        let json = serde_json::to_string(&payload).expect("serialization failed");
+        assert!(json.contains("\"serviceId\":\"my-service\""));
+        assert!(json.contains("\"stream\":\"stdout\""));
+        assert!(json.contains("\"content\":\"hello world\""));
+    }
+
+    #[test]
+    fn log_event_payload_stderr_variant() {
+        let payload = LogEventPayload {
+            service_id: "svc".to_string(),
+            stream: "stderr".to_string(),
+            content: "error line".to_string(),
+            timestamp: "2026-01-01T00:00:01Z".to_string(),
+        };
+        let json = serde_json::to_string(&payload).expect("serialization failed");
+        assert!(json.contains("\"stream\":\"stderr\""));
+        assert!(json.contains("\"content\":\"error line\""));
+    }
 }

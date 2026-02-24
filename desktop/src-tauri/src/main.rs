@@ -2,5 +2,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    canopus_desktop_lib::run();
+    if let Err(e) = canopus_desktop_lib::run() {
+        eprintln!("Fatal: {e}");
+        std::process::exit(1);
+    }
 }
