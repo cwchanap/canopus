@@ -1,0 +1,27 @@
+[package]
+name = "canopus-desktop"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Desktop GUI for Canopus service and agent management"
+
+[lib]
+name = "canopus_desktop_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+ipc = { workspace = true }
+canopus-inbox = { workspace = true }
+schema = { workspace = true }
+
+[lints]
+workspace = true
