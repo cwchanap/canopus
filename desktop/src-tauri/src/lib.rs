@@ -5,12 +5,20 @@ use state::AppState;
 use tauri::Manager;
 
 /// Categorical errors for the desktop crate entry point.
-#[derive(Debug)]
 pub enum CrateError {
     /// Failed to initialise application state (CORE001).
-    AppStateInit(String),
+    AppStateInit(Box<dyn std::error::Error + Send + Sync>),
     /// Tauri runtime failed to start (CORE002).
-    TauriRun(String),
+    TauriRun(tauri::Error),
+}
+
+impl std::fmt::Debug for CrateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AppStateInit(e) => write!(f, "CrateError::AppStateInit({e})"),
+            Self::TauriRun(e) => write!(f, "CrateError::TauriRun({e:?})"),
+        }
+    }
 }
 
 impl std::fmt::Display for CrateError {
@@ -22,7 +30,26 @@ impl std::fmt::Display for CrateError {
     }
 }
 
-impl std::error::Error for CrateError {}
+impl std::error::Error for CrateError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::AppStateInit(e) => Some(e.as_ref()),
+            Self::TauriRun(e) => Some(e),
+        }
+    }
+}
+
+impl From<tauri::Error> for CrateError {
+    fn from(e: tauri::Error) -> Self {
+        Self::TauriRun(e)
+    }
+}
+
+impl From<Box<dyn std::error::Error + Send + Sync>> for CrateError {
+    fn from(e: Box<dyn std::error::Error + Send + Sync>) -> Self {
+        Self::AppStateInit(e)
+    }
+}
 
 pub type Result<T> = std::result::Result<T, CrateError>;
 
@@ -30,7 +57,10 @@ pub type Result<T> = std::result::Result<T, CrateError>;
 pub fn run() -> Result<()> {
     tauri::Builder::default()
         .setup(|app| {
-            let state = AppState::new().map_err(|e| CrateError::AppStateInit(e.to_string()))?;
+            // AppState::new() returns Result<_, Box<dyn Error>>; `?` propagates
+            // it as Box<dyn Error> from the setup closure, which Tauri then
+            // wraps in tauri::Error if the setup fails.
+            let state = AppState::new()?;
             app.manage(state);
             Ok(())
         })
@@ -48,6 +78,6 @@ pub fn run() -> Result<()> {
             commands::projects::list_projects,
             commands::projects::save_projects,
         ])
-        .run(tauri::generate_context!())
-        .map_err(|e| CrateError::TauriRun(e.to_string()))
+        .run(tauri::generate_context!())?;
+    Ok(())
 }

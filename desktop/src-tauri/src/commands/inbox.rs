@@ -1,27 +1,10 @@
-use canopus_inbox::error::InboxError;
 use canopus_inbox::item::{InboxFilter, InboxItem, InboxStatus, SourceAgent};
 use canopus_inbox::store::InboxStore;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tauri::State;
 
+use super::CommandError;
 use crate::state::AppState;
-
-/// Serializable error wrapper that preserves the InboxError categorical code.
-/// Tauri commands require the error type to implement `serde::Serialize`.
-#[derive(Debug, Serialize)]
-pub struct CommandError {
-    pub code: &'static str,
-    pub message: String,
-}
-
-impl From<InboxError> for CommandError {
-    fn from(e: InboxError) -> Self {
-        Self {
-            code: e.code(),
-            message: e.to_string(),
-        }
-    }
-}
 
 /// Input filter from the frontend (string-based for JSON serialization).
 #[derive(Debug, Deserialize)]
@@ -70,6 +53,7 @@ pub async fn dismiss_inbox_item(
 mod tests {
     use super::*;
     use canopus_inbox::error::InboxError;
+    use crate::commands::CommandError;
 
     // ── Filter parsing tests ──────────────────────────────────────────────────
 
