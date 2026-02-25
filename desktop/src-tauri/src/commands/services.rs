@@ -74,7 +74,7 @@ pub async fn start_log_tail(
     app: AppHandle,
     state: State<'_, AppState>,
     service_id: String,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     // Acquire the lock only to remove any existing handle, then drop it before
     // awaiting tail_logs so we don't hold the mutex across an await point.
     let old_handle = {
@@ -89,7 +89,7 @@ pub async fn start_log_tail(
         .ipc
         .tail_logs(&service_id, None)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(CommandError::from)?;
 
     let svc_id = service_id.clone();
     let handle = tokio::spawn(async move {
@@ -118,7 +118,10 @@ pub async fn start_log_tail(
 
 /// Stop tailing logs for a service.
 #[tauri::command]
-pub async fn stop_log_tail(state: State<'_, AppState>, service_id: String) -> Result<(), String> {
+pub async fn stop_log_tail(
+    state: State<'_, AppState>,
+    service_id: String,
+) -> Result<(), CommandError> {
     let mut tails = state.log_tails.lock().await;
     if let Some(handle) = tails.remove(&service_id) {
         handle.abort();

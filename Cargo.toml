@@ -48,6 +48,10 @@ async-trait = "0.1.80"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.64"
 
+# Tauri (desktop crate)
+tauri = { version = "2", features = [] }
+tauri-build = { version = "2", features = [] }
+
 # CLI
 clap = { version = "4.0", features = ["derive"] }
 
