@@ -33,8 +33,8 @@ pub struct AppState {
 
 impl AppState {
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        let socket_path = std::env::var("CANOPUS_IPC_SOCKET")
-            .unwrap_or_else(|_| "/tmp/canopus.sock".to_string());
+        let socket_path =
+            std::env::var("CANOPUS_IPC_SOCKET").unwrap_or_else(|_| "/tmp/canopus.sock".to_string());
         let token = std::env::var("CANOPUS_IPC_TOKEN").ok();
 
         let ipc = JsonRpcClient::new(socket_path, token);

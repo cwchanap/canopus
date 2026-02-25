@@ -54,10 +54,7 @@ pub async fn list_inbox(
 }
 
 #[tauri::command]
-pub async fn mark_inbox_read(
-    state: State<'_, AppState>,
-    id: String,
-) -> Result<(), CommandError> {
+pub async fn mark_inbox_read(state: State<'_, AppState>, id: String) -> Result<(), CommandError> {
     state.inbox.mark_read(&id).await.map_err(CommandError::from)
 }
 

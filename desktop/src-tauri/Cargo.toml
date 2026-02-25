@@ -6,6 +6,9 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Desktop GUI for Canopus service and agent management"
+readme = "../../README.md"
+keywords = ["desktop", "gui", "daemon", "services"]
+categories = ["development-tools", "gui"]
 
 [lib]
 name = "canopus_desktop_lib"
