@@ -14,7 +14,11 @@ pub async fn get_service_detail(
     state: State<'_, AppState>,
     service_id: String,
 ) -> Result<ServiceDetail, String> {
-    state.ipc.status(&service_id).await.map_err(|e| e.to_string())
+    state
+        .ipc
+        .status(&service_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -32,18 +36,12 @@ pub async fn start_service(
 }
 
 #[tauri::command]
-pub async fn stop_service(
-    state: State<'_, AppState>,
-    service_id: String,
-) -> Result<(), String> {
+pub async fn stop_service(state: State<'_, AppState>, service_id: String) -> Result<(), String> {
     state.ipc.stop(&service_id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn restart_service(
-    state: State<'_, AppState>,
-    service_id: String,
-) -> Result<(), String> {
+pub async fn restart_service(state: State<'_, AppState>, service_id: String) -> Result<(), String> {
     state
         .ipc
         .restart(&service_id)
@@ -111,10 +109,7 @@ pub async fn start_log_tail(
 
 /// Stop tailing logs for a service.
 #[tauri::command]
-pub async fn stop_log_tail(
-    state: State<'_, AppState>,
-    service_id: String,
-) -> Result<(), String> {
+pub async fn stop_log_tail(state: State<'_, AppState>, service_id: String) -> Result<(), String> {
     let mut tails = state.log_tails.lock().await;
     if let Some(handle) = tails.remove(&service_id) {
         handle.abort();

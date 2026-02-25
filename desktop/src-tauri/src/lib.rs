@@ -30,8 +30,7 @@ pub type Result<T> = std::result::Result<T, CrateError>;
 pub fn run() -> Result<()> {
     tauri::Builder::default()
         .setup(|app| {
-            let state = AppState::new()
-                .map_err(|e| CrateError::AppStateInit(e.to_string()))?;
+            let state = AppState::new().map_err(|e| CrateError::AppStateInit(e.to_string()))?;
             app.manage(state);
             Ok(())
         })
