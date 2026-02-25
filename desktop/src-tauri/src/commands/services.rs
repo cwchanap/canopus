@@ -2,23 +2,26 @@ use ipc::server::{ServiceDetail, ServiceSummary};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
+use super::CommandError;
 use crate::state::AppState;
 
 #[tauri::command]
-pub async fn list_services(state: State<'_, AppState>) -> Result<Vec<ServiceSummary>, String> {
-    state.ipc.list().await.map_err(|e| e.to_string())
+pub async fn list_services(
+    state: State<'_, AppState>,
+) -> Result<Vec<ServiceSummary>, CommandError> {
+    state.ipc.list().await.map_err(CommandError::from)
 }
 
 #[tauri::command]
 pub async fn get_service_detail(
     state: State<'_, AppState>,
     service_id: String,
-) -> Result<ServiceDetail, String> {
+) -> Result<ServiceDetail, CommandError> {
     state
         .ipc
         .status(&service_id)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(CommandError::from)
 }
 
 #[tauri::command]
@@ -27,26 +30,32 @@ pub async fn start_service(
     service_id: String,
     port: Option<u16>,
     hostname: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     state
         .ipc
         .start(&service_id, port, hostname.as_deref())
         .await
-        .map_err(|e| e.to_string())
+        .map_err(CommandError::from)
 }
 
 #[tauri::command]
-pub async fn stop_service(state: State<'_, AppState>, service_id: String) -> Result<(), String> {
-    state.ipc.stop(&service_id).await.map_err(|e| e.to_string())
+pub async fn stop_service(
+    state: State<'_, AppState>,
+    service_id: String,
+) -> Result<(), CommandError> {
+    state.ipc.stop(&service_id).await.map_err(CommandError::from)
 }
 
 #[tauri::command]
-pub async fn restart_service(state: State<'_, AppState>, service_id: String) -> Result<(), String> {
+pub async fn restart_service(
+    state: State<'_, AppState>,
+    service_id: String,
+) -> Result<(), CommandError> {
     state
         .ipc
         .restart(&service_id)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(CommandError::from)
 }
 
 /// Payload emitted for each log line received.

@@ -38,13 +38,20 @@
     return $services.filter((s) => !grouped.has(s.id));
   }
 
+  $: ungrouped = ungroupedServices();
+
   async function addProject() {
     if (!newProjectName.trim()) return;
     const updated = [...$projects, { name: newProjectName.trim(), serviceIds: [] }];
-    await saveProjects({ projects: updated });
-    projects.set(updated);
-    newProjectName = "";
-    showAddProject = false;
+    try {
+      await saveProjects({ projects: updated });
+      projects.set(updated);
+      newProjectName = "";
+      showAddProject = false;
+    } catch (e) {
+      console.error("Failed to save project:", e);
+      error = String(e);
+    }
   }
 
   onMount(() => {
@@ -82,7 +89,6 @@
           </section>
         {/each}
 
-        {@const ungrouped = ungroupedServices()}
         {#if ungrouped.length > 0}
           <section class="project-section">
             <h2 class="project-name ungrouped">Other Services</h2>
