@@ -43,7 +43,11 @@ pub async fn stop_service(
     state: State<'_, AppState>,
     service_id: String,
 ) -> Result<(), CommandError> {
-    state.ipc.stop(&service_id).await.map_err(CommandError::from)
+    state
+        .ipc
+        .stop(&service_id)
+        .await
+        .map_err(CommandError::from)
 }
 
 #[tauri::command]

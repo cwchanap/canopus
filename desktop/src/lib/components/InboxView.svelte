@@ -1,12 +1,17 @@
 <script lang="ts">
   import { listInbox } from "../api";
   import { inboxItems } from "../stores";
-  import InboxItem from "./InboxItem.svelte";
   import type { InboxStatus } from "../types";
+  import InboxItem from "./InboxItem.svelte";
 
   let loading = true;
   let error = "";
   let statusFilter: InboxStatus | "all" = "all";
+  const filterOptions: ReadonlyArray<{ value: InboxStatus | "all"; label: string }> = [
+    { value: "all", label: "All" },
+    { value: "unread", label: "Unread" },
+    { value: "read", label: "Read" },
+  ];
 
   async function load() {
     loading = true;
@@ -30,13 +35,13 @@
   <div class="inbox-header">
     <h1 class="title">Agent Inbox</h1>
     <div class="filters">
-      {#each [["all", "All"], ["unread", "Unread"], ["read", "Read"]] as [val, label] (val)}
+      {#each filterOptions as option (option.value)}
         <button
           class="filter-btn"
-          class:active={statusFilter === val}
-          on:click={() => (statusFilter = val as InboxStatus | "all")}
+          class:active={statusFilter === option.value}
+          on:click={() => (statusFilter = option.value)}
         >
-          {label}
+          {option.label}
         </button>
       {/each}
     </div>

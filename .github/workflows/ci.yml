@@ -39,10 +39,10 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Run cargo check
-        run: cargo check --all-targets --all-features
+        run: cargo check --workspace --all-targets --all-features --exclude canopus-desktop
 
       - name: Run tests
-        run: cargo test --all-features
+        run: cargo test --workspace --all-features --exclude canopus-desktop
 
       - name: Rerun http_flow with logs (on failure)
         if: failure()
@@ -55,7 +55,7 @@ jobs:
         run: cargo install cargo-tarpaulin
 
       - name: Run tarpaulin
-        run: cargo tarpaulin --all-features --workspace --timeout 120 --out xml
+        run: cargo tarpaulin --all-features --workspace --exclude canopus-desktop --timeout 120 --out xml
 
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v4
@@ -86,7 +86,7 @@ jobs:
 
       - name: Run clippy
         run: |
-          cargo clippy --workspace --all-targets --all-features -- \
+          cargo clippy --workspace --all-targets --all-features --exclude canopus-desktop -- \
             -D warnings \
             -D clippy::all \
             -D clippy::pedantic \
@@ -188,4 +188,30 @@ jobs:
         run: cargo install cargo-hack
 
       - name: Run cargo minimal-versions
-        run: cargo minimal-versions check
+        run: cargo minimal-versions check --workspace --exclude canopus-desktop
+
+  desktop:
+    name: Desktop
+    runs-on: macos-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install frontend dependencies
+        working-directory: desktop
+        run: npm install
+
+      - name: Build frontend
+        working-directory: desktop
+        run: npm run build
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check Tauri crate
+        run: cargo check --manifest-path desktop/src-tauri/Cargo.toml --all-targets --all-features
