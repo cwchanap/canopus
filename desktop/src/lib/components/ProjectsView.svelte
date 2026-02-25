@@ -22,7 +22,7 @@
       services.set(svcList);
       projects.set(projConfig.projects);
     } catch (e) {
-      error = String(e);
+      error = extractErrorMessage(e);
     } finally {
       loading = false;
       isLoading = false;
@@ -50,7 +50,7 @@
       showAddProject = false;
     } catch (e) {
       console.error("Failed to save project:", e);
-      error = String(e);
+      error = extractErrorMessage(e);
     }
   }
 
@@ -59,6 +59,24 @@
     refreshInterval = setInterval(load, 5000);
     return () => clearInterval(refreshInterval);
   });
+
+  /**
+   * Extract a human-readable message from any thrown value.
+   * Tauri commands return `CommandError` shaped objects `{ code, message }`
+   * rather than `Error` instances, so `String(e)` would produce `[object Object]`.
+   */
+  function extractErrorMessage(e: unknown): string {
+    if (e instanceof Error) return e.message;
+    if (typeof e === "object" && e !== null) {
+      const obj = e as Record<string, unknown>;
+      if (typeof obj.message === "string") {
+        return typeof obj.code === "string"
+          ? `[${obj.code}] ${obj.message}`
+          : obj.message;
+      }
+    }
+    return String(e);
+  }
 </script>
 
 <div class="projects-layout">
@@ -132,7 +150,9 @@
 
   {#if $logPanelServiceId}
     <div class="log-pane">
-      <LogViewer serviceId={$logPanelServiceId} />
+      {#key $logPanelServiceId}
+        <LogViewer serviceId={$logPanelServiceId} />
+      {/key}
     </div>
   {/if}
 </div>

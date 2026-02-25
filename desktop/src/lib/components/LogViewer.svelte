@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { afterUpdate, onDestroy } from "svelte";
-  import { stopLogTail } from "../api";
+  import { afterUpdate, onDestroy, onMount } from "svelte";
+  import { startLogTail, stopLogTail } from "../api";
   import { clearLogs, logPanelServiceId, logs } from "../stores";
 
   export let serviceId: string;
@@ -14,6 +14,10 @@
     if (autoScroll && container) {
       container.scrollTop = container.scrollHeight;
     }
+  });
+
+  onMount(() => {
+    startLogTail(serviceId).catch(console.error);
   });
 
   async function close() {
@@ -49,7 +53,7 @@
     {#if lines.length === 0}
       <p class="empty">Waiting for output…</p>
     {:else}
-      {#each lines as line (line.timestamp + line.content)}
+      {#each lines as line, i (line.timestamp + line.content + String(i))}
         <div class="log-line" class:stderr={line.stream === "stderr"}>
           <span class="ts">{line.timestamp.slice(11, 19)}</span>
           <span class="content">{line.content}</span>

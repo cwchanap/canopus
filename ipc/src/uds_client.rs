@@ -279,7 +279,11 @@ impl JsonRpcClient {
                             if let Ok(evt) =
                                 serde_json::from_value::<schema::ServiceEvent>(params.clone())
                             {
-                                let _ = tx.send(evt).await;
+                                if tx.send(evt).await.is_err() {
+                                    // Receiver was dropped; stop reading to avoid leaking
+                                    // this socket-reader task.
+                                    break;
+                                }
                             }
                         }
                     }
