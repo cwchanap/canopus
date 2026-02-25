@@ -33,12 +33,12 @@
     return $services.filter((s) => project.serviceIds.includes(s.id));
   }
 
-  function ungroupedServices(): ServiceSummary[] {
+  // Inline the dependency on $projects and $services so Svelte's compiler can
+  // statically track them and re-run the block when either store changes.
+  $: ungrouped = (() => {
     const grouped = new Set($projects.flatMap((p) => p.serviceIds));
     return $services.filter((s) => !grouped.has(s.id));
-  }
-
-  $: ungrouped = ungroupedServices();
+  })();
 
   async function addProject() {
     if (!newProjectName.trim()) return;

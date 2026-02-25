@@ -32,7 +32,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let socket_path =
             std::env::var("CANOPUS_IPC_SOCKET").unwrap_or_else(|_| "/tmp/canopus.sock".to_string());
         let token = std::env::var("CANOPUS_IPC_TOKEN").ok();

@@ -55,12 +55,13 @@ pub type Result<T> = std::result::Result<T, CrateError>;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() -> Result<()> {
+    // Initialise app state before handing control to Tauri so that init errors
+    // are captured as CrateError::AppStateInit rather than being swallowed into
+    // tauri::Error (which would route them to CrateError::TauriRun instead).
+    let state = AppState::new().map_err(|e| CrateError::AppStateInit(e))?;
+
     tauri::Builder::default()
         .setup(|app| {
-            // AppState::new() returns Result<_, Box<dyn Error>>; `?` propagates
-            // it as Box<dyn Error> from the setup closure, which Tauri then
-            // wraps in tauri::Error if the setup fails.
-            let state = AppState::new()?;
             app.manage(state);
             Ok(())
         })
