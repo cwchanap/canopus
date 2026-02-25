@@ -52,8 +52,8 @@ pub async fn dismiss_inbox_item(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use canopus_inbox::error::InboxError;
     use crate::commands::CommandError;
+    use canopus_inbox::error::InboxError;
 
     // ── Filter parsing tests ──────────────────────────────────────────────────
 

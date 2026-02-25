@@ -19,6 +19,9 @@ targets = [
     { triple = "aarch64-apple-darwin" },
     { triple = "x86_64-pc-windows-msvc" },
 ]
+exclude = [
+    "canopus-desktop",
+]
 
 [advisories]
 # The path where the advisory database is cloned/fetched into

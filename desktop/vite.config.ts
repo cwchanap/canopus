@@ -1,10 +1,14 @@
-import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { svelte, vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 import { defineConfig } from "vite";
 
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
-  plugins: [svelte()],
+  plugins: [
+    svelte({
+      preprocess: vitePreprocess(),
+    }),
+  ],
   clearScreen: false,
   server: {
     port: 5173,
