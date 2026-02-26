@@ -13,17 +13,24 @@
     { value: "read", label: "Read" },
   ];
 
+  // Monotonically incrementing token used to discard stale in-flight responses
+  // when statusFilter changes before a previous load() has completed.
+  let currentRequestId = 0;
+
   async function load() {
+    const requestId = ++currentRequestId;
     loading = true;
     error = "";
     try {
       const filter = statusFilter !== "all" ? { status: statusFilter } : undefined;
       const items = await listInbox(filter);
+      if (requestId !== currentRequestId) return;
       inboxItems.set(items);
     } catch (e) {
+      if (requestId !== currentRequestId) return;
       error = String(e);
     } finally {
-      loading = false;
+      if (requestId === currentRequestId) loading = false;
     }
   }
 

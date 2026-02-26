@@ -34,10 +34,17 @@ pub struct AppState {
 impl AppState {
     pub fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let socket_path = std::env::var("CANOPUS_IPC_SOCKET").unwrap_or_else(|_| {
-            std::env::temp_dir()
-                .join("canopus.sock")
-                .to_string_lossy()
-                .into_owned()
+            #[cfg(unix)]
+            {
+                "/tmp/canopus.sock".to_owned()
+            }
+            #[cfg(not(unix))]
+            {
+                std::env::temp_dir()
+                    .join("canopus.sock")
+                    .to_string_lossy()
+                    .into_owned()
+            }
         });
         let token = std::env::var("CANOPUS_IPC_TOKEN").ok();
 
