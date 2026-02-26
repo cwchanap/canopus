@@ -33,15 +33,22 @@ pub struct AppState {
 
 impl AppState {
     pub fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let socket_path =
-            std::env::var("CANOPUS_IPC_SOCKET").unwrap_or_else(|_| "/tmp/canopus.sock".to_string());
+        let socket_path = std::env::var("CANOPUS_IPC_SOCKET").unwrap_or_else(|_| {
+            std::env::temp_dir()
+                .join("canopus.sock")
+                .to_string_lossy()
+                .into_owned()
+        });
         let token = std::env::var("CANOPUS_IPC_TOKEN").ok();
 
         let ipc = JsonRpcClient::new(socket_path, token);
         let inbox = SqliteStore::open_default()?;
 
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-        let projects_path = PathBuf::from(home).join(".canopus").join("projects.json");
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| std::env::temp_dir());
+        let projects_path = home.join(".canopus").join("projects.json");
 
         Ok(Self {
             ipc,
