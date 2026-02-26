@@ -2,6 +2,7 @@
   import { listInbox } from "../api";
   import { inboxItems } from "../stores";
   import type { InboxStatus } from "../types";
+  import { extractErrorMessage } from "../utils";
   import InboxItem from "./InboxItem.svelte";
 
   let loading = true;
@@ -28,7 +29,7 @@
       inboxItems.set(items);
     } catch (e) {
       if (requestId !== currentRequestId) return;
-      error = String(e);
+      error = extractErrorMessage(e);
     } finally {
       if (requestId === currentRequestId) loading = false;
     }

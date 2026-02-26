@@ -206,7 +206,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('desktop/package-lock.json', 'desktop/package.json') }}
+          # package-lock.json is listed in .gitignore so it is never committed;
+          # key on package.json only to avoid a cache miss on every run.
+          key: ${{ runner.os }}-npm-${{ hashFiles('desktop/package.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-
 
@@ -239,3 +241,6 @@ jobs:
 
       - name: Lint Tauri crate
         run: cargo clippy --manifest-path desktop/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+
+      - name: Test Tauri crate
+        run: cargo test --manifest-path desktop/src-tauri/Cargo.toml --all-features
