@@ -202,6 +202,14 @@ jobs:
         with:
           node-version: 20
 
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('desktop/package-lock.json', 'desktop/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
       - name: Install frontend dependencies
         working-directory: desktop
         run: npm install
@@ -212,6 +220,22 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Cargo registry and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/src-tauri/target
+          key: ${{ runner.os }}-cargo-desktop-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'desktop/src-tauri/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-desktop-
 
       - name: Check Tauri crate
         run: cargo check --manifest-path desktop/src-tauri/Cargo.toml --all-targets --all-features
+
+      - name: Lint Tauri crate
+        run: cargo clippy --manifest-path desktop/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings

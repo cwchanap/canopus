@@ -39,6 +39,7 @@
         <button
           class="filter-btn"
           class:active={statusFilter === option.value}
+          aria-pressed={statusFilter === option.value}
           on:click={() => (statusFilter = option.value)}
         >
           {option.label}

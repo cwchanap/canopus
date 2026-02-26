@@ -10,7 +10,7 @@
   let error = "";
   let showAddProject = false;
   let newProjectName = "";
-  let refreshInterval: ReturnType<typeof setInterval>;
+  let refreshInterval: ReturnType<typeof setInterval> | undefined;
   let isLoading = false;
 
   async function load() {
@@ -21,8 +21,15 @@
       const [svcList, projConfig] = await Promise.all([listServices(), listProjects()]);
       services.set(svcList);
       projects.set(projConfig.projects);
+      // Resume polling if it was paused due to a previous failure.
+      if (refreshInterval === undefined) {
+        refreshInterval = setInterval(load, 5000);
+      }
     } catch (e) {
       error = extractErrorMessage(e);
+      // Pause polling while the daemon is unreachable to avoid spamming errors.
+      clearInterval(refreshInterval);
+      refreshInterval = undefined;
     } finally {
       loading = false;
       isLoading = false;
@@ -57,7 +64,9 @@
   onMount(() => {
     load();
     refreshInterval = setInterval(load, 5000);
-    return () => clearInterval(refreshInterval);
+    return () => {
+      if (refreshInterval !== undefined) clearInterval(refreshInterval);
+    };
   });
 
   /**
