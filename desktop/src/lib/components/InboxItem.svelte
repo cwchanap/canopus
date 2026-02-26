@@ -2,8 +2,11 @@
   import { markInboxRead, dismissInboxItem } from "../api";
   import { inboxItems } from "../stores";
   import type { InboxItem } from "../types";
+  import { extractErrorMessage } from "../utils";
 
   export let item: InboxItem;
+
+  let actionError = "";
 
   const agentLabel: Record<string, string> = {
     claudeCode: "Claude Code",
@@ -33,15 +36,25 @@
   }
 
   async function read() {
-    await markInboxRead(item.id);
-    inboxItems.update((items) =>
-      items.map((i) => (i.id === item.id ? { ...i, status: "read" } : i)),
-    );
+    try {
+      await markInboxRead(item.id);
+      inboxItems.update((items) =>
+        items.map((i) => (i.id === item.id ? { ...i, status: "read" } : i)),
+      );
+    } catch (e) {
+      actionError = extractErrorMessage(e);
+      setTimeout(() => { actionError = ""; }, 4000);
+    }
   }
 
   async function dismiss() {
-    await dismissInboxItem(item.id);
-    inboxItems.update((items) => items.filter((i) => i.id !== item.id));
+    try {
+      await dismissInboxItem(item.id);
+      inboxItems.update((items) => items.filter((i) => i.id !== item.id));
+    } catch (e) {
+      actionError = extractErrorMessage(e);
+      setTimeout(() => { actionError = ""; }, 4000);
+    }
   }
 </script>
 
@@ -64,6 +77,10 @@
     title="Dismiss"
     on:click|stopPropagation={dismiss}
   >✕</button>
+
+  {#if actionError}
+    <div class="item-error">{actionError}</div>
+  {/if}
 </div>
 
 <style>
@@ -156,5 +173,11 @@
 
   .dismiss-btn:hover {
     color: #64748b;
+  }
+
+  .item-error {
+    font-size: 11px;
+    color: #ef4444;
+    padding: 2px 16px 4px;
   }
 </style>
