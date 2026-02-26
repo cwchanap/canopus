@@ -1,13 +1,14 @@
 use tauri::State;
 
+use super::CommandError;
 use crate::state::{AppState, ProjectConfig};
 
 #[tauri::command]
-pub async fn list_projects(state: State<'_, AppState>) -> Result<ProjectConfig, String> {
+pub async fn list_projects(state: State<'_, AppState>) -> Result<ProjectConfig, CommandError> {
     match tokio::fs::read_to_string(&state.projects_path).await {
-        Ok(content) => serde_json::from_str(&content).map_err(|e| e.to_string()),
+        Ok(content) => serde_json::from_str(&content).map_err(CommandError::from),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(ProjectConfig::default()),
-        Err(e) => Err(e.to_string()),
+        Err(e) => Err(CommandError::from(e)),
     }
 }
 
@@ -15,27 +16,33 @@ pub async fn list_projects(state: State<'_, AppState>) -> Result<ProjectConfig, 
 pub async fn save_projects(
     state: State<'_, AppState>,
     config: ProjectConfig,
-) -> Result<(), String> {
-    let content = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
+) -> Result<(), CommandError> {
+    let content = serde_json::to_string_pretty(&config).map_err(CommandError::from)?;
     if let Some(parent) = state.projects_path.parent() {
         tokio::fs::create_dir_all(parent)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(CommandError::from)?;
     }
     // Atomic write: write to a temp file then rename to avoid partial writes.
     let tmp_path = state.projects_path.with_extension("tmp");
-    {
+    let result = async {
         use tokio::io::AsyncWriteExt;
         let mut file = tokio::fs::File::create(&tmp_path)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(CommandError::from)?;
         file.write_all(content.as_bytes())
             .await
-            .map_err(|e| e.to_string())?;
-        file.flush().await.map_err(|e| e.to_string())?;
-        file.sync_all().await.map_err(|e| e.to_string())?;
+            .map_err(CommandError::from)?;
+        file.flush().await.map_err(CommandError::from)?;
+        file.sync_all().await.map_err(CommandError::from)?;
+        tokio::fs::rename(&tmp_path, &state.projects_path)
+            .await
+            .map_err(CommandError::from)
     }
-    tokio::fs::rename(&tmp_path, &state.projects_path)
-        .await
-        .map_err(|e| e.to_string())
+    .await;
+    if result.is_err() {
+        // Best-effort cleanup: remove the temp file to avoid leaving stale data.
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+    }
+    result
 }
