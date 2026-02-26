@@ -6,9 +6,9 @@ use tauri::Manager;
 
 /// Categorical errors for the desktop crate entry point.
 pub enum CrateError {
-    /// Failed to initialise application state (CORE001).
+    /// Failed to initialise application state (DESKTOP001).
     AppStateInit(Box<dyn std::error::Error + Send + Sync>),
-    /// Tauri runtime failed to start (CORE002).
+    /// Tauri runtime failed to start (DESKTOP002).
     TauriRun(tauri::Error),
 }
 
@@ -24,8 +24,8 @@ impl std::fmt::Debug for CrateError {
 impl std::fmt::Display for CrateError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::AppStateInit(e) => write!(f, "CORE001 app-state init failed: {e}"),
-            Self::TauriRun(e) => write!(f, "CORE002 tauri run failed: {e}"),
+            Self::AppStateInit(e) => write!(f, "DESKTOP001 app-state init failed: {e}"),
+            Self::TauriRun(e) => write!(f, "DESKTOP002 tauri run failed: {e}"),
         }
     }
 }
@@ -58,7 +58,7 @@ pub fn run() -> Result<()> {
     // Initialise app state before handing control to Tauri so that init errors
     // are captured as CrateError::AppStateInit rather than being swallowed into
     // tauri::Error (which would route them to CrateError::TauriRun instead).
-    let state = AppState::new().map_err(|e| CrateError::AppStateInit(e))?;
+    let state = AppState::new().map_err(CrateError::AppStateInit)?;
 
     tauri::Builder::default()
         .setup(|app| {
