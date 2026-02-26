@@ -10,7 +10,11 @@
   let unlistenLog: UnlistenFn | undefined;
 
   onMount(async () => {
-    unlistenLog = await onLogUpdate(appendLog);
+    try {
+      unlistenLog = await onLogUpdate(appendLog);
+    } catch (e) {
+      console.error("Failed to register log-update listener:", e);
+    }
   });
 
   onDestroy(() => {
