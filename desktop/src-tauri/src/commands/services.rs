@@ -1,6 +1,6 @@
 use ipc::server::{ServiceDetail, ServiceSummary};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use super::CommandError;
 use crate::state::AppState;
@@ -105,14 +105,28 @@ pub async fn start_log_tail(
                 ..
             } = event
             {
+                // Use the serde representation for a stable string (e.g. "stdout",
+                // "stderr") rather than the Debug format, which would break if
+                // the enum's Debug implementation or variant names ever change.
+                let stream_str = serde_json::to_value(&stream)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_owned))
+                    .unwrap_or_else(|| "unknown".to_owned());
                 let payload = LogEventPayload {
                     service_id: svc_id.clone(),
-                    stream: format!("{stream:?}").to_lowercase(),
+                    stream: stream_str,
                     content,
                     timestamp,
                 };
                 let _ = app.emit("log-update", payload);
             }
+        }
+        // The log stream has ended (sender dropped or daemon closed the stream).
+        // Notify the frontend so it can update the UI, and remove the now-completed
+        // handle from log_tails to avoid accumulating stale entries.
+        let _ = app.emit("log-tail-ended", &svc_id);
+        if let Some(state) = app.try_state::<AppState>() {
+            state.log_tails.lock().await.remove(&svc_id);
         }
     });
 
