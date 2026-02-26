@@ -147,7 +147,7 @@ desktop-lint:
 
 # Build the Canopus desktop app for release
 desktop-build:
-    cd desktop && npm ci && npm run tauri build
+    cd desktop && npm install && npm run tauri build
 
 # Example: Run the daemon and CLI in separate terminals
 demo:

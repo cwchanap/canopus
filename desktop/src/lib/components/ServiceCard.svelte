@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { restartService, startLogTail, startService, stopService } from "../api";
+  import { restartService, startService, stopService } from "../api";
   import { logPanelServiceId } from "../stores";
   import type { ServiceSummary } from "../types";
 
@@ -33,15 +33,11 @@
     }
   }
 
-  async function openLogs() {
-    try {
-      await startLogTail(service.id);
-      logPanelServiceId.set(service.id);
-    } catch (e) {
-      console.error(e);
-      actionError = e instanceof Error ? e.message : String(e);
-      setTimeout(() => { actionError = ""; }, 4000);
-    }
+  function openLogs() {
+    // LogViewer calls startLogTail in its own onMount; starting it here as well
+    // would abort and recreate the tail, potentially dropping log lines emitted
+    // in between the two calls.
+    logPanelServiceId.set(service.id);
   }
 
   const isRunning = () =>
