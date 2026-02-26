@@ -276,13 +276,20 @@ impl JsonRpcClient {
                 if let Some(method) = v.get("method").and_then(|m| m.as_str()) {
                     if method == "canopus.tailLogs.update" {
                         if let Some(params) = v.get("params") {
-                            if let Ok(evt) =
-                                serde_json::from_value::<schema::ServiceEvent>(params.clone())
-                            {
-                                if tx.send(evt).await.is_err() {
-                                    // Receiver was dropped; stop reading to avoid leaking
-                                    // this socket-reader task.
-                                    break;
+                            match serde_json::from_value::<schema::ServiceEvent>(params.clone()) {
+                                Ok(evt) => {
+                                    if tx.send(evt).await.is_err() {
+                                        // Receiver was dropped; stop reading to avoid leaking
+                                        // this socket-reader task.
+                                        break;
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        method = "canopus.tailLogs.update",
+                                        error = %e,
+                                        "failed to deserialize ServiceEvent; event dropped"
+                                    );
                                 }
                             }
                         }
