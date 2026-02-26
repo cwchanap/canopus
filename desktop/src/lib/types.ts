@@ -1,11 +1,11 @@
 // ── Canopus service types ────────────────────────────────────────────────────
 
 export type ServiceState =
-  | "Idle"
-  | "Spawning"
-  | "Starting"
-  | "Ready"
-  | "Stopping";
+  | "idle"
+  | "spawning"
+  | "starting"
+  | "ready"
+  | "stopping";
 
 export interface ServiceSummary {
   id: string;
@@ -15,6 +15,8 @@ export interface ServiceSummary {
   port?: number;
   hostname?: string;
 }
+
+export type ServiceDetail = ServiceSummary;
 
 // ── Project types ─────────────────────────────────────────────────────────────
 
