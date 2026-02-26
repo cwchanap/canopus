@@ -70,11 +70,6 @@
     };
   });
 
-  /**
-   * Extract a human-readable message from any thrown value.
-   * Tauri commands return `CommandError` shaped objects `{ code, message }`
-   * rather than `Error` instances, so `String(e)` would produce `[object Object]`.
-   */
 </script>
 
 <div class="projects-layout">

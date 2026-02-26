@@ -2,6 +2,7 @@
   import { restartService, startService, stopService } from "../api";
   import { logPanelServiceId } from "../stores";
   import type { ServiceSummary } from "../types";
+  import { extractErrorMessage } from "../utils";
 
   export let service: ServiceSummary;
   export let onRefresh: () => void;
@@ -26,7 +27,7 @@
       onRefresh();
     } catch (e) {
       console.error(e);
-      actionError = e instanceof Error ? e.message : String(e);
+      actionError = extractErrorMessage(e);
       setTimeout(() => { actionError = ""; }, 4000);
     } finally {
       loading = false;
