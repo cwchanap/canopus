@@ -10,11 +10,11 @@
   let actionError = "";
 
   const stateColor: Record<string, string> = {
-    Ready: "#22c55e",
-    Starting: "#f59e0b",
-    Spawning: "#f59e0b",
-    Stopping: "#ef4444",
-    Idle: "#64748b",
+    ready: "#22c55e",
+    starting: "#f59e0b",
+    spawning: "#f59e0b",
+    stopping: "#ef4444",
+    idle: "#64748b",
   };
 
   async function handle(action: () => Promise<void>) {
@@ -41,7 +41,9 @@
   }
 
   const isRunning = () =>
-    service.state === "Ready" || service.state === "Starting" || service.state === "Spawning";
+    service.state === "ready" ||
+    service.state === "starting" ||
+    service.state === "spawning";
 </script>
 
 <div class="card">
