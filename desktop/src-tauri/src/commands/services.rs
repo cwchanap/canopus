@@ -118,7 +118,11 @@ pub async fn start_log_tail(
                     content,
                     timestamp,
                 };
-                let _ = app.emit("log-update", payload);
+                if app.emit("log-update", payload).is_err() {
+                    // The app handle is gone (window closed or shutting down).
+                    // No point continuing; stop the task to avoid a zombie reader.
+                    break;
+                }
             }
         }
         // The log stream has ended (sender dropped or daemon closed the stream).
