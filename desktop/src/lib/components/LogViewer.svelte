@@ -2,11 +2,13 @@
   import { afterUpdate, onDestroy, onMount } from "svelte";
   import { startLogTail, stopLogTail } from "../api";
   import { clearLogs, logPanelServiceId, logs } from "../stores";
+  import { extractErrorMessage } from "../utils";
 
   export let serviceId: string;
 
   let autoScroll = true;
   let container: HTMLDivElement;
+  let startError = "";
 
   $: lines = $logs[serviceId] ?? [];
 
@@ -17,7 +19,9 @@
   });
 
   onMount(() => {
-    startLogTail(serviceId).catch(console.error);
+    startLogTail(serviceId).catch((e) => {
+      startError = extractErrorMessage(e);
+    });
   });
 
   async function close() {
@@ -50,7 +54,9 @@
   </div>
 
   <div class="log-body" bind:this={container}>
-    {#if lines.length === 0}
+    {#if startError}
+      <p class="empty error">{startError}</p>
+    {:else if lines.length === 0}
       <p class="empty">Waiting for output…</p>
     {:else}
       {#each lines as line, i (line.timestamp + line.content + String(i))}
@@ -141,6 +147,10 @@
     text-align: center;
     margin-top: 40px;
     font-size: 12px;
+  }
+
+  .empty.error {
+    color: #ef4444;
   }
 
   .log-line {
