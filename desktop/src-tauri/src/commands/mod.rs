@@ -31,6 +31,22 @@ impl From<IpcError> for CommandError {
     }
 }
 
+impl From<std::io::Error> for CommandError {
+    fn from(e: std::io::Error) -> Self {
+        let code = match e.kind() {
+            std::io::ErrorKind::NotFound => "PROJ001",
+            _ => "PROJ002",
+        };
+        Self { code, message: e.to_string() }
+    }
+}
+
+impl From<serde_json::Error> for CommandError {
+    fn from(e: serde_json::Error) -> Self {
+        Self { code: "PROJ003", message: e.to_string() }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -64,5 +80,28 @@ mod tests {
         let cmd: CommandError = InboxError::NotFound("item-9".to_string()).into();
         assert_eq!(cmd.code, "INBOX001");
         assert!(cmd.message.contains("item-9"));
+    }
+
+    #[test]
+    fn io_not_found_maps_to_proj001() {
+        use std::io;
+        let e = io::Error::new(io::ErrorKind::NotFound, "no file");
+        let cmd: CommandError = e.into();
+        assert_eq!(cmd.code, "PROJ001");
+    }
+
+    #[test]
+    fn io_permission_denied_maps_to_proj002() {
+        use std::io;
+        let e = io::Error::new(io::ErrorKind::PermissionDenied, "denied");
+        let cmd: CommandError = e.into();
+        assert_eq!(cmd.code, "PROJ002");
+    }
+
+    #[test]
+    fn serde_parse_error_maps_to_proj003() {
+        let e: serde_json::Error = serde_json::from_str::<serde_json::Value>("{bad}").unwrap_err();
+        let cmd: CommandError = e.into();
+        assert_eq!(cmd.code, "PROJ003");
     }
 }
