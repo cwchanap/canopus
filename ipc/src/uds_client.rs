@@ -278,7 +278,9 @@ impl JsonRpcClient {
                         if let Some(method) = v.get("method").and_then(|m| m.as_str()) {
                             if method == "canopus.tailLogs.update" {
                                 if let Some(params) = v.get("params") {
-                                    match serde_json::from_value::<schema::ServiceEvent>(params.clone()) {
+                                    match serde_json::from_value::<schema::ServiceEvent>(
+                                        params.clone(),
+                                    ) {
                                         Ok(evt) => {
                                             if tx.send(evt).await.is_err() {
                                                 // Receiver was dropped; stop reading to avoid leaking

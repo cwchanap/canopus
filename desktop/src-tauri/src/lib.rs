@@ -1,3 +1,6 @@
+//! Tauri desktop entry point for Canopus.
+#![allow(unreachable_pub)]
+
 mod commands;
 mod state;
 
@@ -51,9 +54,11 @@ impl From<Box<dyn std::error::Error + Send + Sync>> for CrateError {
     }
 }
 
-pub type Result<T> = std::result::Result<T, CrateError>;
+type Result<T> = std::result::Result<T, CrateError>;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[allow(clippy::exit)]
+/// Start the desktop application runtime.
 pub fn run() -> Result<()> {
     // Initialise app state before handing control to Tauri so that init errors
     // are captured as CrateError::AppStateInit rather than being swallowed into

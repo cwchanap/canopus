@@ -1,3 +1,5 @@
+#![allow(clippy::unreachable)]
+
 use tauri::State;
 
 use super::CommandError;
