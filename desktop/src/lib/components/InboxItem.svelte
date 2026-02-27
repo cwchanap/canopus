@@ -2,10 +2,11 @@
   import { onDestroy } from "svelte";
   import { dismissInboxItem, markInboxRead } from "../api";
   import { inboxItems } from "../stores";
-  import type { InboxItem } from "../types";
+  import type { InboxItem, InboxStatus } from "../types";
   import { extractErrorMessage } from "../utils";
 
   export let item: InboxItem;
+  export let statusFilter: InboxStatus | "all" = "all";
 
   let actionError = "";
   let actionErrorTimeout: ReturnType<typeof setTimeout> | undefined;
@@ -48,9 +49,14 @@
   async function read() {
     try {
       await markInboxRead(item.id);
-      inboxItems.update((items) =>
-        items.map((i) => (i.id === item.id ? { ...i, status: "read" } : i)),
-      );
+      if (statusFilter === "unread") {
+        // Remove item from the unread list — it no longer satisfies the filter.
+        inboxItems.update((items) => items.filter((i) => i.id !== item.id));
+      } else {
+        inboxItems.update((items) =>
+          items.map((i) => (i.id === item.id ? { ...i, status: "read" } : i)),
+        );
+      }
     } catch (e) {
       setActionError(extractErrorMessage(e));
     }

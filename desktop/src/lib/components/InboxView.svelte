@@ -24,8 +24,12 @@
     error = "";
     try {
       const filter = statusFilter !== "all" ? { status: statusFilter } : undefined;
-      const items = await listInbox(filter);
+      const rawItems = await listInbox(filter);
       if (requestId !== currentRequestId) return;
+      // When loading "All", exclude dismissed items so dismissal is durable.
+      const items = statusFilter === "all"
+        ? rawItems.filter(i => i.status !== "dismissed")
+        : rawItems;
       inboxItems.set(items);
     } catch (e) {
       if (requestId !== currentRequestId) return;
@@ -68,7 +72,7 @@
   {:else}
     <div class="items-list">
       {#each $inboxItems as item (item.id)}
-        <InboxItem {item} />
+        <InboxItem {item} {statusFilter} />
       {/each}
     </div>
   {/if}
