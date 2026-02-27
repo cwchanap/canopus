@@ -62,12 +62,38 @@ pub async fn restart_service(
         .map_err(CommandError::from)
 }
 
+/// Log stream direction for frontend event payloads.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogStream {
+    Stdout,
+    Stderr,
+}
+
+impl LogStream {
+    pub fn to_str(self) -> &'static str {
+        match self {
+            LogStream::Stdout => "stdout",
+            LogStream::Stderr => "stderr",
+        }
+    }
+}
+
+impl From<schema::LogStream> for LogStream {
+    fn from(s: schema::LogStream) -> Self {
+        match s {
+            schema::LogStream::Stdout => LogStream::Stdout,
+            schema::LogStream::Stderr => LogStream::Stderr,
+        }
+    }
+}
+
 /// Payload emitted for each log line received.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogEventPayload {
     pub service_id: String,
-    pub stream: String,
+    pub stream: LogStream,
     pub content: String,
     pub timestamp: String,
 }
@@ -105,16 +131,9 @@ pub async fn start_log_tail(
                 ..
             } = event
             {
-                // Use the serde representation for a stable string (e.g. "stdout",
-                // "stderr") rather than the Debug format, which would break if
-                // the enum's Debug implementation or variant names ever change.
-                let stream_str = serde_json::to_value(&stream)
-                    .ok()
-                    .and_then(|v| v.as_str().map(str::to_owned))
-                    .unwrap_or_else(|| "unknown".to_owned());
                 let payload = LogEventPayload {
                     service_id: svc_id.clone(),
-                    stream: stream_str,
+                    stream: LogStream::from(stream),
                     content,
                     timestamp,
                 };
@@ -156,10 +175,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn log_stream_stdout_converts_correctly() {
+        let stream = LogStream::from(schema::LogStream::Stdout);
+        assert_eq!(stream.to_str(), "stdout");
+    }
+
+    #[test]
+    fn log_stream_stderr_converts_correctly() {
+        let stream = LogStream::from(schema::LogStream::Stderr);
+        assert_eq!(stream.to_str(), "stderr");
+    }
+
+    #[test]
     fn log_event_payload_serializes_correctly() {
         let payload = LogEventPayload {
             service_id: "my-service".to_string(),
-            stream: "stdout".to_string(),
+            stream: LogStream::Stdout,
             content: "hello world".to_string(),
             timestamp: "2026-01-01T00:00:00Z".to_string(),
         };
@@ -173,7 +204,7 @@ mod tests {
     fn log_event_payload_stderr_variant() {
         let payload = LogEventPayload {
             service_id: "svc".to_string(),
-            stream: "stderr".to_string(),
+            stream: LogStream::Stderr,
             content: "error line".to_string(),
             timestamp: "2026-01-01T00:00:01Z".to_string(),
         };
