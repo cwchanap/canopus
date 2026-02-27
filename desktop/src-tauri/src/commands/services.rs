@@ -96,11 +96,13 @@ pub async fn start_log_tail(
     state: State<'_, AppState>,
     service_id: String,
 ) -> Result<(), CommandError> {
-    // Acquire the lock only to remove any existing handle, then drop it before
-    // awaiting tail_logs so we don't hold the mutex across an await point.
-    let old_handle = {
+    // Remove any existing tail and derive the next generation number, then drop
+    // the lock before awaiting tail_logs so we never hold a mutex across an await.
+    let (gen, old_handle) = {
         let mut tails = state.log_tails.lock().await;
-        tails.remove(&service_id)
+        let old = tails.remove(&service_id);
+        let next_gen = old.as_ref().map_or(1, |(g, _)| g + 1);
+        (next_gen, old.map(|(_, h)| h))
     };
     if let Some(handle) = old_handle {
         handle.abort();
@@ -113,6 +115,7 @@ pub async fn start_log_tail(
         .map_err(CommandError::from)?;
 
     let svc_id = service_id.clone();
+    let task_gen = gen;
     let handle = tokio::spawn(async move {
         while let Some(event) = rx.recv().await {
             if let schema::ServiceEvent::LogOutput {
@@ -135,16 +138,22 @@ pub async fn start_log_tail(
                 }
             }
         }
-        // The log stream has ended (sender dropped or daemon closed the stream).
-        // Notify the frontend so it can update the UI, and remove the now-completed
-        // handle from log_tails to avoid accumulating stale entries.
+        // The log stream ended naturally. Notify the frontend and remove our entry
+        // from log_tails, but only if the stored generation still matches ours.
+        // A concurrent start_log_tail call may have already replaced this entry with
+        // a newer generation, in which case we must not evict it.
         let _ = app.emit("log-tail-ended", &svc_id);
         if let Some(state) = app.try_state::<AppState>() {
-            state.log_tails.lock().await.remove(&svc_id);
+            let mut tails = state.log_tails.lock().await;
+            if let Some((stored_gen, _)) = tails.get(&svc_id) {
+                if *stored_gen == task_gen {
+                    tails.remove(&svc_id);
+                }
+            }
         }
     });
 
-    state.log_tails.lock().await.insert(service_id, handle);
+    state.log_tails.lock().await.insert(service_id, (gen, handle));
     Ok(())
 }
 
@@ -155,7 +164,7 @@ pub async fn stop_log_tail(
     service_id: String,
 ) -> Result<(), CommandError> {
     let mut tails = state.log_tails.lock().await;
-    if let Some(handle) = tails.remove(&service_id) {
+    if let Some((_, handle)) = tails.remove(&service_id) {
         handle.abort();
     }
     Ok(())

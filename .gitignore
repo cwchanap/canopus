@@ -112,7 +112,6 @@ perf.data*
 # Desktop app generated files
 desktop/dist/
 desktop/node_modules/
-desktop/package-lock.json
 
 # Benchmarking
 /benches/target/

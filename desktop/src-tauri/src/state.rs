@@ -28,7 +28,9 @@ pub struct AppState {
     pub(crate) inbox: SqliteStore,
     pub(crate) projects_path: PathBuf,
     /// Active log-tail tasks keyed by service ID.
-    pub(crate) log_tails: Mutex<HashMap<String, JoinHandle<()>>>,
+    /// The u64 is a monotonically-increasing generation counter used to prevent
+    /// a task that ends naturally from evicting a newer tail for the same service.
+    pub(crate) log_tails: Mutex<HashMap<String, (u64, JoinHandle<()>)>>,
 }
 
 impl AppState {
