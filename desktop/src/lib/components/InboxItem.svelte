@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { markInboxRead, dismissInboxItem } from "../api";
+  import { onDestroy } from "svelte";
+  import { dismissInboxItem, markInboxRead } from "../api";
   import { inboxItems } from "../stores";
   import type { InboxItem } from "../types";
   import { extractErrorMessage } from "../utils";
@@ -7,6 +8,15 @@
   export let item: InboxItem;
 
   let actionError = "";
+  let actionErrorTimeout: ReturnType<typeof setTimeout> | undefined;
+
+  function setActionError(msg: string) {
+    clearTimeout(actionErrorTimeout);
+    actionError = msg;
+    actionErrorTimeout = setTimeout(() => { actionError = ""; }, 4000);
+  }
+
+  onDestroy(() => clearTimeout(actionErrorTimeout));
 
   const agentLabel: Record<string, string> = {
     claudeCode: "Claude Code",
@@ -42,8 +52,7 @@
         items.map((i) => (i.id === item.id ? { ...i, status: "read" } : i)),
       );
     } catch (e) {
-      actionError = extractErrorMessage(e);
-      setTimeout(() => { actionError = ""; }, 4000);
+      setActionError(extractErrorMessage(e));
     }
   }
 
@@ -52,13 +61,20 @@
       await dismissInboxItem(item.id);
       inboxItems.update((items) => items.filter((i) => i.id !== item.id));
     } catch (e) {
-      actionError = extractErrorMessage(e);
-      setTimeout(() => { actionError = ""; }, 4000);
+      setActionError(extractErrorMessage(e));
     }
   }
 </script>
 
-<div class="item" class:unread={item.status === "unread"} on:click={read}>
+<div
+  class="item"
+  class:unread={item.status === "unread"}
+  role="button"
+  tabindex="0"
+  aria-label="Mark {item.projectName} as read"
+  on:click={read}
+  on:keydown={(e) => (e.key === "Enter" || e.key === " ") && read()}
+>
   <div class="agent-badge" style:background={agentColor[item.sourceAgent] ?? "#64748b"}>
     {agentLabel[item.sourceAgent] ?? "Agent"}
   </div>
@@ -96,6 +112,11 @@
 
   .item:hover {
     background: #1a1d27;
+  }
+
+  .item:focus-visible {
+    outline: 2px solid #7c3aed;
+    outline-offset: -2px;
   }
 
   .item.unread {
