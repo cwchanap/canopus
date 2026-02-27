@@ -55,8 +55,7 @@ impl AppState {
 
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| std::env::temp_dir());
+            .map_or_else(|_| std::env::temp_dir(), PathBuf::from);
         let projects_path = home.join(".canopus").join("projects.json");
 
         Ok(Self {
@@ -70,10 +69,10 @@ impl AppState {
 
 impl fmt::Debug for AppState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let tails_summary = match self.log_tails.try_lock() {
-            Ok(guard) => format!("{} active", guard.len()),
-            Err(_) => "<locked>".to_string(),
-        };
+        let tails_summary = self.log_tails.try_lock().map_or_else(
+            |_| "<locked>".to_string(),
+            |guard| format!("{} active", guard.len()),
+        );
         f.debug_struct("AppState")
             .field("projects_path", &self.projects_path)
             .field("ipc", &"<redacted ipc>")

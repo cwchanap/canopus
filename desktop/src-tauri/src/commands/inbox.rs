@@ -1,3 +1,5 @@
+#![allow(clippy::unreachable)]
+
 use canopus_inbox::item::{InboxFilter, InboxItem, InboxStatus, SourceAgent};
 use canopus_inbox::store::InboxStore;
 use serde::Deserialize;
@@ -50,6 +52,7 @@ pub async fn dismiss_inbox_item(
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::commands::CommandError;

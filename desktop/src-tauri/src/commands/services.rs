@@ -1,3 +1,5 @@
+#![allow(clippy::unreachable, clippy::significant_drop_tightening)]
+
 use ipc::server::{ServiceDetail, ServiceSummary};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -73,8 +75,8 @@ pub enum LogStream {
 impl From<schema::LogStream> for LogStream {
     fn from(s: schema::LogStream) -> Self {
         match s {
-            schema::LogStream::Stdout => LogStream::Stdout,
-            schema::LogStream::Stderr => LogStream::Stderr,
+            schema::LogStream::Stdout => Self::Stdout,
+            schema::LogStream::Stderr => Self::Stderr,
         }
     }
 }
@@ -101,7 +103,7 @@ pub async fn start_log_tail(
     let (gen, old_handle) = {
         let mut tails = state.log_tails.lock().await;
         let old = tails.remove(&service_id);
-        let next_gen = old.as_ref().map_or(1, |(g, _)| g + 1);
+        let next_gen = old.as_ref().map_or(1, |(g, _)| g.saturating_add(1));
         (next_gen, old.map(|(_, h)| h))
     };
     if let Some(handle) = old_handle {
@@ -153,7 +155,11 @@ pub async fn start_log_tail(
         }
     });
 
-    state.log_tails.lock().await.insert(service_id, (gen, handle));
+    state
+        .log_tails
+        .lock()
+        .await
+        .insert(service_id, (gen, handle));
     Ok(())
 }
 
@@ -171,6 +177,7 @@ pub async fn stop_log_tail(
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 

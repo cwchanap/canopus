@@ -37,17 +37,24 @@ impl From<std::io::Error> for CommandError {
             std::io::ErrorKind::NotFound => "PROJ001",
             _ => "PROJ002",
         };
-        Self { code, message: e.to_string() }
+        Self {
+            code,
+            message: e.to_string(),
+        }
     }
 }
 
 impl From<serde_json::Error> for CommandError {
     fn from(e: serde_json::Error) -> Self {
-        Self { code: "PROJ003", message: e.to_string() }
+        Self {
+            code: "PROJ003",
+            message: e.to_string(),
+        }
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
     use ipc::error::IpcError;
