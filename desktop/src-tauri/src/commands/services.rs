@@ -70,15 +70,6 @@ pub enum LogStream {
     Stderr,
 }
 
-impl LogStream {
-    pub fn to_str(self) -> &'static str {
-        match self {
-            LogStream::Stdout => "stdout",
-            LogStream::Stderr => "stderr",
-        }
-    }
-}
-
 impl From<schema::LogStream> for LogStream {
     fn from(s: schema::LogStream) -> Self {
         match s {
@@ -177,13 +168,15 @@ mod tests {
     #[test]
     fn log_stream_stdout_converts_correctly() {
         let stream = LogStream::from(schema::LogStream::Stdout);
-        assert_eq!(stream.to_str(), "stdout");
+        let json = serde_json::to_string(&stream).expect("must serialize");
+        assert_eq!(json, "\"stdout\"");
     }
 
     #[test]
     fn log_stream_stderr_converts_correctly() {
         let stream = LogStream::from(schema::LogStream::Stderr);
-        assert_eq!(stream.to_str(), "stderr");
+        let json = serde_json::to_string(&stream).expect("must serialize");
+        assert_eq!(json, "\"stderr\"");
     }
 
     #[test]
