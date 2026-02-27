@@ -24,11 +24,11 @@ pub struct ProjectConfig {
 
 /// Shared application state managed by Tauri.
 pub struct AppState {
-    pub ipc: JsonRpcClient,
-    pub inbox: SqliteStore,
-    pub projects_path: PathBuf,
+    pub(crate) ipc: JsonRpcClient,
+    pub(crate) inbox: SqliteStore,
+    pub(crate) projects_path: PathBuf,
     /// Active log-tail tasks keyed by service ID.
-    pub log_tails: Mutex<HashMap<String, JoinHandle<()>>>,
+    pub(crate) log_tails: Mutex<HashMap<String, JoinHandle<()>>>,
 }
 
 impl AppState {
