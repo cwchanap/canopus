@@ -4,6 +4,9 @@ import type { InboxItem, LogEvent, Project, ServiceSummary } from "./types";
 export const services = writable<ServiceSummary[]>([]);
 export const projects = writable<Project[]>([]);
 export const inboxItems = writable<InboxItem[]>([]);
+// Tracks the true unread count independently of whichever filter InboxView
+// currently has active. Sidebar reads this instead of deriving from inboxItems.
+export const inboxUnreadCount = writable<number>(0);
 
 // Per-service log lines, keyed by service ID.
 export const logs = writable<Record<string, LogEvent[]>>({});

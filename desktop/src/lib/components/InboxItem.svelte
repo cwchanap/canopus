@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import { dismissInboxItem, markInboxRead } from "../api";
-  import { inboxItems } from "../stores";
+  import { inboxItems, inboxUnreadCount } from "../stores";
   import type { InboxItem, InboxStatus } from "../types";
   import { extractErrorMessage } from "../utils";
 
@@ -49,6 +49,10 @@
   async function read() {
     try {
       await markInboxRead(item.id);
+      // Decrement the global unread badge if this item was unread.
+      if (item.status === "unread") {
+        inboxUnreadCount.update((c) => Math.max(0, c - 1));
+      }
       if (statusFilter === "unread") {
         // Remove item from the unread list — it no longer satisfies the filter.
         inboxItems.update((items) => items.filter((i) => i.id !== item.id));
@@ -65,6 +69,10 @@
   async function dismiss() {
     try {
       await dismissInboxItem(item.id);
+      // Decrement the global unread badge if the dismissed item was unread.
+      if (item.status === "unread") {
+        inboxUnreadCount.update((c) => Math.max(0, c - 1));
+      }
       inboxItems.update((items) => items.filter((i) => i.id !== item.id));
     } catch (e) {
       setActionError(extractErrorMessage(e));

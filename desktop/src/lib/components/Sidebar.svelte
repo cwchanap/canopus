@@ -1,12 +1,5 @@
 <script lang="ts">
-  import { activeView } from "../stores";
-  import { inboxItems } from "../stores";
-  import { derived } from "svelte/store";
-
-  const unreadCount = derived(
-    inboxItems,
-    ($items) => $items.filter((i) => i.status === "unread").length,
-  );
+  import { activeView, inboxUnreadCount } from "../stores";
 </script>
 
 <aside class="sidebar">
@@ -40,8 +33,8 @@
         <polyline points="22,6 12,13 2,6" />
       </svg>
       Agents
-      {#if $unreadCount > 0}
-        <span class="badge">{$unreadCount}</span>
+      {#if $inboxUnreadCount > 0}
+        <span class="badge">{$inboxUnreadCount}</span>
       {/if}
     </button>
   </nav>
