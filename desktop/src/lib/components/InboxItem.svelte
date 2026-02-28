@@ -65,8 +65,9 @@
         );
       }
     } catch (e) {
-      acting = false;
       setActionError(extractErrorMessage(e));
+    } finally {
+      acting = false;
     }
   }
 
@@ -81,8 +82,9 @@
       }
       inboxItems.update((items) => items.filter((i) => i.id !== item.id));
     } catch (e) {
-      acting = false;
       setActionError(extractErrorMessage(e));
+    } finally {
+      acting = false;
     }
   }
 </script>
