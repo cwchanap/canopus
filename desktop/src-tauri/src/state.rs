@@ -83,6 +83,27 @@ impl AppState {
     }
 }
 
+impl fmt::Debug for AppState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let tails_summary = self.log_tails.try_lock().map_or_else(
+            |_| "<locked>".to_string(),
+            |guard| format!("{} active", guard.len()),
+        );
+        f.debug_struct("AppState")
+            .field("projects_path", &self.projects_path)
+            .field("ipc", &"<redacted ipc>")
+            .field("inbox", &"<redacted inbox>")
+            .field("log_tails", &tails_summary)
+            .field(
+                "log_tail_next_gen",
+                &self
+                    .log_tail_next_gen
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            )
+            .finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,27 +127,9 @@ mod tests {
         // With the old code: g_after_stop = map.is_empty() ? 1 : prev+1 → 1
         // With the fix: g_after_stop = counter.fetch_add(1) → 4
         let g_after_stop = counter.fetch_add(1, Ordering::Relaxed);
-        assert!(g_after_stop > g1, "generation must increase after stop/start");
-    }
-}
-
-impl fmt::Debug for AppState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let tails_summary = self.log_tails.try_lock().map_or_else(
-            |_| "<locked>".to_string(),
-            |guard| format!("{} active", guard.len()),
+        assert!(
+            g_after_stop > g1,
+            "generation must increase after stop/start"
         );
-        f.debug_struct("AppState")
-            .field("projects_path", &self.projects_path)
-            .field("ipc", &"<redacted ipc>")
-            .field("inbox", &"<redacted inbox>")
-            .field("log_tails", &tails_summary)
-            .field(
-                "log_tail_next_gen",
-                &self
-                    .log_tail_next_gen
-                    .load(std::sync::atomic::Ordering::Relaxed),
-            )
-            .finish()
     }
 }
