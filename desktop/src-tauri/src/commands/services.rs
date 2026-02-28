@@ -205,10 +205,8 @@ pub async fn stop_log_tail(
     let mut tails = state.log_tails.lock().await;
     // Removing the entry also cancels a pending start: if start_log_tail's placeholder
     // is present (handle == None), its post-await check will find no entry and abort.
-    if let Some((_, handle)) = tails.remove(&service_id) {
-        if let Some(h) = handle {
-            h.abort();
-        }
+    if let Some((_, Some(handle))) = tails.remove(&service_id) {
+        handle.abort();
     }
     Ok(())
 }
