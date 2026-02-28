@@ -56,12 +56,16 @@ impl AppState {
         let token = std::env::var("CANOPUS_IPC_TOKEN").ok();
 
         let ipc = JsonRpcClient::new(socket_path, token);
-        let inbox = SqliteStore::open_default()?;
 
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
             .map_or_else(|_| std::env::temp_dir(), PathBuf::from);
-        let projects_path = home.join(".canopus").join("projects.json");
+        let canopus_dir = home.join(".canopus");
+        std::fs::create_dir_all(&canopus_dir)?;
+        let inbox_path = canopus_dir.join("inbox.db");
+        let inbox = SqliteStore::open(&inbox_path)?;
+
+        let projects_path = canopus_dir.join("projects.json");
 
         Ok(Self {
             ipc,

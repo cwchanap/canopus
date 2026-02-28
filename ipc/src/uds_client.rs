@@ -283,12 +283,13 @@ impl JsonRpcClient {
                                     ) {
                                         Ok(evt) => {
                                             if tx.send(evt).await.is_err() {
-                                                // Receiver was dropped; stop reading to avoid leaking
-                                                // this socket-reader task.
+                                                // Receiver was dropped; shutdown the socket to
+                                                // unblock the reader and stop the task promptly.
                                                 tracing::debug!(
                                                     method = "canopus.tailLogs.update",
-                                                    "receiver dropped; stopping log-tail reader"
+                                                    "receiver dropped; shutting down socket"
                                                 );
+                                                let _ = writer.lock().await.shutdown().await;
                                                 break;
                                             }
                                         }
