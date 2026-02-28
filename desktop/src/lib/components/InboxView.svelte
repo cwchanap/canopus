@@ -1,6 +1,6 @@
 <script lang="ts">
   import { listInbox } from "../api";
-  import { inboxItems } from "../stores";
+  import { inboxItems, inboxUnreadCount } from "../stores";
   import type { InboxStatus } from "../types";
   import { extractErrorMessage } from "../utils";
   import InboxItem from "./InboxItem.svelte";
@@ -24,13 +24,26 @@
     error = "";
     try {
       const filter = statusFilter !== "all" ? { status: statusFilter } : undefined;
-      const rawItems = await listInbox(filter);
+      // For the "read" filter we cannot infer the unread count from the result, so
+      // fetch it in parallel to avoid an extra serial round-trip.
+      const [rawItems, unreadForBadge] = await Promise.all([
+        listInbox(filter),
+        statusFilter === "read" ? listInbox({ status: "unread" }) : Promise.resolve(null),
+      ]);
       if (requestId !== currentRequestId) return;
       // When loading "All", exclude dismissed items so dismissal is durable.
       const items = statusFilter === "all"
         ? rawItems.filter(i => i.status !== "dismissed")
         : rawItems;
       inboxItems.set(items);
+      // Keep the global unread badge accurate regardless of the active filter.
+      if (statusFilter === "all") {
+        inboxUnreadCount.set(rawItems.filter(i => i.status === "unread").length);
+      } else if (statusFilter === "unread") {
+        inboxUnreadCount.set(items.length);
+      } else {
+        inboxUnreadCount.set(unreadForBadge!.length);
+      }
     } catch (e) {
       if (requestId !== currentRequestId) return;
       error = extractErrorMessage(e);

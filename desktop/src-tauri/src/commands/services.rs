@@ -155,11 +155,24 @@ pub async fn start_log_tail(
         }
     });
 
-    state
-        .log_tails
-        .lock()
-        .await
-        .insert(service_id, (gen, handle));
+    // Re-acquire the lock and check for a concurrent call that may have inserted a
+    // same-or-newer generation while we were awaiting tail_logs. This closes the
+    // window where two overlapping start_log_tail calls for the same service both
+    // compute gen=1 (no prior tail) and the second insert orphans the first handle.
+    let mut tails = state.log_tails.lock().await;
+    if let Some((stored_gen, _)) = tails.get(&service_id) {
+        if *stored_gen >= gen {
+            // A concurrent call already owns this slot with a same-or-newer generation.
+            // Abort our task to avoid a ghost tail and leave the active entry intact.
+            handle.abort();
+            return Ok(());
+        }
+        // Our generation is strictly newer; evict and abort the stale concurrent entry.
+        if let Some((_, stale)) = tails.remove(&service_id) {
+            stale.abort();
+        }
+    }
+    tails.insert(service_id, (gen, handle));
     Ok(())
 }
 
