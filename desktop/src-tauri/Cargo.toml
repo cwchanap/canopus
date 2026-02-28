@@ -25,6 +25,7 @@ tokio = { workspace = true }
 ipc = { workspace = true }
 canopus-inbox = { workspace = true }
 schema = { workspace = true }
+rand = "0.8"
 
 [lints]
 workspace = true
