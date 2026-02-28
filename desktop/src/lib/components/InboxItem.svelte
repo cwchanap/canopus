@@ -115,6 +115,7 @@
     class="dismiss-btn"
     title="Dismiss"
     on:click|stopPropagation={dismiss}
+    on:keydown|stopPropagation={() => {}}
   >✕</button>
 
   {#if actionError}
