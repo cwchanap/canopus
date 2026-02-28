@@ -19,9 +19,17 @@
     isLoading = true;
     error = "";
     try {
-      const [svcList, projConfig] = await Promise.all([listServices(), listProjects()]);
-      services.set(svcList);
-      projects.set(projConfig.projects);
+      const [svcResult, projResult] = await Promise.allSettled([listServices(), listProjects()]);
+      if (svcResult.status === 'rejected') {
+        throw svcResult.reason;
+      }
+      services.set(svcResult.value);
+      if (projResult.status === 'fulfilled') {
+        projects.set(projResult.value.projects);
+      } else {
+        console.warn('Failed to load projects, falling back to empty list:', projResult.reason);
+        projects.set([]);
+      }
     } catch (e) {
       error = extractErrorMessage(e);
     } finally {

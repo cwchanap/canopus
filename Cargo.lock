@@ -459,6 +459,7 @@ version = "0.1.0"
 dependencies = [
  "canopus-inbox",
  "ipc",
+ "rand 0.8.5",
  "schema",
  "serde",
  "serde_json",

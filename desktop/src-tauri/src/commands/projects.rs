@@ -25,8 +25,16 @@ pub async fn save_projects(
             .await
             .map_err(CommandError::from)?;
     }
-    // Atomic write: write to a temp file then rename to avoid partial writes.
-    let tmp_path = state.projects_path.with_extension("tmp");
+    // Atomic write: write to a unique temp file then rename to avoid partial writes.
+    // Use timestamp + random suffix to prevent collisions from concurrent saves.
+    let tmp_path = state.projects_path.with_extension(format!(
+        "tmp.{}.{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+        rand::random::<u32>()
+    ));
     let result = async {
         use tokio::io::AsyncWriteExt;
         let mut file = tokio::fs::File::create(&tmp_path)
