@@ -98,13 +98,16 @@ pub async fn start_log_tail(
     state: State<'_, AppState>,
     service_id: String,
 ) -> Result<(), CommandError> {
-    // Remove any existing tail and derive the next generation number, then drop
-    // the lock before awaiting tail_logs so we never hold a mutex across an await.
+    // Remove any existing tail and derive the next generation number.  Insert a
+    // None placeholder for our generation immediately so stop_log_tail can cancel
+    // us while tail_logs is still in-flight; drop the lock before the await.
     let (gen, old_handle) = {
         let mut tails = state.log_tails.lock().await;
         let old = tails.remove(&service_id);
         let next_gen = old.as_ref().map_or(1, |(g, _)| g.saturating_add(1));
-        (next_gen, old.map(|(_, h)| h))
+        // Placeholder: handle is None until the real JoinHandle exists.
+        tails.insert(service_id.clone(), (next_gen, None));
+        (next_gen, old.and_then(|(_, h)| h))
     };
     if let Some(handle) = old_handle {
         handle.abort();
@@ -155,24 +158,31 @@ pub async fn start_log_tail(
         }
     });
 
-    // Re-acquire the lock and check for a concurrent call that may have inserted a
-    // same-or-newer generation while we were awaiting tail_logs. This closes the
-    // window where two overlapping start_log_tail calls for the same service both
-    // compute gen=1 (no prior tail) and the second insert orphans the first handle.
+    // Re-acquire the lock and decide whether to promote the placeholder.
     let mut tails = state.log_tails.lock().await;
-    if let Some((stored_gen, _)) = tails.get(&service_id) {
-        if *stored_gen >= gen {
-            // A concurrent call already owns this slot with a same-or-newer generation.
-            // Abort our task to avoid a ghost tail and leave the active entry intact.
+    match tails.get(&service_id).map(|(g, _)| *g) {
+        None => {
+            // stop_log_tail removed our placeholder while tail_logs was in-flight.
+            // Abort the just-spawned task to prevent an orphaned background tail.
             handle.abort();
-            return Ok(());
         }
-        // Our generation is strictly newer; evict and abort the stale concurrent entry.
-        if let Some((_, stale)) = tails.remove(&service_id) {
-            stale.abort();
+        Some(stored_gen) if stored_gen > gen => {
+            // A concurrent start_log_tail already inserted a newer generation.
+            // Leave it in place and discard ours.
+            handle.abort();
+        }
+        Some(stored_gen) if stored_gen < gen => {
+            // Defensive: our gen is newer than whatever is there.  Evict and claim.
+            if let Some((_, Some(stale))) = tails.remove(&service_id) {
+                stale.abort();
+            }
+            tails.insert(service_id, (gen, Some(handle)));
+        }
+        Some(_) => {
+            // stored_gen == gen: our placeholder is still there.  Promote to a real handle.
+            tails.insert(service_id, (gen, Some(handle)));
         }
     }
-    tails.insert(service_id, (gen, handle));
     Ok(())
 }
 
@@ -183,8 +193,12 @@ pub async fn stop_log_tail(
     service_id: String,
 ) -> Result<(), CommandError> {
     let mut tails = state.log_tails.lock().await;
+    // Removing the entry also cancels a pending start: if start_log_tail's placeholder
+    // is present (handle == None), its post-await check will find no entry and abort.
     if let Some((_, handle)) = tails.remove(&service_id) {
-        handle.abort();
+        if let Some(h) = handle {
+            h.abort();
+        }
     }
     Ok(())
 }

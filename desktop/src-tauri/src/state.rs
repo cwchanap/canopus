@@ -30,7 +30,10 @@ pub struct AppState {
     /// Active log-tail tasks keyed by service ID.
     /// The u64 is a monotonically-increasing generation counter used to prevent
     /// a task that ends naturally from evicting a newer tail for the same service.
-    pub(crate) log_tails: Mutex<HashMap<String, (u64, JoinHandle<()>)>>,
+    /// The handle is `None` while `start_log_tail` is awaiting `tail_logs`; this
+    /// placeholder lets `stop_log_tail` mark the entry as cancelled before the
+    /// real JoinHandle exists, preventing orphaned background tasks.
+    pub(crate) log_tails: Mutex<HashMap<String, (u64, Option<JoinHandle<()>>)>>,
 }
 
 impl AppState {
