@@ -2,6 +2,7 @@
 
 use ipc::server::{ServiceDetail, ServiceSummary};
 use serde::Serialize;
+use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use super::CommandError;
@@ -104,7 +105,13 @@ pub async fn start_log_tail(
     let (gen, old_handle) = {
         let mut tails = state.log_tails.lock().await;
         let old = tails.remove(&service_id);
-        let next_gen = old.as_ref().map_or(1, |(g, _)| g.saturating_add(1));
+        // Use the global monotonic counter so generation numbers never repeat
+        // across stop/start cycles.  Deriving from the stored entry resets to
+        // gen=1 after stop removes it, causing an in-flight start (also gen=1)
+        // to wrongly claim the new call's placeholder as its own.
+        let next_gen = state
+            .log_tail_next_gen
+            .fetch_add(1, Ordering::Relaxed);
         // Placeholder: handle is None until the real JoinHandle exists.
         tails.insert(service_id.clone(), (next_gen, None));
         (next_gen, old.and_then(|(_, h)| h))

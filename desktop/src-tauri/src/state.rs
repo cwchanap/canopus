@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicU64;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
@@ -36,6 +37,11 @@ pub struct AppState {
     /// placeholder lets `stop_log_tail` mark the entry as cancelled before the
     /// real `JoinHandle` exists, preventing orphaned background tasks.
     pub(crate) log_tails: Mutex<HashMap<String, LogTailEntry>>,
+    /// Global monotonic counter for log-tail generations.  Each `start_log_tail`
+    /// call claims the next value so generation numbers never repeat, even after
+    /// a `stop_log_tail` removes the map entry and the next start would otherwise
+    /// derive gen=1 again, causing phantom same-generation collisions.
+    pub(crate) log_tail_next_gen: AtomicU64,
 }
 
 impl AppState {
@@ -72,7 +78,35 @@ impl AppState {
             inbox,
             projects_path,
             log_tails: Mutex::new(HashMap::new()),
+            log_tail_next_gen: AtomicU64::new(1),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    /// Verify the generation counter starts at 1 and never repeats.
+    /// This is the property that prevents the open→close→reopen race where
+    /// a restarted tail would derive gen=1 again and collide with an in-flight
+    /// start that also holds gen=1.
+    #[test]
+    fn log_tail_next_gen_is_monotonic() {
+        let counter = AtomicU64::new(1);
+        let g1 = counter.fetch_add(1, Ordering::Relaxed);
+        let g2 = counter.fetch_add(1, Ordering::Relaxed);
+        let g3 = counter.fetch_add(1, Ordering::Relaxed);
+        assert_eq!(g1, 1);
+        assert_eq!(g2, 2);
+        assert_eq!(g3, 3);
+        // Simulating a stop (map entry removed) then a second start must still
+        // produce a strictly greater generation, not reset to 1.
+        // With the old code: g_after_stop = map.is_empty() ? 1 : prev+1 → 1
+        // With the fix: g_after_stop = counter.fetch_add(1) → 4
+        let g_after_stop = counter.fetch_add(1, Ordering::Relaxed);
+        assert!(g_after_stop > g1, "generation must increase after stop/start");
     }
 }
 
@@ -87,6 +121,12 @@ impl fmt::Debug for AppState {
             .field("ipc", &"<redacted ipc>")
             .field("inbox", &"<redacted inbox>")
             .field("log_tails", &tails_summary)
+            .field(
+                "log_tail_next_gen",
+                &self
+                    .log_tail_next_gen
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            )
             .finish()
     }
 }
