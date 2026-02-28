@@ -10,6 +10,8 @@
 
   let actionError = "";
   let actionErrorTimeout: ReturnType<typeof setTimeout> | undefined;
+  // Prevents concurrent read/dismiss actions on the same item (e.g. rapid double-click).
+  let acting = false;
 
   function setActionError(msg: string) {
     clearTimeout(actionErrorTimeout);
@@ -47,12 +49,13 @@
   }
 
   async function read() {
+    if (acting || item.status !== "unread") return;
+    acting = true;
     try {
       await markInboxRead(item.id);
-      // Decrement the global unread badge if this item was unread.
-      if (item.status === "unread") {
-        inboxUnreadCount.update((c) => Math.max(0, c - 1));
-      }
+      // Decrement the global unread badge — checked before the await so the
+      // status is still "unread" and we only decrement once per item.
+      inboxUnreadCount.update((c) => Math.max(0, c - 1));
       if (statusFilter === "unread") {
         // Remove item from the unread list — it no longer satisfies the filter.
         inboxItems.update((items) => items.filter((i) => i.id !== item.id));
@@ -62,11 +65,14 @@
         );
       }
     } catch (e) {
+      acting = false;
       setActionError(extractErrorMessage(e));
     }
   }
 
   async function dismiss() {
+    if (acting) return;
+    acting = true;
     try {
       await dismissInboxItem(item.id);
       // Decrement the global unread badge if the dismissed item was unread.
@@ -75,6 +81,7 @@
       }
       inboxItems.update((items) => items.filter((i) => i.id !== item.id));
     } catch (e) {
+      acting = false;
       setActionError(extractErrorMessage(e));
     }
   }

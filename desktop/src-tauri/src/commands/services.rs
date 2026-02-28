@@ -113,11 +113,21 @@ pub async fn start_log_tail(
         handle.abort();
     }
 
-    let mut rx = state
-        .ipc
-        .tail_logs(&service_id, None)
-        .await
-        .map_err(CommandError::from)?;
+    let rx_result = state.ipc.tail_logs(&service_id, None).await;
+    let mut rx = match rx_result {
+        Ok(rx) => rx,
+        Err(e) => {
+            // Remove the placeholder we inserted so it does not pollute log_tails
+            // with a stale entry that stop_log_tail or a future start cannot clean up.
+            let mut tails = state.log_tails.lock().await;
+            if let Some((stored_gen, _)) = tails.get(&service_id) {
+                if *stored_gen == gen {
+                    tails.remove(&service_id);
+                }
+            }
+            return Err(CommandError::from(e));
+        }
+    };
 
     let svc_id = service_id.clone();
     let task_gen = gen;
