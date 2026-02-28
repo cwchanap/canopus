@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
-  import { activeView, appendLog } from "./lib/stores";
-  import { onLogUpdate } from "./lib/api";
-  import Sidebar from "./lib/components/Sidebar.svelte";
-  import ProjectsView from "./lib/components/ProjectsView.svelte";
-  import InboxView from "./lib/components/InboxView.svelte";
   import type { UnlistenFn } from "@tauri-apps/api/event";
+  import { onDestroy, onMount } from "svelte";
+  import { listInbox, onLogUpdate } from "./lib/api";
+  import InboxView from "./lib/components/InboxView.svelte";
+  import ProjectsView from "./lib/components/ProjectsView.svelte";
+  import Sidebar from "./lib/components/Sidebar.svelte";
+  import { activeView, appendLog, inboxUnreadCount } from "./lib/stores";
 
   let unlistenLog: UnlistenFn | undefined;
 
@@ -14,6 +14,14 @@
       unlistenLog = await onLogUpdate(appendLog);
     } catch (e) {
       console.error("Failed to register log-update listener:", e);
+    }
+    // Seed the sidebar unread badge before the user opens Inbox.
+    // Errors are non-fatal: the badge will update correctly once InboxView loads.
+    try {
+      const unread = await listInbox({ status: "unread" });
+      inboxUnreadCount.set(unread.length);
+    } catch (e) {
+      console.error("Failed to fetch initial unread count:", e);
     }
   });
 
