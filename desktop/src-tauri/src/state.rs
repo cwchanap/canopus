@@ -7,6 +7,8 @@ use std::path::PathBuf;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
+type LogTailEntry = (u64, Option<JoinHandle<()>>);
+
 /// A named group of Canopus services.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,8 +34,8 @@ pub struct AppState {
     /// a task that ends naturally from evicting a newer tail for the same service.
     /// The handle is `None` while `start_log_tail` is awaiting `tail_logs`; this
     /// placeholder lets `stop_log_tail` mark the entry as cancelled before the
-    /// real JoinHandle exists, preventing orphaned background tasks.
-    pub(crate) log_tails: Mutex<HashMap<String, (u64, Option<JoinHandle<()>>)>>,
+    /// real `JoinHandle` exists, preventing orphaned background tasks.
+    pub(crate) log_tails: Mutex<HashMap<String, LogTailEntry>>,
 }
 
 impl AppState {
