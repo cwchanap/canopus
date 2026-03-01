@@ -273,45 +273,61 @@ impl JsonRpcClient {
         let (tx, rx) = mpsc::channel(100);
         tokio::spawn(async move {
             loop {
-                match read_value(&mut reader).await {
-                    Ok(v) => {
-                        if let Some(method) = v.get("method").and_then(|m| m.as_str()) {
-                            if method == "canopus.tailLogs.update" {
-                                if let Some(params) = v.get("params") {
-                                    match serde_json::from_value::<schema::ServiceEvent>(
-                                        params.clone(),
-                                    ) {
-                                        Ok(evt) => {
-                                            if tx.send(evt).await.is_err() {
-                                                // Receiver was dropped; shutdown the socket to
-                                                // unblock the reader and stop the task promptly.
-                                                tracing::debug!(
-                                                    method = "canopus.tailLogs.update",
-                                                    "receiver dropped; shutting down socket"
-                                                );
-                                                let _ = writer.lock().await.shutdown().await;
-                                                break;
+                tokio::select! {
+                    // Detect when the caller drops the receiver without waiting
+                    // for the next log event (e.g. closing the log panel on an
+                    // idle service).  Shut down the socket immediately so the
+                    // UDS subscription is released and no connection is leaked.
+                    _ = tx.closed() => {
+                        tracing::debug!(
+                            method = "canopus.tailLogs.update",
+                            "receiver dropped; shutting down socket"
+                        );
+                        let _ = writer.lock().await.shutdown().await;
+                        break;
+                    }
+                    result = read_value(&mut reader) => {
+                        match result {
+                            Ok(v) => {
+                                if let Some(method) = v.get("method").and_then(|m| m.as_str()) {
+                                    if method == "canopus.tailLogs.update" {
+                                        if let Some(params) = v.get("params") {
+                                            match serde_json::from_value::<schema::ServiceEvent>(
+                                                params.clone(),
+                                            ) {
+                                                Ok(evt) => {
+                                                    if tx.send(evt).await.is_err() {
+                                                        // Receiver was dropped between the
+                                                        // select! arms; shut down the socket.
+                                                        tracing::debug!(
+                                                            method = "canopus.tailLogs.update",
+                                                            "receiver dropped; shutting down socket"
+                                                        );
+                                                        let _ = writer.lock().await.shutdown().await;
+                                                        break;
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    tracing::warn!(
+                                                        method = "canopus.tailLogs.update",
+                                                        error = %e,
+                                                        "failed to deserialize ServiceEvent; event dropped"
+                                                    );
+                                                }
                                             }
-                                        }
-                                        Err(e) => {
-                                            tracing::warn!(
-                                                method = "canopus.tailLogs.update",
-                                                error = %e,
-                                                "failed to deserialize ServiceEvent; event dropped"
-                                            );
                                         }
                                     }
                                 }
                             }
+                            Err(e) => {
+                                tracing::debug!(
+                                    method = "canopus.tailLogs.update",
+                                    error = %e,
+                                    "log-tail reader exiting due to read error"
+                                );
+                                break;
+                            }
                         }
-                    }
-                    Err(e) => {
-                        tracing::debug!(
-                            method = "canopus.tailLogs.update",
-                            error = %e,
-                            "log-tail reader exiting due to read error"
-                        );
-                        break;
                     }
                 }
             }
