@@ -44,7 +44,8 @@
   const isRunning = () =>
     service.state === "ready" ||
     service.state === "starting" ||
-    service.state === "spawning";
+    service.state === "spawning" ||
+    service.state === "stopping";
 </script>
 
 <div class="card">
@@ -69,10 +70,10 @@
 
   <div class="actions">
     {#if isRunning()}
-      <button class="btn btn-danger" disabled={loading} on:click={() => handle(() => stopService(service.id))}>
+      <button class="btn btn-danger" disabled={loading || service.state === "stopping"} on:click={() => handle(() => stopService(service.id))}>
         Stop
       </button>
-      <button class="btn btn-secondary" disabled={loading} on:click={() => handle(() => restartService(service.id))}>
+      <button class="btn btn-secondary" disabled={loading || service.state === "stopping"} on:click={() => handle(() => restartService(service.id))}>
         Restart
       </button>
     {:else}
