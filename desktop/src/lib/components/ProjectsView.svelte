@@ -27,8 +27,7 @@
       if (projResult.status === 'fulfilled') {
         projects.set(projResult.value.projects);
       } else {
-        console.warn('Failed to load projects, falling back to empty list:', projResult.reason);
-        projects.set([]);
+        throw projResult.reason;
       }
     } catch (e) {
       error = extractErrorMessage(e);

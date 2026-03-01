@@ -96,7 +96,7 @@
   tabindex="0"
   aria-label="Mark {item.projectName} as read"
   on:click={read}
-  on:keydown={(e) => (e.key === "Enter" || e.key === " ") && read()}
+  on:keydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); read(); } }}
 >
   <div class="agent-badge" style:background={agentColor[item.sourceAgent] ?? "#64748b"}>
     {agentLabel[item.sourceAgent] ?? "Agent"}
