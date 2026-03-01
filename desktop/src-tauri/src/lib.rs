@@ -54,7 +54,7 @@ impl From<Box<dyn std::error::Error + Send + Sync>> for CrateError {
     }
 }
 
-type Result<T> = std::result::Result<T, CrateError>;
+pub type Result<T> = std::result::Result<T, CrateError>;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[allow(clippy::exit)]

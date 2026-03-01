@@ -231,7 +231,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            desktop/src-tauri/target
+            target
           key: ${{ runner.os }}-cargo-desktop-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'desktop/src-tauri/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-desktop-
