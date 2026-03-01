@@ -54,6 +54,7 @@ impl From<Box<dyn std::error::Error + Send + Sync>> for CrateError {
     }
 }
 
+/// Result type used by the desktop crate entry point.
 pub type Result<T> = std::result::Result<T, CrateError>;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
