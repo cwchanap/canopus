@@ -278,7 +278,7 @@ impl JsonRpcClient {
                     // for the next log event (e.g. closing the log panel on an
                     // idle service).  Shut down the socket immediately so the
                     // UDS subscription is released and no connection is leaked.
-                    _ = tx.closed() => {
+                    () = tx.closed() => {
                         tracing::debug!(
                             method = "canopus.tailLogs.update",
                             "receiver dropped; shutting down socket"
@@ -489,6 +489,19 @@ async fn read_value<S: tokio::io::AsyncBufRead + Unpin>(reader: &mut S) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use tokio::net::UnixListener;
+
+    fn unique_socket_path() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time before UNIX_EPOCH")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "canopus-ipc-uds-client-{}-{nanos}.sock",
+            std::process::id()
+        ))
+    }
 
     #[test]
     fn extract_version_requires_version_key() {
@@ -530,5 +543,141 @@ mod tests {
         let parsed = extract_services(&result).expect("valid services");
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].id, "svc");
+    }
+
+    #[tokio::test]
+    async fn tail_logs_closes_socket_when_receiver_is_dropped() {
+        let socket_path = unique_socket_path();
+        let _ = std::fs::remove_file(&socket_path);
+
+        let listener = UnixListener::bind(&socket_path).expect("bind unix listener");
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept client");
+            let (reader, mut writer) = stream.into_split();
+            let mut reader = BufReader::new(reader);
+
+            let _ = read_value(&mut reader)
+                .await
+                .expect("receive handshake request");
+            write_json(
+                &mut writer,
+                &serde_json::json!({"jsonrpc":"2.0","result":{"ok":true},"id":100}),
+            )
+            .await
+            .expect("send handshake response");
+
+            let _ = read_value(&mut reader)
+                .await
+                .expect("receive tail-logs request");
+            write_json(
+                &mut writer,
+                &serde_json::json!({"jsonrpc":"2.0","result":{"ok":true},"id":101}),
+            )
+            .await
+            .expect("send tail-logs ack");
+
+            let eof = tokio::time::timeout(Duration::from_secs(2), read_value(&mut reader)).await;
+            assert!(
+                matches!(eof, Ok(Err(IpcError::EmptyResponse))),
+                "expected client to close socket after receiver drop, got: {eof:?}"
+            );
+        });
+
+        let client = JsonRpcClient::new(&socket_path, None);
+        let rx = client
+            .tail_logs("svc", None)
+            .await
+            .expect("subscribe to log tail");
+        drop(rx);
+
+        server.await.expect("server task should complete");
+        let _ = std::fs::remove_file(&socket_path);
+    }
+
+    #[tokio::test]
+    async fn tail_logs_skips_invalid_update_and_emits_valid_event() {
+        let socket_path = unique_socket_path();
+        let _ = std::fs::remove_file(&socket_path);
+
+        let listener = UnixListener::bind(&socket_path).expect("bind unix listener");
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept client");
+            let (reader, mut writer) = stream.into_split();
+            let mut reader = BufReader::new(reader);
+
+            let _ = read_value(&mut reader)
+                .await
+                .expect("receive handshake request");
+            write_json(
+                &mut writer,
+                &serde_json::json!({"jsonrpc":"2.0","result":{"ok":true},"id":100}),
+            )
+            .await
+            .expect("send handshake response");
+
+            let _ = read_value(&mut reader)
+                .await
+                .expect("receive tail-logs request");
+            write_json(
+                &mut writer,
+                &serde_json::json!({"jsonrpc":"2.0","result":{"ok":true},"id":101}),
+            )
+            .await
+            .expect("send tail-logs ack");
+
+            write_json(
+                &mut writer,
+                &serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "method": "canopus.tailLogs.update",
+                    "params": {"serviceId": "svc"}
+                }),
+            )
+            .await
+            .expect("send invalid update");
+
+            let expected = schema::ServiceEvent::StateChanged {
+                service_id: "svc".to_string(),
+                from_state: schema::ServiceState::Idle,
+                to_state: schema::ServiceState::Ready,
+                timestamp: "2026-03-01T00:00:00Z".to_string(),
+                reason: None,
+            };
+            write_json(
+                &mut writer,
+                &serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "method": "canopus.tailLogs.update",
+                    "params": serde_json::to_value(&expected).expect("serialize event")
+                }),
+            )
+            .await
+            .expect("send valid update");
+        });
+
+        let client = JsonRpcClient::new(&socket_path, None);
+        let mut rx = client
+            .tail_logs("svc", None)
+            .await
+            .expect("subscribe to log tail");
+
+        let event = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .expect("receive should not time out")
+            .expect("event should be present");
+        assert_eq!(
+            event,
+            schema::ServiceEvent::StateChanged {
+                service_id: "svc".to_string(),
+                from_state: schema::ServiceState::Idle,
+                to_state: schema::ServiceState::Ready,
+                timestamp: "2026-03-01T00:00:00Z".to_string(),
+                reason: None,
+            }
+        );
+
+        drop(rx);
+        server.await.expect("server task should complete");
+        let _ = std::fs::remove_file(&socket_path);
     }
 }
