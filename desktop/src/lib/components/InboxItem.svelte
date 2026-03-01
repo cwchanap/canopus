@@ -92,30 +92,32 @@
 <div
   class="item"
   class:unread={item.status === "unread"}
-  role="button"
-  tabindex="0"
-  aria-label="Mark {item.projectName} as read"
-  on:click={read}
-  on:keydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); read(); } }}
 >
-  <div class="agent-badge" style:background={agentColor[item.sourceAgent] ?? "#64748b"}>
-    {agentLabel[item.sourceAgent] ?? "Agent"}
-  </div>
-
-  <div class="body">
-    <div class="top">
-      <span class="project">{item.projectName}</span>
-      <span class="time">{timeAgo(item.createdAt)}</span>
+  <button
+    type="button"
+    class="item-main"
+    aria-label="Mark {item.projectName} as read"
+    on:click={read}
+  >
+    <div class="agent-badge" style:background={agentColor[item.sourceAgent] ?? "#64748b"}>
+      {agentLabel[item.sourceAgent] ?? "Agent"}
     </div>
-    <p class="summary">{item.statusSummary}</p>
-    <p class="action">{item.actionRequired}</p>
-  </div>
+
+    <div class="body">
+      <div class="top">
+        <span class="project">{item.projectName}</span>
+        <span class="time">{timeAgo(item.createdAt)}</span>
+      </div>
+      <p class="summary">{item.statusSummary}</p>
+      <p class="action">{item.actionRequired}</p>
+    </div>
+  </button>
 
   <button
     class="dismiss-btn"
     title="Dismiss"
-    on:click|stopPropagation={dismiss}
-    on:keydown|stopPropagation={() => {}}
+    aria-label="Dismiss notification"
+    on:click={dismiss}
   >✕</button>
 
   {#if actionError}
@@ -129,7 +131,6 @@
     gap: 12px;
     padding: 14px 16px;
     border-bottom: 1px solid #1e2130;
-    cursor: pointer;
     transition: background 0.15s;
     position: relative;
   }
@@ -138,13 +139,28 @@
     background: #1a1d27;
   }
 
-  .item:focus-visible {
-    outline: 2px solid #7c3aed;
-    outline-offset: -2px;
-  }
-
   .item.unread {
     border-left: 3px solid #7c3aed;
+  }
+
+  .item-main {
+    display: flex;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+    background: none;
+    border: none;
+    padding: 0;
+    text-align: left;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+  }
+
+  .item-main:focus-visible {
+    outline: 2px solid #7c3aed;
+    outline-offset: 2px;
+    border-radius: 2px;
   }
 
   .agent-badge {

@@ -206,9 +206,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.npm
-          # package-lock.json is listed in .gitignore so it is never committed;
-          # key on package.json only to avoid a cache miss on every run.
-          key: ${{ runner.os }}-npm-${{ hashFiles('desktop/package.json') }}
+          # package-lock.json is committed and is the source of truth for dependencies;
+          # key on package-lock.json so the cache invalidates when dependencies change.
+          key: ${{ runner.os }}-npm-${{ hashFiles('desktop/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-
 
