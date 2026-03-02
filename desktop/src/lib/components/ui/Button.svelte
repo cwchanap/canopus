@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { type Snippet } from "svelte";
 	import { cn } from "$lib/cn";
 	import { type VariantProps, cva } from "class-variance-authority";
+	import { type Snippet } from "svelte";
+	import type { HTMLButtonAttributes } from "svelte/elements";
 
 	const buttonVariants = cva(
 		"inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
@@ -32,12 +33,8 @@
 		}
 	);
 
-	type Props = VariantProps<typeof buttonVariants> & {
-		class?: string;
-		type?: "button" | "submit" | "reset";
-		disabled?: boolean;
+	type Props = VariantProps<typeof buttonVariants> & HTMLButtonAttributes & {
 		children: Snippet;
-		onclick?: (event: MouseEvent) => void;
 	};
 
 	let {
@@ -46,7 +43,6 @@
 		size,
 		type = "button",
 		disabled = false,
-		onclick,
 		children,
 		...restProps
 	}: Props = $props();
@@ -56,7 +52,6 @@
 	{type}
 	{disabled}
 	class={cn(buttonVariants({ variant, size }), className)}
-	onclick={onclick}
 	{...restProps}
 >
 	{@render children()}
