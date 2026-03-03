@@ -6,6 +6,14 @@
 
   export let service: ServiceSummary;
   export let onRefresh: () => void;
+  /** The name of the project this card currently belongs to, or null for ungrouped. */
+  export let projectName: string | null = null;
+  /** Called when the user requests to move the service; parent handles the modal. */
+  export let onMoveRequest: ((service: ServiceSummary, projectName: string | null) => void) | null = null;
+  /** Called when this card's overflow menu opens, so the parent can close other open menus. */
+  export let onMenuOpen: (() => void) | null = null;
+
+  let showMenu = false;
 
   let loading = false;
   let actionError = "";
@@ -46,9 +54,27 @@
     service.state === "starting" ||
     service.state === "spawning" ||
     service.state === "stopping";
+
+  function openMenu(e: MouseEvent) {
+    e.stopPropagation();
+    showMenu = !showMenu;
+    if (showMenu) onMenuOpen?.();
+  }
+
+  function closeMenu() {
+    showMenu = false;
+  }
+
+  function requestMove(e: MouseEvent) {
+    e.stopPropagation();
+    showMenu = false;
+    onMoveRequest?.(service, projectName);
+  }
 </script>
 
-<div class="card">
+<!-- svelte-ignore a11y-click-events-have-key-events -->
+<!-- svelte-ignore a11y-no-static-element-interactions -->
+<div class="card" on:click={closeMenu}>
   <div class="header">
     <div class="info">
       <span class="dot" style:background={stateColor[service.state] ?? "#64748b"}></span>
@@ -57,7 +83,21 @@
         <span class="meta">{service.id}</span>
       </div>
     </div>
-    <span class="state-label">{service.state}</span>
+    <div class="header-right">
+      <span class="state-label">{service.state}</span>
+      {#if onMoveRequest}
+        <div class="overflow-wrap">
+          <button class="btn-overflow" on:click={openMenu} aria-label="More options">⋯</button>
+          {#if showMenu}
+            <div class="overflow-menu">
+              <button class="overflow-item" on:click={requestMove}>
+                Move to project…
+              </button>
+            </div>
+          {/if}
+        </div>
+      {/if}
+    </div>
   </div>
 
   {#if service.pid || service.port || service.hostname}
@@ -112,6 +152,66 @@
     align-items: center;
     justify-content: space-between;
     gap: 10px;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .overflow-wrap {
+    position: relative;
+  }
+
+  .btn-overflow {
+    background: none;
+    border: none;
+    color: #475569;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+    letter-spacing: 1px;
+    border-radius: 4px;
+    transition: color 0.1s, background 0.1s;
+  }
+
+  .btn-overflow:hover {
+    color: #94a3b8;
+    background: #1e2130;
+  }
+
+  .overflow-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: #1a1d27;
+    border: 1px solid #2a2f45;
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    z-index: 50;
+    min-width: 160px;
+    padding: 4px;
+  }
+
+  .overflow-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    color: #e2e8f0;
+    font-size: 12px;
+    padding: 7px 10px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background 0.1s;
+  }
+
+  .overflow-item:hover {
+    background: #2a2f45;
   }
 
   .info {
