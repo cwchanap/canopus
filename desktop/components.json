@@ -12,6 +12,6 @@
   "tsx": false,
   "aliases": {
     "components": "$lib/components",
-    "utils": "$lib/cn.ts"
+    "utils": "$lib/cn"
   }
 }
