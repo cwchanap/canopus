@@ -15,8 +15,11 @@
   let newProjectName = "";
   let refreshInterval: ReturnType<typeof setInterval> | undefined;
   let isLoading = false;
-  // Tracks project names with an active bulk start/stop operation
-  let bulkLoading = new Set<string>();
+  let bulkStarting = new Set<string>();
+  let bulkStopping = new Set<string>();
+
+  // Bump this to force ServiceCard overflow menus closed.
+  let serviceMenuCloseSignal = 0;
 
   // Move-to-project modal state
   let moveService: ServiceSummary | null = null;
@@ -27,12 +30,21 @@
   let renamingProject: string | null = null;
   let renameValue = "";
   let renameInput: HTMLInputElement;
+  let renameSaving = false;
 
   // Project header overflow menu
   let openHeaderMenu: string | null = null;
 
   // Delete confirmation
   let deletingProject: string | null = null;
+
+  function isBulkBusy(projectName: string): boolean {
+    return bulkStarting.has(projectName) || bulkStopping.has(projectName);
+  }
+
+  function closeServiceMenus() {
+    serviceMenuCloseSignal += 1;
+  }
 
   async function load() {
     if (isLoading) return;
@@ -78,33 +90,33 @@
 
   async function startAll(project: Project) {
     const ids = idleServices(project).map((s) => s.id);
-    if (ids.length === 0) return;
-    bulkLoading = new Set([...bulkLoading, project.name]);
+    if (ids.length === 0 || isBulkBusy(project.name)) return;
+    bulkStarting = new Set([...bulkStarting, project.name]);
     try {
       const results = await Promise.allSettled(ids.map((id) => startService(id)));
       const failCount = results.filter((r) => r.status === "rejected").length;
       await load();
-      if (failCount > 0) {
+      if (failCount > 0 && !error) {
         error = `${failCount} service(s) failed to start.`;
       }
     } finally {
-      bulkLoading = new Set([...bulkLoading].filter((n) => n !== project.name));
+      bulkStarting = new Set([...bulkStarting].filter((n) => n !== project.name));
     }
   }
 
   async function stopAll(project: Project) {
     const ids = runningServices(project).map((s) => s.id);
-    if (ids.length === 0) return;
-    bulkLoading = new Set([...bulkLoading, project.name]);
+    if (ids.length === 0 || isBulkBusy(project.name)) return;
+    bulkStopping = new Set([...bulkStopping, project.name]);
     try {
       const results = await Promise.allSettled(ids.map((id) => stopService(id)));
       const failCount = results.filter((r) => r.status === "rejected").length;
       await load();
-      if (failCount > 0) {
+      if (failCount > 0 && !error) {
         error = `${failCount} service(s) failed to stop.`;
       }
     } finally {
-      bulkLoading = new Set([...bulkLoading].filter((n) => n !== project.name));
+      bulkStopping = new Set([...bulkStopping].filter((n) => n !== project.name));
     }
   }
 
@@ -202,7 +214,7 @@
   }
 
   async function commitRename() {
-    if (!renamingProject) return;
+    if (!renamingProject || renameSaving) return;
     const trimmed = renameValue.trim();
     if (!trimmed || trimmed === renamingProject) {
       renamingProject = null;
@@ -216,12 +228,14 @@
     const updated = $projects.map((p) =>
       p.name === renamingProject ? { ...p, name: trimmed } : p
     );
+    renameSaving = true;
     try {
       await saveProjects({ projects: updated });
       projects.set(updated);
     } catch (e) {
       error = extractErrorMessage(e);
     } finally {
+      renameSaving = false;
       renamingProject = null;
     }
   }
@@ -235,6 +249,7 @@
 
   function toggleHeaderMenu(projectName: string, e: MouseEvent | KeyboardEvent) {
     e.stopPropagation();
+    closeServiceMenus();
     openHeaderMenu = openHeaderMenu === projectName ? null : projectName;
     if (openHeaderMenu) {
       setTimeout(() => {
@@ -271,6 +286,18 @@
 
   function closeAllMenus() {
     openHeaderMenu = null;
+    closeServiceMenus();
+  }
+
+  function closeHeaderMenuOnly() {
+    openHeaderMenu = null;
+  }
+
+  function handleGlobalKeydown(e: KeyboardEvent) {
+    if (e.key !== "Escape") return;
+    if (deletingProject) {
+      deletingProject = null;
+    }
   }
 
   // ── Project delete ────────────────────────────────────────────────────────────
@@ -300,6 +327,8 @@
     };
   });
 </script>
+
+<svelte:window on:keydown={handleGlobalKeydown} />
 
 <!-- svelte-ignore a11y-click-events-have-key-events -->
 <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -342,24 +371,24 @@
               <div class="project-header-actions">
                 <button
                   class="btn-bulk"
-                  disabled={bulkLoading.has(project.name) || idleServices(project).length === 0}
+                  disabled={isBulkBusy(project.name) || idleServices(project).length === 0}
                   on:click|stopPropagation={() => startAll(project)}
                   title="Start all idle services in this project"
-                  aria-label={bulkLoading.has(project.name) ? "Starting services…" : "Start all idle services"}
-                  aria-busy={bulkLoading.has(project.name)}
+                  aria-label={bulkStarting.has(project.name) ? "Starting services…" : "Start all idle services"}
+                  aria-busy={bulkStarting.has(project.name)}
                 >
-                  {bulkLoading.has(project.name) ? "…" : "Start all"}
+                  {bulkStarting.has(project.name) ? "…" : "Start all"}
                 </button>
 
                 <button
                   class="btn-bulk btn-bulk-stop"
-                  disabled={bulkLoading.has(project.name) || runningServices(project).length === 0}
+                  disabled={isBulkBusy(project.name) || runningServices(project).length === 0}
                   on:click|stopPropagation={() => stopAll(project)}
                   title="Stop all running services in this project"
-                  aria-label={bulkLoading.has(project.name) ? "Stopping services…" : "Stop all running services"}
-                  aria-busy={bulkLoading.has(project.name)}
+                  aria-label={bulkStopping.has(project.name) ? "Stopping services…" : "Stop all running services"}
+                  aria-busy={bulkStopping.has(project.name)}
                 >
-                  {bulkLoading.has(project.name) ? "…" : "Stop all"}
+                  {bulkStopping.has(project.name) ? "…" : "Stop all"}
                 </button>
 
                 <div class="overflow-wrap">
@@ -417,7 +446,8 @@
                     onRefresh={load}
                     projectName={project.name}
                     onMoveRequest={handleMoveRequest}
-                    onMenuOpen={closeAllMenus}
+                    onMenuOpen={closeHeaderMenuOnly}
+                    closeSignal={serviceMenuCloseSignal}
                   />
                 {/each}
               </div>
@@ -437,7 +467,8 @@
                   onRefresh={load}
                   projectName={null}
                   onMoveRequest={handleMoveRequest}
-                  onMenuOpen={closeAllMenus}
+                  onMenuOpen={closeHeaderMenuOnly}
+                  closeSignal={serviceMenuCloseSignal}
                 />
               {/each}
             </div>

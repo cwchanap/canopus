@@ -13,8 +13,11 @@
   export let onMoveRequest: ((service: ServiceSummary, projectName: string | null) => void) | null = null;
   /** Called when this card's overflow menu opens, so the parent can close other open menus. */
   export let onMenuOpen: (() => void) | null = null;
+  /** Incremented by parent to force-close any open overflow menu on this card. */
+  export let closeSignal = 0;
 
   let showMenu = false;
+  let lastCloseSignal = closeSignal;
 
   let loading = false;
   let actionError = "";
@@ -55,6 +58,13 @@
     service.state === "starting" ||
     service.state === "spawning" ||
     service.state === "stopping";
+
+  $: {
+    if (closeSignal !== lastCloseSignal) {
+      lastCloseSignal = closeSignal;
+      showMenu = false;
+    }
+  }
 
   function openMenu(e: MouseEvent) {
     e.stopPropagation();
