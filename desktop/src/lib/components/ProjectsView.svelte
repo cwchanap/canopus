@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { listProjects, listServices, saveProjects } from "../api";
+  import { listProjects, listServices, saveProjects, startService, stopService } from "../api";
   import { logPanelServiceId, projects, services } from "../stores";
   import type { Project, ServiceSummary } from "../types";
   import { extractErrorMessage } from "../utils";
@@ -14,6 +14,8 @@
   let newProjectName = "";
   let refreshInterval: ReturnType<typeof setInterval> | undefined;
   let isLoading = false;
+  // Tracks project names with an active bulk start/stop operation
+  let bulkLoading = new Set<string>();
 
   // Move-to-project modal state
   let moveService: ServiceSummary | null = null;
@@ -61,6 +63,48 @@
     const grouped = new Set($projects.flatMap((p) => p.serviceIds));
     return $services.filter((s) => !grouped.has(s.id));
   })();
+
+  function idleServices(project: Project): ServiceSummary[] {
+    return getProjectServices(project).filter((s) => s.state === "idle");
+  }
+
+  function runningServices(project: Project): ServiceSummary[] {
+    return getProjectServices(project).filter(
+      (s) => s.state === "ready" || s.state === "starting" || s.state === "spawning"
+    );
+  }
+
+  async function startAll(project: Project) {
+    const ids = idleServices(project).map((s) => s.id);
+    if (ids.length === 0) return;
+    bulkLoading = new Set([...bulkLoading, project.name]);
+    try {
+      const results = await Promise.allSettled(ids.map((id) => startService(id)));
+      const failed = results.filter((r) => r.status === "rejected");
+      if (failed.length > 0) {
+        error = `${failed.length} service(s) failed to start.`;
+      }
+    } finally {
+      bulkLoading = new Set([...bulkLoading].filter((n) => n !== project.name));
+      load();
+    }
+  }
+
+  async function stopAll(project: Project) {
+    const ids = runningServices(project).map((s) => s.id);
+    if (ids.length === 0) return;
+    bulkLoading = new Set([...bulkLoading, project.name]);
+    try {
+      const results = await Promise.allSettled(ids.map((id) => stopService(id)));
+      const failed = results.filter((r) => r.status === "rejected");
+      if (failed.length > 0) {
+        error = `${failed.length} service(s) failed to stop.`;
+      }
+    } finally {
+      bulkLoading = new Set([...bulkLoading].filter((n) => n !== project.name));
+      load();
+    }
+  }
 
   async function addProject() {
     if (!newProjectName.trim()) return;
