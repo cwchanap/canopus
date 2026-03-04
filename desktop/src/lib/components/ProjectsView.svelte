@@ -288,6 +288,24 @@
               {/if}
 
               <div class="project-header-actions">
+                <button
+                  class="btn-bulk"
+                  disabled={bulkLoading.has(project.name) || idleServices(project).length === 0}
+                  on:click|stopPropagation={() => startAll(project)}
+                  title="Start all idle services in this project"
+                >
+                  {bulkLoading.has(project.name) && runningServices(project).length === 0 ? "…" : "Start all"}
+                </button>
+
+                <button
+                  class="btn-bulk btn-bulk-stop"
+                  disabled={bulkLoading.has(project.name) || runningServices(project).length === 0}
+                  on:click|stopPropagation={() => stopAll(project)}
+                  title="Stop all running services in this project"
+                >
+                  {bulkLoading.has(project.name) && runningServices(project).length > 0 ? "…" : "Stop all"}
+                </button>
+
                 <div class="overflow-wrap">
                   <button
                     class="btn-overflow"
@@ -496,6 +514,35 @@
     padding: 2px 8px;
     outline: none;
     width: 200px;
+  }
+
+  .btn-bulk {
+    padding: 2px 8px;
+    background: none;
+    border: 1px solid #2a2f45;
+    border-radius: 4px;
+    color: #64748b;
+    font-size: 11px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    white-space: nowrap;
+  }
+
+  .btn-bulk:hover:not(:disabled) {
+    border-color: #7c3aed;
+    color: #a78bfa;
+    background: #7c3aed18;
+  }
+
+  .btn-bulk:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .btn-bulk-stop:hover:not(:disabled) {
+    border-color: #ef4444;
+    color: #f87171;
+    background: #ef444418;
   }
 
   .overflow-wrap {
