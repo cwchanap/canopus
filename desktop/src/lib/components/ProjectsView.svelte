@@ -80,13 +80,13 @@
     bulkLoading = new Set([...bulkLoading, project.name]);
     try {
       const results = await Promise.allSettled(ids.map((id) => startService(id)));
-      const failed = results.filter((r) => r.status === "rejected");
-      if (failed.length > 0) {
-        error = `${failed.length} service(s) failed to start.`;
+      const failCount = results.filter((r) => r.status === "rejected").length;
+      await load();
+      if (failCount > 0) {
+        error = `${failCount} service(s) failed to start.`;
       }
     } finally {
       bulkLoading = new Set([...bulkLoading].filter((n) => n !== project.name));
-      load();
     }
   }
 
@@ -96,13 +96,13 @@
     bulkLoading = new Set([...bulkLoading, project.name]);
     try {
       const results = await Promise.allSettled(ids.map((id) => stopService(id)));
-      const failed = results.filter((r) => r.status === "rejected");
-      if (failed.length > 0) {
-        error = `${failed.length} service(s) failed to stop.`;
+      const failCount = results.filter((r) => r.status === "rejected").length;
+      await load();
+      if (failCount > 0) {
+        error = `${failCount} service(s) failed to stop.`;
       }
     } finally {
       bulkLoading = new Set([...bulkLoading].filter((n) => n !== project.name));
-      load();
     }
   }
 
