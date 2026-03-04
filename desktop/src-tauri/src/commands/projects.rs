@@ -25,7 +25,7 @@ pub async fn save_projects(
         if name == "__none__" || name == "__new__" {
             return Err(CommandError {
                 code: "PROJ004",
-                message: format!("Reserved project name '{}' is not allowed", name),
+                message: format!("Reserved project name '{name}' is not allowed"),
             });
         }
     }
