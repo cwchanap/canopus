@@ -293,6 +293,8 @@
                   disabled={bulkLoading.has(project.name) || idleServices(project).length === 0}
                   on:click|stopPropagation={() => startAll(project)}
                   title="Start all idle services in this project"
+                  aria-label={bulkLoading.has(project.name) ? "Starting services…" : "Start all idle services"}
+                  aria-busy={bulkLoading.has(project.name)}
                 >
                   {bulkLoading.has(project.name) ? "…" : "Start all"}
                 </button>
@@ -302,6 +304,8 @@
                   disabled={bulkLoading.has(project.name) || runningServices(project).length === 0}
                   on:click|stopPropagation={() => stopAll(project)}
                   title="Stop all running services in this project"
+                  aria-label={bulkLoading.has(project.name) ? "Stopping services…" : "Stop all running services"}
+                  aria-busy={bulkLoading.has(project.name)}
                 >
                   {bulkLoading.has(project.name) ? "…" : "Stop all"}
                 </button>
