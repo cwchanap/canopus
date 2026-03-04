@@ -7,6 +7,7 @@
   import LogViewer from "./LogViewer.svelte";
   import MoveToProjectModal from "./MoveToProjectModal.svelte";
   import ServiceCard from "./ServiceCard.svelte";
+  import "./overflow.css";
 
   let loading = true;
   let error = "";
@@ -20,6 +21,7 @@
   // Move-to-project modal state
   let moveService: ServiceSummary | null = null;
   let moveServiceCurrentProject: string | null = null;
+  let moveLoading = false;
 
   // Inline rename state
   let renamingProject: string | null = null;
@@ -107,8 +109,19 @@
   }
 
   async function addProject() {
-    if (!newProjectName.trim()) return;
-    const updated = [...$projects, { name: newProjectName.trim(), serviceIds: [] }];
+    const trimmed = newProjectName.trim();
+    if (!trimmed) return;
+    
+    if ($projects.some(p => p.name.toLowerCase() === trimmed.toLowerCase())) {
+      error = "A project with that name already exists.";
+      return;
+    }
+    if (trimmed === "__none__" || trimmed === "__new__") {
+      error = "Reserved project name.";
+      return;
+    }
+
+    const updated = [...$projects, { name: trimmed, serviceIds: [] }];
     try {
       await saveProjects({ projects: updated });
       projects.set(updated);
@@ -161,6 +174,7 @@
       }));
     }
 
+    moveLoading = true;
     try {
       await saveProjects({ projects: updated });
       projects.set(updated);
@@ -168,6 +182,8 @@
       moveServiceCurrentProject = null;
     } catch (e) {
       error = extractErrorMessage(e);
+    } finally {
+      moveLoading = false;
     }
   }
 
@@ -192,6 +208,11 @@
       renamingProject = null;
       return;
     }
+    if ($projects.some(p => p.name !== renamingProject && p.name.toLowerCase() === trimmed.toLowerCase())) {
+      error = "A project with that name already exists.";
+      renamingProject = null;
+      return;
+    }
     const updated = $projects.map((p) =>
       p.name === renamingProject ? { ...p, name: trimmed } : p
     );
@@ -212,9 +233,40 @@
 
   // ── Project header overflow menu ─────────────────────────────────────────────
 
-  function toggleHeaderMenu(projectName: string, e: MouseEvent) {
+  function toggleHeaderMenu(projectName: string, e: MouseEvent | KeyboardEvent) {
     e.stopPropagation();
     openHeaderMenu = openHeaderMenu === projectName ? null : projectName;
+    if (openHeaderMenu) {
+      setTimeout(() => {
+        const menu = document.querySelector(`.overflow-menu[data-project="${projectName}"]`);
+        const firstItem = menu?.querySelector('.overflow-item') as HTMLElement;
+        if (firstItem) firstItem.focus();
+      }, 0);
+    }
+  }
+
+  function handleMenuKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      openHeaderMenu = null;
+      return;
+    }
+    
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const menu = (e.target as HTMLElement).closest('.overflow-menu');
+      if (!menu) return;
+      
+      const items = Array.from(menu.querySelectorAll('.overflow-item')) as HTMLElement[];
+      const index = items.indexOf(e.target as HTMLElement);
+      
+      if (e.key === "ArrowDown") {
+        const next = items[index + 1] || items[0];
+        next.focus();
+      } else {
+        const prev = items[index - 1] || items[items.length - 1];
+        prev.focus();
+      }
+    }
   }
 
   function closeAllMenus() {
@@ -314,14 +366,39 @@
                   <button
                     class="btn-overflow"
                     on:click={(e) => toggleHeaderMenu(project.name, e)}
+                    on:keydown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleHeaderMenu(project.name, e);
+                      }
+                    }}
                     aria-label="Project options"
+                    aria-haspopup="menu"
+                    aria-expanded={openHeaderMenu === project.name}
                   >⋯</button>
                   {#if openHeaderMenu === project.name}
-                    <div class="overflow-menu">
-                      <button class="overflow-item" on:click={() => startRename(project)}>
+                    <!-- svelte-ignore a11y-no-static-element-interactions -->
+                    <div 
+                      class="overflow-menu" 
+                      data-project={project.name}
+                      on:keydown={handleMenuKeydown}
+                      role="menu"
+                      tabindex="-1"
+                    >
+                      <button 
+                        class="overflow-item" 
+                        on:click={() => startRename(project)}
+                        role="menuitem"
+                        tabindex="-1"
+                      >
                         Rename
                       </button>
-                      <button class="overflow-item overflow-item-danger" on:click={() => requestDelete(project.name)}>
+                      <button 
+                        class="overflow-item overflow-item-danger" 
+                        on:click={() => requestDelete(project.name)}
+                        role="menuitem"
+                        tabindex="-1"
+                      >
                         Delete project
                       </button>
                     </div>
@@ -414,6 +491,7 @@
     serviceName={moveService.name}
     onConfirm={handleMoveConfirm}
     onClose={closeMoveModal}
+    loading={moveLoading}
   />
 {/if}
 
@@ -549,65 +627,8 @@
     background: #ef444418;
   }
 
-  .overflow-wrap {
-    position: relative;
-  }
-
-  .btn-overflow {
-    background: none;
-    border: none;
-    color: #475569;
-    font-size: 14px;
-    cursor: pointer;
-    padding: 0 4px;
-    line-height: 1;
-    letter-spacing: 1px;
-    border-radius: 4px;
-    transition: color 0.1s, background 0.1s;
-  }
-
-  .btn-overflow:hover {
-    color: #94a3b8;
-    background: #1e2130;
-  }
-
   .overflow-menu {
-    position: absolute;
-    top: calc(100% + 4px);
     left: 0;
-    background: #1a1d27;
-    border: 1px solid #2a2f45;
-    border-radius: 6px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-    z-index: 50;
-    min-width: 160px;
-    padding: 4px;
-  }
-
-  .overflow-item {
-    display: block;
-    width: 100%;
-    text-align: left;
-    background: none;
-    border: none;
-    color: #e2e8f0;
-    font-size: 12px;
-    padding: 7px 10px;
-    cursor: pointer;
-    border-radius: 4px;
-    transition: background 0.1s;
-  }
-
-  .overflow-item:hover {
-    background: #2a2f45;
-  }
-
-  .overflow-item-danger {
-    color: #f87171;
-  }
-
-  .overflow-item-danger:hover {
-    background: #ef444418;
   }
 
   .service-grid {
