@@ -294,7 +294,7 @@
                   on:click|stopPropagation={() => startAll(project)}
                   title="Start all idle services in this project"
                 >
-                  {bulkLoading.has(project.name) && runningServices(project).length === 0 ? "…" : "Start all"}
+                  {bulkLoading.has(project.name) ? "…" : "Start all"}
                 </button>
 
                 <button
@@ -303,7 +303,7 @@
                   on:click|stopPropagation={() => stopAll(project)}
                   title="Stop all running services in this project"
                 >
-                  {bulkLoading.has(project.name) && runningServices(project).length > 0 ? "…" : "Stop all"}
+                  {bulkLoading.has(project.name) ? "…" : "Stop all"}
                 </button>
 
                 <div class="overflow-wrap">
