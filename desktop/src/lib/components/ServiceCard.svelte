@@ -3,6 +3,7 @@
   import { logPanelServiceId } from "../stores";
   import type { ServiceSummary } from "../types";
   import { extractErrorMessage } from "../utils";
+  import "./overflow.css";
 
   export let service: ServiceSummary;
   export let onRefresh: () => void;
@@ -161,57 +162,8 @@
     flex-shrink: 0;
   }
 
-  .overflow-wrap {
-    position: relative;
-  }
-
-  .btn-overflow {
-    background: none;
-    border: none;
-    color: #475569;
-    font-size: 14px;
-    cursor: pointer;
-    padding: 0 4px;
-    line-height: 1;
-    letter-spacing: 1px;
-    border-radius: 4px;
-    transition: color 0.1s, background 0.1s;
-  }
-
-  .btn-overflow:hover {
-    color: #94a3b8;
-    background: #1e2130;
-  }
-
   .overflow-menu {
-    position: absolute;
-    top: calc(100% + 4px);
     right: 0;
-    background: #1a1d27;
-    border: 1px solid #2a2f45;
-    border-radius: 6px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-    z-index: 50;
-    min-width: 160px;
-    padding: 4px;
-  }
-
-  .overflow-item {
-    display: block;
-    width: 100%;
-    text-align: left;
-    background: none;
-    border: none;
-    color: #e2e8f0;
-    font-size: 12px;
-    padding: 7px 10px;
-    cursor: pointer;
-    border-radius: 4px;
-    transition: background 0.1s;
-  }
-
-  .overflow-item:hover {
-    background: #2a2f45;
   }
 
   .info {

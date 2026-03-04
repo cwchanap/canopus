@@ -19,6 +19,17 @@ pub async fn save_projects(
     state: State<'_, AppState>,
     config: ProjectConfig,
 ) -> Result<(), CommandError> {
+    // Validate project names
+    for project in &config.projects {
+        let name = project.name.trim();
+        if name == "__none__" || name == "__new__" {
+            return Err(CommandError {
+                code: "PROJ004",
+                message: format!("Reserved project name '{}' is not allowed", name),
+            });
+        }
+    }
+
     let content = serde_json::to_string_pretty(&config).map_err(CommandError::from)?;
     if let Some(parent) = state.projects_path.parent() {
         tokio::fs::create_dir_all(parent)

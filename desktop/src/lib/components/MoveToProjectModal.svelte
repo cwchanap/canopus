@@ -6,42 +6,49 @@
   export let serviceName: string;
   export let onConfirm: (targetProjectName: string | null) => void;
   export let onClose: () => void;
+  export let loading: boolean = false;
 
-  // "__none__" is a sentinel for "Other Services" (no project)
-  const NONE = "__none__";
+  const NONE = {};
+  const NEW = {};
 
-  let selected: string = currentProjectName ?? NONE;
+  let selected: string | typeof NONE | typeof NEW = currentProjectName ?? NONE;
   let showNewProject = false;
   let newProjectName = "";
   let newProjectInput: HTMLInputElement;
+  let newProjectError = "";
 
   function toggleNewProject() {
     showNewProject = !showNewProject;
     if (showNewProject) {
-      selected = "__new__";
+      selected = NEW;
       setTimeout(() => newProjectInput?.focus(), 0);
     } else {
-      if (selected === "__new__") selected = currentProjectName ?? NONE;
+      if (selected === NEW) selected = currentProjectName ?? NONE;
       newProjectName = "";
+      newProjectError = "";
     }
   }
 
   function confirm() {
-    if (selected === "__new__") {
+    if (loading) return;
+    if (selected === NEW) {
       const name = newProjectName.trim();
       if (!name) return;
+      if (projects.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+        newProjectError = "A project with that name already exists.";
+        return;
+      }
       onConfirm(name);
     } else if (selected === NONE) {
       onConfirm(null);
     } else {
-      onConfirm(selected);
+      onConfirm(selected as string);
     }
   }
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") onClose();
-    if (e.key === "Enter" && selected !== "__new__") confirm();
-    if (e.key === "Enter" && selected === "__new__") confirm();
+    if (e.key === "Enter") confirm();
   }
 </script>
 
@@ -75,17 +82,24 @@
 
         <!-- New project option -->
         {#if showNewProject}
-          <label class="option option-new">
-            <input type="radio" bind:group={selected} value="__new__" />
-            <input
-              class="new-project-input"
-              type="text"
-              placeholder="New project name…"
-              bind:value={newProjectName}
-              bind:this={newProjectInput}
-              on:click|stopPropagation={() => { selected = "__new__"; }}
-            />
-          </label>
+          <div class="new-project-wrapper">
+            <label class="option option-new">
+              <input type="radio" bind:group={selected} value={NEW} />
+              <input
+                class="new-project-input"
+                type="text"
+                placeholder="New project name…"
+                bind:value={newProjectName}
+                bind:this={newProjectInput}
+                on:input={() => (newProjectError = "")}
+                on:click|stopPropagation={() => { selected = NEW; }}
+                disabled={loading}
+              />
+            </label>
+            {#if newProjectError}
+              <div class="new-project-error">{newProjectError}</div>
+            {/if}
+          </div>
         {:else}
           <button class="btn-add-project" on:click={toggleNewProject}>
             + New project
@@ -95,13 +109,13 @@
     </div>
 
     <div class="modal-footer">
-      <button class="btn btn-cancel" on:click={onClose}>Cancel</button>
+      <button class="btn btn-cancel" on:click={onClose} disabled={loading}>Cancel</button>
       <button
         class="btn btn-confirm"
-        disabled={selected === "__new__" && !newProjectName.trim()}
+        disabled={loading || (selected === NEW && !newProjectName.trim())}
         on:click={confirm}
       >
-        Move
+        {loading ? "Moving…" : "Move"}
       </button>
     </div>
   </div>
@@ -237,6 +251,18 @@
     text-align: left;
     transition: border-color 0.15s, color 0.15s;
     margin-top: 4px;
+  }
+
+  .new-project-wrapper {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .new-project-error {
+    color: #ef4444;
+    font-size: 11px;
+    margin-top: 4px;
+    margin-left: 28px;
   }
 
   .btn-add-project:hover {
