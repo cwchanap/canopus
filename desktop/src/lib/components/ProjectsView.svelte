@@ -38,6 +38,7 @@
 
   // Delete confirmation
   let deletingProject: string | null = null;
+  let deleteLoading = false;
 
   function isBulkBusy(projectName: string): boolean {
     return bulkStarting.has(projectName) || bulkStopping.has(projectName);
@@ -321,14 +322,17 @@
   }
 
   async function confirmDelete() {
-    if (!deletingProject) return;
+    if (!deletingProject || deleteLoading) return;
     const updated = $projects.filter((p) => p.name !== deletingProject);
+    deleteLoading = true;
     try {
       await saveProjects({ projects: updated });
       projects.set(updated);
-      deletingProject = null;
     } catch (e) {
       opError = extractErrorMessage(e);
+    } finally {
+      deleteLoading = false;
+      deletingProject = null;
     }
   }
 
@@ -555,7 +559,9 @@
       <p class="confirm-hint">Services will be returned to Other Services.</p>
       <div class="confirm-actions">
         <button class="btn btn-cancel" on:click={() => (deletingProject = null)}>Cancel</button>
-        <button class="btn btn-danger" on:click={confirmDelete}>Delete</button>
+        <button class="btn btn-danger" on:click={confirmDelete} disabled={deleteLoading}>
+          {deleteLoading ? "Deleting…" : "Delete"}
+        </button>
       </div>
     </div>
   </div>
