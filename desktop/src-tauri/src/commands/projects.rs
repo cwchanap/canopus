@@ -14,13 +14,8 @@ pub async fn list_projects(state: State<'_, AppState>) -> Result<ProjectConfig, 
     }
 }
 
-#[tauri::command]
-pub async fn save_projects(
-    state: State<'_, AppState>,
-    config: ProjectConfig,
-) -> Result<(), CommandError> {
-    // Validate project names
-    for project in &config.projects {
+fn validate_project_names(projects: &[crate::state::Project]) -> Result<(), CommandError> {
+    for project in projects {
         let name = project.name.trim();
         if name == "__none__" || name == "__new__" {
             return Err(CommandError {
@@ -29,6 +24,15 @@ pub async fn save_projects(
             });
         }
     }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn save_projects(
+    state: State<'_, AppState>,
+    config: ProjectConfig,
+) -> Result<(), CommandError> {
+    validate_project_names(&config.projects)?;
 
     let content = serde_json::to_string_pretty(&config).map_err(CommandError::from)?;
     if let Some(parent) = state.projects_path.parent() {
@@ -75,4 +79,50 @@ pub async fn save_projects(
         let _ = tokio::fs::remove_file(&tmp_path).await;
     }
     result
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::state::Project;
+
+    fn project(name: &str) -> Project {
+        Project {
+            name: name.to_string(),
+            service_ids: vec![],
+        }
+    }
+
+    #[test]
+    fn proj004_none_is_reserved() {
+        let err = validate_project_names(&[project("__none__")]).unwrap_err();
+        assert_eq!(err.code, "PROJ004");
+        assert!(err.message.contains("__none__"));
+    }
+
+    #[test]
+    fn proj004_new_is_reserved() {
+        let err = validate_project_names(&[project("__new__")]).unwrap_err();
+        assert_eq!(err.code, "PROJ004");
+        assert!(err.message.contains("__new__"));
+    }
+
+    #[test]
+    fn proj004_trimmed_spaces_detected() {
+        let err = validate_project_names(&[project("  __none__  ")]).unwrap_err();
+        assert_eq!(err.code, "PROJ004");
+    }
+
+    #[test]
+    fn proj004_valid_name_accepted() {
+        validate_project_names(&[project("my-project")]).expect("valid name must pass");
+    }
+
+    #[test]
+    fn proj004_second_project_reserved() {
+        let err =
+            validate_project_names(&[project("valid"), project("__new__")]).unwrap_err();
+        assert_eq!(err.code, "PROJ004");
+    }
 }
