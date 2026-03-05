@@ -11,6 +11,7 @@
 
   let loading = true;
   let error = "";
+  let opError = "";
   let showAddProject = false;
   let newProjectName = "";
   let refreshInterval: ReturnType<typeof setInterval> | undefined;
@@ -344,6 +345,12 @@
       </div>
     {:else}
       <div class="projects-list">
+        {#if opError}
+          <div class="op-error-banner" role="alert">
+            <span>{opError}</span>
+            <button class="op-error-close" on:click={() => (opError = "")} aria-label="Dismiss">✕</button>
+          </div>
+        {/if}
         {#each $projects as project}
           {@const svcList = getProjectServices(project)}
           <section class="project-section">
@@ -823,5 +830,34 @@
 
   .btn-danger:hover {
     background: #dc2626;
+  }
+
+  .op-error-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: #2d1b1b;
+    border: 1px solid #7f1d1d;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: #fca5a5;
+    margin-bottom: 8px;
+  }
+
+  .op-error-close {
+    background: none;
+    border: none;
+    color: #f87171;
+    font-size: 12px;
+    cursor: pointer;
+    flex-shrink: 0;
+    padding: 0 2px;
+    line-height: 1;
+  }
+
+  .op-error-close:hover {
+    color: #fca5a5;
   }
 </style>
