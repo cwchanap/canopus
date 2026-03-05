@@ -229,9 +229,13 @@
       renamingProject = null;
       return;
     }
+    // Validation: keep rename input open on failure so user can correct
+    if (trimmed === "__none__" || trimmed === "__new__") {
+      opError = `Reserved project name '${trimmed}' is not allowed.`;
+      return;
+    }
     if ($projects.some(p => p.name !== renamingProject && p.name.toLowerCase() === trimmed.toLowerCase())) {
-      error = "A project with that name already exists.";
-      renamingProject = null;
+      opError = "A project with that name already exists.";
       return;
     }
     const updated = $projects.map((p) =>
@@ -242,7 +246,7 @@
       await saveProjects({ projects: updated });
       projects.set(updated);
     } catch (e) {
-      error = extractErrorMessage(e);
+      opError = extractErrorMessage(e);
     } finally {
       renameSaving = false;
       renamingProject = null;
