@@ -34,6 +34,10 @@
     if (selected === NEW) {
       const name = newProjectName.trim();
       if (!name) return;
+      if (name === "__none__" || name === "__new__") {
+        newProjectError = "Reserved project name.";
+        return;
+      }
       if (projects.some(p => p.name.toLowerCase() === name.toLowerCase())) {
         newProjectError = "A project with that name already exists.";
         return;
@@ -48,7 +52,8 @@
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") onClose();
-    if (e.key === "Enter") confirm();
+    // Don't intercept Enter from the new-project text input — it handles its own submit
+    if (e.key === "Enter" && !(e.target instanceof HTMLInputElement)) confirm();
   }
 </script>
 
@@ -93,6 +98,7 @@
                 bind:this={newProjectInput}
                 on:input={() => (newProjectError = "")}
                 on:click|stopPropagation={() => { selected = NEW; }}
+                on:keydown={(e) => { if (e.key === "Enter") { e.stopPropagation(); confirm(); } }}
                 disabled={loading}
               />
             </label>
