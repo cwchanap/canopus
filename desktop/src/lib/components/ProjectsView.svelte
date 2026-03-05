@@ -35,6 +35,7 @@
 
   // Project header overflow menu
   let openHeaderMenu: string | null = null;
+  let headerMenuEls: Record<string, HTMLElement> = {};
 
   // Delete confirmation
   let deletingProject: string | null = null;
@@ -263,7 +264,7 @@
     openHeaderMenu = openHeaderMenu === projectName ? null : projectName;
     if (openHeaderMenu) {
       setTimeout(() => {
-        const menu = document.querySelector(`.overflow-menu[data-project="${projectName}"]`);
+        const menu = headerMenuEls[projectName];
         const firstItem = menu?.querySelector('.overflow-item') as HTMLElement;
         if (firstItem) firstItem.focus();
       }, 0);
@@ -426,9 +427,9 @@
                   >⋯</button>
                   {#if openHeaderMenu === project.name}
                     <!-- svelte-ignore a11y-no-static-element-interactions -->
-                    <div 
-                      class="overflow-menu" 
-                      data-project={project.name}
+                    <div
+                      class="overflow-menu"
+                      bind:this={headerMenuEls[project.name]}
                       on:keydown={handleMenuKeydown}
                       role="menu"
                       tabindex="-1"
