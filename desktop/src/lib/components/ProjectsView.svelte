@@ -97,8 +97,12 @@
       const results = await Promise.allSettled(ids.map((id) => startService(id)));
       const failCount = results.filter((r) => r.status === "rejected").length;
       await load();
-      if (failCount > 0 && !error) {
-        error = `${failCount} service(s) failed to start.`;
+      if (failCount > 0) {
+        const failed = results
+          .map((r, i) => ({ id: ids[i], result: r }))
+          .filter(x => x.result.status === "rejected");
+        const names = failed.map(x => $services.find(s => s.id === x.id)?.name ?? x.id);
+        opError = `${failed.length} service(s) failed to start: ${names.join(", ")}`;
       }
     } finally {
       bulkStarting = new Set([...bulkStarting].filter((n) => n !== project.name));
@@ -113,8 +117,12 @@
       const results = await Promise.allSettled(ids.map((id) => stopService(id)));
       const failCount = results.filter((r) => r.status === "rejected").length;
       await load();
-      if (failCount > 0 && !error) {
-        error = `${failCount} service(s) failed to stop.`;
+      if (failCount > 0) {
+        const failed = results
+          .map((r, i) => ({ id: ids[i], result: r }))
+          .filter(x => x.result.status === "rejected");
+        const names = failed.map(x => $services.find(s => s.id === x.id)?.name ?? x.id);
+        opError = `${failed.length} service(s) failed to stop: ${names.join(", ")}`;
       }
     } finally {
       bulkStopping = new Set([...bulkStopping].filter((n) => n !== project.name));
@@ -126,11 +134,11 @@
     if (!trimmed) return;
     
     if ($projects.some(p => p.name.toLowerCase() === trimmed.toLowerCase())) {
-      error = "A project with that name already exists.";
+      opError = "A project with that name already exists.";
       return;
     }
     if (trimmed === "__none__" || trimmed === "__new__") {
-      error = "Reserved project name.";
+      opError = `Reserved project name '${trimmed}' is not allowed.`;
       return;
     }
 
@@ -142,7 +150,7 @@
       showAddProject = false;
     } catch (e) {
       console.error("Failed to save project:", e);
-      error = extractErrorMessage(e);
+      opError = extractErrorMessage(e);
     }
   }
 
@@ -194,7 +202,7 @@
       moveService = null;
       moveServiceCurrentProject = null;
     } catch (e) {
-      error = extractErrorMessage(e);
+      opError = extractErrorMessage(e);
     } finally {
       moveLoading = false;
     }
@@ -316,7 +324,7 @@
       projects.set(updated);
       deletingProject = null;
     } catch (e) {
-      error = extractErrorMessage(e);
+      opError = extractErrorMessage(e);
     }
   }
 
