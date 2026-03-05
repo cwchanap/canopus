@@ -200,12 +200,12 @@
     try {
       await saveProjects({ projects: updated });
       projects.set(updated);
-      moveService = null;
-      moveServiceCurrentProject = null;
     } catch (e) {
       opError = extractErrorMessage(e);
     } finally {
       moveLoading = false;
+      moveService = null;
+      moveServiceCurrentProject = null;
     }
   }
 
