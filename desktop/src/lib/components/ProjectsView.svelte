@@ -40,10 +40,6 @@
   let deletingProject: string | null = null;
   let deleteLoading = false;
 
-  function isBulkBusy(projectName: string): boolean {
-    return bulkStarting.has(projectName) || bulkStopping.has(projectName);
-  }
-
   function closeServiceMenus() {
     serviceMenuCloseSignal += 1;
   }
@@ -92,7 +88,7 @@
 
   async function startAll(project: Project) {
     const ids = idleServices(project).map((s) => s.id);
-    if (ids.length === 0 || isBulkBusy(project.name)) return;
+    if (ids.length === 0 || bulkStarting.has(project.name) || bulkStopping.has(project.name)) return;
     bulkStarting = new Set([...bulkStarting, project.name]);
     try {
       const results = await Promise.allSettled(ids.map((id) => startService(id)));
@@ -112,7 +108,7 @@
 
   async function stopAll(project: Project) {
     const ids = runningServices(project).map((s) => s.id);
-    if (ids.length === 0 || isBulkBusy(project.name)) return;
+    if (ids.length === 0 || bulkStarting.has(project.name) || bulkStopping.has(project.name)) return;
     bulkStopping = new Set([...bulkStopping, project.name]);
     try {
       const results = await Promise.allSettled(ids.map((id) => stopService(id)));
@@ -394,7 +390,7 @@
               <div class="project-header-actions">
                 <button
                   class="btn-bulk"
-                  disabled={isBulkBusy(project.name) || idleServices(project).length === 0}
+                  disabled={bulkStarting.has(project.name) || bulkStopping.has(project.name) || idleServices(project).length === 0}
                   on:click|stopPropagation={() => startAll(project)}
                   title="Start all idle services in this project"
                   aria-label={bulkStarting.has(project.name) ? "Starting services…" : "Start all idle services"}
@@ -405,7 +401,7 @@
 
                 <button
                   class="btn-bulk btn-bulk-stop"
-                  disabled={isBulkBusy(project.name) || runningServices(project).length === 0}
+                  disabled={bulkStarting.has(project.name) || bulkStopping.has(project.name) || runningServices(project).length === 0}
                   on:click|stopPropagation={() => stopAll(project)}
                   title="Stop all running services in this project"
                   aria-label={bulkStopping.has(project.name) ? "Stopping services…" : "Stop all running services"}
