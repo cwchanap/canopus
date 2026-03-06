@@ -224,6 +224,7 @@
     if (!renamingProject || renameSaving) return;
     const trimmed = renameValue.trim();
     if (!trimmed || trimmed === renamingProject) {
+      opError = "";
       renamingProject = null;
       return;
     }
@@ -253,7 +254,7 @@
 
   function handleRenameKeydown(e: KeyboardEvent) {
     if (e.key === "Enter") commitRename();
-    if (e.key === "Escape") renamingProject = null;
+    if (e.key === "Escape") { opError = ""; renamingProject = null; }
   }
 
   // ── Project header overflow menu ─────────────────────────────────────────────
