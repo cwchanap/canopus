@@ -50,11 +50,11 @@
     }
   }
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") onClose();
-    // Don't intercept Enter from the new-project text input — it handles its own submit
-    if (e.key === "Enter" && !(e.target instanceof HTMLInputElement)) confirm();
-  }
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === "Escape") onClose();
+		// Don't intercept Enter from input fields or buttons — they handle their own actions
+		if (e.key === "Enter" && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLButtonElement)) confirm();
+	}
 </script>
 
 <svelte:window on:keydown={handleKeydown} />

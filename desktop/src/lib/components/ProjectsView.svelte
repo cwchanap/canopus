@@ -37,9 +37,9 @@
   let openHeaderMenu: string | null = null;
   let headerMenuEls: Record<string, HTMLElement> = {};
 
-  // Delete confirmation
-  let deletingProject: string | null = null;
-  let deleteLoading = false;
+	// Delete confirmation
+	let deletingProjectIndex: number | null = null;
+	let deleteLoading = false;
 
   function closeServiceMenus() {
     serviceMenuCloseSignal += 1;
@@ -305,34 +305,34 @@
     openHeaderMenu = null;
   }
 
-  function handleGlobalKeydown(e: KeyboardEvent) {
-    if (e.key !== "Escape") return;
-    if (deletingProject) {
-      deletingProject = null;
-    }
-  }
+	function handleGlobalKeydown(e: KeyboardEvent) {
+		if (e.key !== "Escape") return;
+		if (deletingProjectIndex !== null) {
+			deletingProjectIndex = null;
+		}
+	}
 
   // ── Project delete ────────────────────────────────────────────────────────────
 
-  function requestDelete(projectName: string) {
-    openHeaderMenu = null;
-    deletingProject = projectName;
-  }
+	function requestDelete(projectIndex: number) {
+		openHeaderMenu = null;
+		deletingProjectIndex = projectIndex;
+	}
 
-  async function confirmDelete() {
-    if (!deletingProject || deleteLoading) return;
-    const updated = $projects.filter((p) => p.name !== deletingProject);
-    deleteLoading = true;
-    try {
-      await saveProjects({ projects: updated });
-      projects.set(updated);
-    } catch (e) {
-      opError = extractErrorMessage(e);
-    } finally {
-      deleteLoading = false;
-      deletingProject = null;
-    }
-  }
+	async function confirmDelete() {
+		if (deletingProjectIndex === null || deleteLoading) return;
+		const updated = $projects.filter((_, index) => index !== deletingProjectIndex);
+		deleteLoading = true;
+		try {
+			await saveProjects({ projects: updated });
+			projects.set(updated);
+		} catch (e) {
+			opError = extractErrorMessage(e);
+		} finally {
+			deleteLoading = false;
+			deletingProjectIndex = null;
+		}
+	}
 
   onMount(() => {
     load();
@@ -365,7 +365,7 @@
             <button class="op-error-close" on:click={() => (opError = "")} aria-label="Dismiss">✕</button>
           </div>
         {/if}
-        {#each $projects as project}
+		{#each $projects as project, index}
           {@const svcList = getProjectServices(project)}
           <section class="project-section">
             <div class="project-header">
@@ -443,14 +443,14 @@
                       >
                         Rename
                       </button>
-                      <button 
-                        class="overflow-item overflow-item-danger" 
-                        on:click={() => requestDelete(project.name)}
-                        role="menuitem"
-                        tabindex="-1"
-                      >
-                        Delete project
-                      </button>
+				<button
+					class="overflow-item overflow-item-danger"
+					on:click={() => requestDelete(index)}
+					role="menuitem"
+					tabindex="-1"
+				>
+					Delete project
+				</button>
                     </div>
                   {/if}
                 </div>
@@ -548,21 +548,22 @@
 {/if}
 
 <!-- Delete confirmation dialog -->
-{#if deletingProject}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="overlay" on:click|self={() => (deletingProject = null)}>
-    <div class="confirm-dialog" role="dialog" aria-modal="true">
-      <p class="confirm-text">Delete project <strong>{deletingProject}</strong>?</p>
-      <p class="confirm-hint">Services will be returned to Other Services.</p>
-      <div class="confirm-actions">
-        <button class="btn btn-cancel" on:click={() => (deletingProject = null)}>Cancel</button>
-        <button class="btn btn-danger" on:click={confirmDelete} disabled={deleteLoading}>
-          {deleteLoading ? "Deleting…" : "Delete"}
-        </button>
-      </div>
-    </div>
-  </div>
+{#if deletingProjectIndex !== null}
+	{@const deletingProject = $projects[deletingProjectIndex]}
+	<!-- svelte-ignore a11y-click-events-have-key-events -->
+	<!-- svelte-ignore a11y-no-static-element-interactions -->
+	<div class="overlay" on:click|self={() => (deletingProjectIndex = null)}>
+		<div class="confirm-dialog" role="dialog" aria-modal="true">
+			<p class="confirm-text">Delete project <strong>{deletingProject.name}</strong>?</p>
+			<p class="confirm-hint">Services will be returned to Other Services.</p>
+			<div class="confirm-actions">
+				<button class="btn btn-cancel" on:click={() => (deletingProjectIndex = null)}>Cancel</button>
+				<button class="btn btn-danger" on:click={confirmDelete} disabled={deleteLoading}>
+					{deleteLoading ? "Deleting…" : "Delete"}
+				</button>
+			</div>
+		</div>
+	</div>
 {/if}
 
 <style>
