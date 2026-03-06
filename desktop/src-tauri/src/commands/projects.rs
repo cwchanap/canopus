@@ -121,8 +121,7 @@ mod tests {
 
     #[test]
     fn proj004_second_project_reserved() {
-        let err =
-            validate_project_names(&[project("valid"), project("__new__")]).unwrap_err();
+        let err = validate_project_names(&[project("valid"), project("__new__")]).unwrap_err();
         assert_eq!(err.code, "PROJ004");
     }
 }

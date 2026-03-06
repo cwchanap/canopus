@@ -26,6 +26,7 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
+          components: llvm-tools-preview
 
       - name: Cache Cargo registry
         uses: actions/cache@v3
@@ -55,7 +56,7 @@ jobs:
         run: cargo install cargo-tarpaulin
 
       - name: Run tarpaulin
-        run: cargo tarpaulin --all-features --workspace --exclude canopus-desktop --timeout 120 --out xml
+        run: cargo tarpaulin --engine llvm --all-features --workspace --exclude canopus-desktop --timeout 120 --out xml
 
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v4
