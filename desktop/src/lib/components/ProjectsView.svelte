@@ -98,6 +98,7 @@
     isLoading = true;
     error = "";
     try {
+      await projectSaveQueue;
       const [svcResult, projResult] = await Promise.allSettled([listServices(), listProjects()]);
       if (svcResult.status === 'rejected') {
         throw svcResult.reason;
@@ -345,7 +346,7 @@
 
   function handleGlobalKeydown(e: KeyboardEvent) {
     if (e.key !== "Escape") return;
-    if (deletingProjectId !== null) {
+    if (deletingProjectId !== null && !deleteLoading) {
       deletingProjectId = null;
     }
   }
@@ -594,12 +595,12 @@
 {#if deletingProject}
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="overlay" on:click|self={() => (deletingProjectId = null)}>
+  <div class="overlay" on:click|self={() => { if (!deleteLoading) deletingProjectId = null; }}>
     <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-project-dialog-title">
       <p id="delete-project-dialog-title" class="confirm-text">Delete project <strong>{deletingProject.name}</strong>?</p>
       <p class="confirm-hint">Services will be returned to Other Services.</p>
       <div class="confirm-actions">
-        <button class="btn btn-cancel" on:click={() => (deletingProjectId = null)}>Cancel</button>
+        <button class="btn btn-cancel" on:click={() => { if (!deleteLoading) deletingProjectId = null; }} disabled={deleteLoading}>Cancel</button>
         <button class="btn btn-danger" on:click={confirmDelete} disabled={deleteLoading}>
           {deleteLoading ? "Deleting…" : "Delete"}
         </button>
