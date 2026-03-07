@@ -51,22 +51,21 @@
     }
   }
 
-	function handleKeydown(e: KeyboardEvent) {
-		if (e.key === "Escape") onClose();
-		// Don't intercept Enter from input fields or buttons — they handle their own actions
-		if (e.key === "Enter" && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLButtonElement)) confirm();
-	}
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape" && !loading) onClose();
+    if (e.key === "Enter" && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLButtonElement)) confirm();
+  }
 </script>
 
 <svelte:window on:keydown={handleKeydown} />
 
 <!-- svelte-ignore a11y-click-events-have-key-events -->
 <!-- svelte-ignore a11y-no-static-element-interactions -->
-<div class="overlay" on:click|self={onClose}>
+<div class="overlay" on:click|self={() => { if (!loading) onClose(); }}>
   <div class="modal" role="dialog" aria-modal="true" aria-label="Move {serviceName} to project">
     <div class="modal-header">
       <span class="modal-title">Move to project</span>
-      <button class="btn-close" on:click={onClose} aria-label="Close">✕</button>
+      <button class="btn-close" on:click={() => { if (!loading) onClose(); }} aria-label="Close" disabled={loading} aria-disabled={loading}>✕</button>
     </div>
 
     <div class="modal-body">
