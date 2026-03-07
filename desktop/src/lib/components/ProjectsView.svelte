@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { get } from "svelte/store";
   import { listProjects, listServices, saveProjects, startService, stopService } from "../api";
   import { logPanelServiceId, projects, services } from "../stores";
   import type { Project, ServiceSummary } from "../types";
@@ -37,13 +38,54 @@
   let openHeaderMenu: string | null = null;
   let headerMenuEls: Record<string, HTMLElement> = {};
 
-	// Delete confirmation
-	let deletingProjectIndex: number | null = null;
-	let deleteLoading = false;
+  // Delete confirmation
+  let deletingProjectId: string | null = null;
+  let deletingProject: Project | null = null;
+  let deleteLoading = false;
+  let projectSaveQueue: Promise<void> = Promise.resolve();
+
+  function normalizeProjectName(name: string): string {
+    return name.trim().toLowerCase();
+  }
+
+  function getProjectId(project: Pick<Project, "name">): string {
+    return normalizeProjectName(project.name);
+  }
+
+  function createProjectCommandError(message: string) {
+    return {
+      code: "PROJ004",
+      message,
+    };
+  }
+
+  async function mutateProjects(
+    updater: (currentProjects: Project[]) => Project[]
+  ): Promise<Project[]> {
+    let updatedProjects: Project[] = [];
+    const run = projectSaveQueue.catch(() => undefined).then(async () => {
+      const currentProjects = get(projects);
+      updatedProjects = updater(currentProjects);
+      await saveProjects({ projects: updatedProjects });
+      projects.set(updatedProjects);
+    });
+    projectSaveQueue = run.then(() => undefined, () => undefined);
+    await run;
+    return updatedProjects;
+  }
+
+  $: deletingProject = deletingProjectId
+    ? $projects.find((project) => getProjectId(project) === deletingProjectId) ?? null
+    : null;
 
   function closeServiceMenus() {
     serviceMenuCloseSignal += 1;
   }
+
+  $: ungrouped = (() => {
+    const grouped = new Set($projects.flatMap((p) => p.serviceIds));
+    return $services.filter((s) => !grouped.has(s.id));
+  })();
 
   async function load() {
     if (isLoading) return;
@@ -71,11 +113,6 @@
   function getProjectServices(project: Project): ServiceSummary[] {
     return $services.filter((s) => project.serviceIds.includes(s.id));
   }
-
-  $: ungrouped = (() => {
-    const grouped = new Set($projects.flatMap((p) => p.serviceIds));
-    return $services.filter((s) => !grouped.has(s.id));
-  })();
 
   function idleServices(project: Project): ServiceSummary[] {
     return getProjectServices(project).filter((s) => s.state === "idle");
@@ -129,19 +166,16 @@
     const trimmed = newProjectName.trim();
     if (!trimmed) return;
     
-    if ($projects.some(p => p.name.toLowerCase() === trimmed.toLowerCase())) {
-      opError = "A project with that name already exists.";
-      return;
-    }
-    if (isReservedProjectName(trimmed)) {
-      opError = `Reserved project name '${trimmed}' is not allowed.`;
-      return;
-    }
-
-    const updated = [...$projects, { name: trimmed, serviceIds: [] }];
     try {
-      await saveProjects({ projects: updated });
-      projects.set(updated);
+      await mutateProjects((currentProjects) => {
+        if (currentProjects.some((project) => normalizeProjectName(project.name) === normalizeProjectName(trimmed))) {
+          throw createProjectCommandError("A project with that name already exists.");
+        }
+        if (isReservedProjectName(trimmed)) {
+          throw createProjectCommandError(`Reserved project name '${trimmed}' is not allowed.`);
+        }
+        return [...currentProjects, { name: trimmed, serviceIds: [] }];
+      });
       newProjectName = "";
       showAddProject = false;
     } catch (e) {
@@ -161,40 +195,31 @@
     if (!moveService) return;
     const serviceId = moveService.id;
 
-    let updated: Project[];
-
-    if (targetProjectName !== null) {
-      // Case-insensitive match: treat as moving to an existing project
-      const existingProject = $projects.find(
-        (p) => p.name.toLowerCase() === targetProjectName.toLowerCase()
-      );
-      if (existingProject) {
-        const canonicalName = existingProject.name;
-        updated = $projects.map((p) => {
-          if (p.name === canonicalName) {
-            return { ...p, serviceIds: [...p.serviceIds.filter((id) => id !== serviceId), serviceId] };
-          }
-          return { ...p, serviceIds: p.serviceIds.filter((id) => id !== serviceId) };
-        });
-      } else {
-        // Genuinely new project
-        updated = [
-          ...$projects.map((p) => ({ ...p, serviceIds: p.serviceIds.filter((id) => id !== serviceId) })),
-          { name: targetProjectName, serviceIds: [serviceId] },
-        ];
-      }
-    } else {
-      // Move to "Other Services": remove from all projects
-      updated = $projects.map((p) => ({
-        ...p,
-        serviceIds: p.serviceIds.filter((id) => id !== serviceId),
-      }));
-    }
-
     moveLoading = true;
     try {
-      await saveProjects({ projects: updated });
-      projects.set(updated);
+      await mutateProjects((currentProjects) => {
+        if (targetProjectName !== null) {
+          const targetId = normalizeProjectName(targetProjectName);
+          const existingProject = currentProjects.find((project) => getProjectId(project) === targetId);
+          if (existingProject) {
+            const canonicalName = existingProject.name;
+            return currentProjects.map((project) => {
+              if (project.name === canonicalName) {
+                return { ...project, serviceIds: [...project.serviceIds.filter((id) => id !== serviceId), serviceId] };
+              }
+              return { ...project, serviceIds: project.serviceIds.filter((id) => id !== serviceId) };
+            });
+          }
+          return [
+            ...currentProjects.map((project) => ({ ...project, serviceIds: project.serviceIds.filter((id) => id !== serviceId) })),
+            { name: targetProjectName, serviceIds: [serviceId] },
+          ];
+        }
+        return currentProjects.map((project) => ({
+          ...project,
+          serviceIds: project.serviceIds.filter((id) => id !== serviceId),
+        }));
+      });
     } catch (e) {
       opError = extractErrorMessage(e);
     } finally {
@@ -226,22 +251,23 @@
       renamingProject = null;
       return;
     }
-    // Validation: keep rename input open on failure so user can correct
-    if (isReservedProjectName(trimmed)) {
-      opError = `Reserved project name '${trimmed}' is not allowed.`;
-      return;
-    }
-    if ($projects.some(p => p.name !== renamingProject && p.name.toLowerCase() === trimmed.toLowerCase())) {
-      opError = "A project with that name already exists.";
-      return;
-    }
-    const updated = $projects.map((p) =>
-      p.name === renamingProject ? { ...p, name: trimmed } : p
-    );
+    const renamingProjectId = normalizeProjectName(renamingProject);
     renameSaving = true;
     try {
-      await saveProjects({ projects: updated });
-      projects.set(updated);
+      await mutateProjects((currentProjects) => {
+        if (isReservedProjectName(trimmed)) {
+          throw createProjectCommandError(`Reserved project name '${trimmed}' is not allowed.`);
+        }
+        if (currentProjects.some((project) => getProjectId(project) !== renamingProjectId && normalizeProjectName(project.name) === normalizeProjectName(trimmed))) {
+          throw createProjectCommandError("A project with that name already exists.");
+        }
+        if (!currentProjects.some((project) => getProjectId(project) === renamingProjectId)) {
+          throw new Error("Project no longer exists.");
+        }
+        return currentProjects.map((project) =>
+          getProjectId(project) === renamingProjectId ? { ...project, name: trimmed } : project
+        );
+      });
     } catch (e) {
       opError = extractErrorMessage(e);
     } finally {
@@ -303,34 +329,38 @@
     openHeaderMenu = null;
   }
 
-	function handleGlobalKeydown(e: KeyboardEvent) {
-		if (e.key !== "Escape") return;
-		if (deletingProjectIndex !== null) {
-			deletingProjectIndex = null;
-		}
-	}
+  function handleGlobalKeydown(e: KeyboardEvent) {
+    if (e.key !== "Escape") return;
+    if (deletingProjectId !== null) {
+      deletingProjectId = null;
+    }
+  }
 
   // ── Project delete ────────────────────────────────────────────────────────────
 
-	function requestDelete(projectIndex: number) {
-		openHeaderMenu = null;
-		deletingProjectIndex = projectIndex;
-	}
+  function requestDelete(project: Project) {
+    openHeaderMenu = null;
+    deletingProjectId = getProjectId(project);
+  }
 
-	async function confirmDelete() {
-		if (deletingProjectIndex === null || deleteLoading) return;
-		const updated = $projects.filter((_, index) => index !== deletingProjectIndex);
-		deleteLoading = true;
-		try {
-			await saveProjects({ projects: updated });
-			projects.set(updated);
-		} catch (e) {
-			opError = extractErrorMessage(e);
-		} finally {
-			deleteLoading = false;
-			deletingProjectIndex = null;
-		}
-	}
+  async function confirmDelete() {
+    if (deletingProjectId === null || deleteLoading) return;
+    deleteLoading = true;
+    try {
+      await mutateProjects((currentProjects) => {
+        const deletingIndex = currentProjects.findIndex((project) => getProjectId(project) === deletingProjectId);
+        if (deletingIndex === -1) {
+          throw new Error("Project no longer exists.");
+        }
+        return currentProjects.filter((_, index) => index !== deletingIndex);
+      });
+    } catch (e) {
+      opError = extractErrorMessage(e);
+    } finally {
+      deleteLoading = false;
+      deletingProjectId = null;
+    }
+  }
 
   onMount(() => {
     load();
@@ -363,7 +393,7 @@
             <button class="op-error-close" on:click={() => (opError = "")} aria-label="Dismiss">✕</button>
           </div>
         {/if}
-		{#each $projects as project, index}
+        {#each $projects as project}
           {@const svcList = getProjectServices(project)}
           <section class="project-section">
             <div class="project-header">
@@ -441,14 +471,14 @@
                       >
                         Rename
                       </button>
-				<button
-					class="overflow-item overflow-item-danger"
-					on:click={() => requestDelete(index)}
-					role="menuitem"
-					tabindex="-1"
-				>
-					Delete project
-				</button>
+                      <button
+                        class="overflow-item overflow-item-danger"
+                        on:click={() => requestDelete(project)}
+                        role="menuitem"
+                        tabindex="-1"
+                      >
+                        Delete project
+                      </button>
                     </div>
                   {/if}
                 </div>
@@ -546,22 +576,21 @@
 {/if}
 
 <!-- Delete confirmation dialog -->
-{#if deletingProjectIndex !== null}
-	{@const deletingProject = $projects[deletingProjectIndex]}
-	<!-- svelte-ignore a11y-click-events-have-key-events -->
-	<!-- svelte-ignore a11y-no-static-element-interactions -->
-	<div class="overlay" on:click|self={() => (deletingProjectIndex = null)}>
-		<div class="confirm-dialog" role="dialog" aria-modal="true">
-			<p class="confirm-text">Delete project <strong>{deletingProject.name}</strong>?</p>
-			<p class="confirm-hint">Services will be returned to Other Services.</p>
-			<div class="confirm-actions">
-				<button class="btn btn-cancel" on:click={() => (deletingProjectIndex = null)}>Cancel</button>
-				<button class="btn btn-danger" on:click={confirmDelete} disabled={deleteLoading}>
-					{deleteLoading ? "Deleting…" : "Delete"}
-				</button>
-			</div>
-		</div>
-	</div>
+{#if deletingProject}
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div class="overlay" on:click|self={() => (deletingProjectId = null)}>
+    <div class="confirm-dialog" role="dialog" aria-modal="true">
+      <p class="confirm-text">Delete project <strong>{deletingProject.name}</strong>?</p>
+      <p class="confirm-hint">Services will be returned to Other Services.</p>
+      <div class="confirm-actions">
+        <button class="btn btn-cancel" on:click={() => (deletingProjectId = null)}>Cancel</button>
+        <button class="btn btn-danger" on:click={confirmDelete} disabled={deleteLoading}>
+          {deleteLoading ? "Deleting…" : "Delete"}
+        </button>
+      </div>
+    </div>
+  </div>
 {/if}
 
 <style>
@@ -615,6 +644,10 @@
   }
 
   .project-section:hover .project-header-actions {
+    opacity: 1;
+  }
+
+  .project-section:focus-within .project-header-actions {
     opacity: 1;
   }
 

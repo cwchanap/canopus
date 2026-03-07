@@ -2,6 +2,8 @@
 
 use tauri::State;
 
+use std::collections::HashSet;
+
 use super::CommandError;
 use crate::state::{AppState, ProjectConfig};
 
@@ -15,12 +17,22 @@ pub async fn list_projects(state: State<'_, AppState>) -> Result<ProjectConfig, 
 }
 
 fn validate_project_names(projects: &[crate::state::Project]) -> Result<(), CommandError> {
+    let mut seen_names = HashSet::new();
+
     for project in projects {
         let name = project.name.trim();
         if name == "__none__" || name == "__new__" {
             return Err(CommandError {
                 code: "PROJ004",
                 message: format!("Reserved project name '{name}' is not allowed"),
+            });
+        }
+
+        let normalized_name = name.to_lowercase();
+        if !seen_names.insert(normalized_name) {
+            return Err(CommandError {
+                code: "PROJ004",
+                message: format!("Duplicate project name '{name}' is not allowed"),
             });
         }
     }
@@ -123,5 +135,19 @@ mod tests {
     fn proj004_second_project_reserved() {
         let err = validate_project_names(&[project("valid"), project("__new__")]).unwrap_err();
         assert_eq!(err.code, "PROJ004");
+    }
+
+    #[test]
+    fn proj004_exact_duplicate_rejected() {
+        let err = validate_project_names(&[project("alpha"), project("alpha")]).unwrap_err();
+        assert_eq!(err.code, "PROJ004");
+        assert!(err.message.contains("Duplicate project name"));
+    }
+
+    #[test]
+    fn proj004_case_only_duplicate_rejected() {
+        let err = validate_project_names(&[project("Alpha"), project(" alpha ")]).unwrap_err();
+        assert_eq!(err.code, "PROJ004");
+        assert!(err.message.contains("alpha"));
     }
 }
