@@ -21,6 +21,12 @@ fn validate_project_names(projects: &[crate::state::Project]) -> Result<(), Comm
 
     for project in projects {
         let name = project.name.trim();
+        if name.is_empty() {
+            return Err(CommandError {
+                code: "PROJ004",
+                message: "Blank project name is not allowed".to_string(),
+            });
+        }
         if name == "__none__" || name == "__new__" {
             return Err(CommandError {
                 code: "PROJ004",
@@ -129,6 +135,20 @@ mod tests {
     #[test]
     fn proj004_valid_name_accepted() {
         validate_project_names(&[project("my-project")]).expect("valid name must pass");
+    }
+
+    #[test]
+    fn proj004_blank_name_rejected() {
+        let err = validate_project_names(&[project("   ")]).unwrap_err();
+        assert_eq!(err.code, "PROJ004");
+        assert!(err.message.contains("Blank project name"));
+    }
+
+    #[test]
+    fn proj004_empty_name_rejected() {
+        let err = validate_project_names(&[project("")]).unwrap_err();
+        assert_eq!(err.code, "PROJ004");
+        assert!(err.message.contains("Blank project name"));
     }
 
     #[test]
