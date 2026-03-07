@@ -18,6 +18,7 @@
 
   let showMenu = false;
   let lastCloseSignal = closeSignal;
+  let menuEl: HTMLElement;
 
   let loading = false;
   let actionError = "";
@@ -70,10 +71,40 @@
     e.stopPropagation();
     showMenu = !showMenu;
     if (showMenu) onMenuOpen?.();
+    if (showMenu) {
+      setTimeout(() => {
+        const firstItem = menuEl?.querySelector('.overflow-item') as HTMLElement;
+        firstItem?.focus();
+      }, 0);
+    }
   }
 
   function closeMenu() {
     showMenu = false;
+  }
+
+  function handleMenuKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      showMenu = false;
+      return;
+    }
+
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const menu = (e.target as HTMLElement).closest('.overflow-menu');
+      if (!menu) return;
+
+      const items = Array.from(menu.querySelectorAll('.overflow-item')) as HTMLElement[];
+      const index = items.indexOf(e.target as HTMLElement);
+
+      if (e.key === "ArrowDown") {
+        const next = items[index + 1] || items[0];
+        next?.focus();
+      } else {
+        const prev = items[index - 1] || items[items.length - 1];
+        prev?.focus();
+      }
+    }
   }
 
   function requestMove(e: MouseEvent) {
@@ -98,10 +129,10 @@
       <span class="state-label">{service.state}</span>
       {#if onMoveRequest}
         <div class="overflow-wrap">
-          <button class="btn-overflow" on:click={openMenu} aria-label="More options">⋯</button>
+          <button class="btn-overflow" on:click={openMenu} aria-label="More options" aria-haspopup="menu" aria-expanded={showMenu}>⋯</button>
           {#if showMenu}
-            <div class="overflow-menu">
-              <button class="overflow-item" on:click={requestMove}>
+            <div class="overflow-menu" bind:this={menuEl} on:keydown={handleMenuKeydown} role="menu" tabindex="-1">
+              <button class="overflow-item" on:click={requestMove} role="menuitem" tabindex="-1">
                 Move to project…
               </button>
             </div>

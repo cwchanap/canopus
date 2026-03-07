@@ -15,6 +15,7 @@
   let opError = "";
   let showAddProject = false;
   let newProjectName = "";
+  let newProjectInput: HTMLInputElement;
   let refreshInterval: ReturnType<typeof setInterval> | undefined;
   let isLoading = false;
   let bulkStarting = new Set<string>();
@@ -82,6 +83,11 @@
     serviceMenuCloseSignal += 1;
   }
 
+  function openAddProject() {
+    showAddProject = true;
+    setTimeout(() => newProjectInput?.focus(), 0);
+  }
+
   $: ungrouped = (() => {
     const grouped = new Set($projects.flatMap((p) => p.serviceIds));
     return $services.filter((s) => !grouped.has(s.id));
@@ -125,8 +131,11 @@
   }
 
   async function startAll(project: Project) {
-    const ids = idleServices(project).map((s) => s.id);
+    const idle = idleServices(project);
+    const ids = idle.map((s) => s.id);
+    const namesById = new Map(idle.map((service) => [service.id, service.name]));
     if (ids.length === 0 || bulkStarting.has(project.name) || bulkStopping.has(project.name)) return;
+    opError = "";
     bulkStarting = new Set([...bulkStarting, project.name]);
     try {
       const results = await Promise.allSettled(ids.map((id) => startService(id)));
@@ -135,7 +144,7 @@
         .map((r, i) => ({ id: ids[i], result: r }))
         .filter(x => x.result.status === "rejected");
       if (failed.length > 0) {
-        const names = failed.map(x => $services.find(s => s.id === x.id)?.name ?? x.id);
+        const names = failed.map(x => namesById.get(x.id) ?? $services.find(s => s.id === x.id)?.name ?? x.id);
         opError = `${failed.length} service(s) failed to start: ${names.join(", ")}`;
       }
     } finally {
@@ -144,8 +153,11 @@
   }
 
   async function stopAll(project: Project) {
-    const ids = runningServices(project).map((s) => s.id);
+    const running = runningServices(project);
+    const ids = running.map((s) => s.id);
+    const namesById = new Map(running.map((service) => [service.id, service.name]));
     if (ids.length === 0 || bulkStarting.has(project.name) || bulkStopping.has(project.name)) return;
+    opError = "";
     bulkStopping = new Set([...bulkStopping, project.name]);
     try {
       const results = await Promise.allSettled(ids.map((id) => stopService(id)));
@@ -154,7 +166,7 @@
         .map((r, i) => ({ id: ids[i], result: r }))
         .filter(x => x.result.status === "rejected");
       if (failed.length > 0) {
-        const names = failed.map(x => $services.find(s => s.id === x.id)?.name ?? x.id);
+        const names = failed.map(x => namesById.get(x.id) ?? $services.find(s => s.id === x.id)?.name ?? x.id);
         opError = `${failed.length} service(s) failed to stop: ${names.join(", ")}`;
       }
     } finally {
@@ -165,7 +177,8 @@
   async function addProject() {
     const trimmed = newProjectName.trim();
     if (!trimmed) return;
-    
+
+    opError = "";
     try {
       await mutateProjects((currentProjects) => {
         if (currentProjects.some((project) => normalizeProjectName(project.name) === normalizeProjectName(trimmed))) {
@@ -195,6 +208,7 @@
     if (!moveService) return;
     const serviceId = moveService.id;
 
+    opError = "";
     moveLoading = true;
     try {
       await mutateProjects((currentProjects) => {
@@ -345,6 +359,7 @@
 
   async function confirmDelete() {
     if (deletingProjectId === null || deleteLoading) return;
+    opError = "";
     deleteLoading = true;
     try {
       await mutateProjects((currentProjects) => {
@@ -538,15 +553,15 @@
               class="project-input"
               type="text"
               placeholder="Project name…"
+              bind:this={newProjectInput}
               bind:value={newProjectName}
               on:keydown={(e) => e.key === "Enter" && addProject()}
-              autofocus
             />
             <button class="btn-add" on:click={addProject}>Add</button>
             <button class="btn-cancel" on:click={() => (showAddProject = false)}>Cancel</button>
           </div>
         {:else}
-          <button class="btn-new-project" on:click={() => (showAddProject = true)}>
+          <button class="btn-new-project" on:click={openAddProject}>
             + New Project
           </button>
         {/if}
@@ -580,8 +595,8 @@
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div class="overlay" on:click|self={() => (deletingProjectId = null)}>
-    <div class="confirm-dialog" role="dialog" aria-modal="true">
-      <p class="confirm-text">Delete project <strong>{deletingProject.name}</strong>?</p>
+    <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-project-dialog-title">
+      <p id="delete-project-dialog-title" class="confirm-text">Delete project <strong>{deletingProject.name}</strong>?</p>
       <p class="confirm-hint">Services will be returned to Other Services.</p>
       <div class="confirm-actions">
         <button class="btn btn-cancel" on:click={() => (deletingProjectId = null)}>Cancel</button>
