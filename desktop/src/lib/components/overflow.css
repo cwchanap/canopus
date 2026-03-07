@@ -32,8 +32,6 @@
   padding: 4px;
 }
 
-/* Specific positioning left/right can be handled in component or overridden, but usually ProjectsView uses left: 0, ServiceCard uses right: 0. Wait, ProjectsView: left:0; ServiceCard: right:0 */
-
 .overflow-item {
   display: block;
   width: 100%;

@@ -3,7 +3,7 @@
   import { listProjects, listServices, saveProjects, startService, stopService } from "../api";
   import { logPanelServiceId, projects, services } from "../stores";
   import type { Project, ServiceSummary } from "../types";
-  import { extractErrorMessage } from "../utils";
+  import { extractErrorMessage, isReservedProjectName } from "../utils";
   import LogViewer from "./LogViewer.svelte";
   import MoveToProjectModal from "./MoveToProjectModal.svelte";
   import ServiceCard from "./ServiceCard.svelte";
@@ -93,12 +93,11 @@
     bulkStarting = new Set([...bulkStarting, project.name]);
     try {
       const results = await Promise.allSettled(ids.map((id) => startService(id)));
-      const failCount = results.filter((r) => r.status === "rejected").length;
       await load();
-      if (failCount > 0) {
-        const failed = results
-          .map((r, i) => ({ id: ids[i], result: r }))
-          .filter(x => x.result.status === "rejected");
+      const failed = results
+        .map((r, i) => ({ id: ids[i], result: r }))
+        .filter(x => x.result.status === "rejected");
+      if (failed.length > 0) {
         const names = failed.map(x => $services.find(s => s.id === x.id)?.name ?? x.id);
         opError = `${failed.length} service(s) failed to start: ${names.join(", ")}`;
       }
@@ -113,12 +112,11 @@
     bulkStopping = new Set([...bulkStopping, project.name]);
     try {
       const results = await Promise.allSettled(ids.map((id) => stopService(id)));
-      const failCount = results.filter((r) => r.status === "rejected").length;
       await load();
-      if (failCount > 0) {
-        const failed = results
-          .map((r, i) => ({ id: ids[i], result: r }))
-          .filter(x => x.result.status === "rejected");
+      const failed = results
+        .map((r, i) => ({ id: ids[i], result: r }))
+        .filter(x => x.result.status === "rejected");
+      if (failed.length > 0) {
         const names = failed.map(x => $services.find(s => s.id === x.id)?.name ?? x.id);
         opError = `${failed.length} service(s) failed to stop: ${names.join(", ")}`;
       }
@@ -135,7 +133,7 @@
       opError = "A project with that name already exists.";
       return;
     }
-    if (trimmed === "__none__" || trimmed === "__new__") {
+    if (isReservedProjectName(trimmed)) {
       opError = `Reserved project name '${trimmed}' is not allowed.`;
       return;
     }
@@ -229,7 +227,7 @@
       return;
     }
     // Validation: keep rename input open on failure so user can correct
-    if (trimmed === "__none__" || trimmed === "__new__") {
+    if (isReservedProjectName(trimmed)) {
       opError = `Reserved project name '${trimmed}' is not allowed.`;
       return;
     }
