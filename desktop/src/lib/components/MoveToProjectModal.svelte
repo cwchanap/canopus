@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Project } from "../types";
+  import { isReservedProjectName } from "../utils";
 
   export let projects: Project[];
   export let currentProjectName: string | null;
@@ -34,7 +35,7 @@
     if (selected === NEW) {
       const name = newProjectName.trim();
       if (!name) return;
-      if (name === "__none__" || name === "__new__") {
+      if (isReservedProjectName(name)) {
         newProjectError = "Reserved project name.";
         return;
       }
