@@ -10,6 +10,13 @@
   import ServiceCard from "./ServiceCard.svelte";
   import "./overflow.css";
 
+  type ProjectTarget = {
+    name: string;
+    normalizedName: string;
+    normalizedOrdinal: number;
+    serviceIds: string[];
+  };
+
   let loading = true;
   let error = "";
   let opError = "";
@@ -20,6 +27,7 @@
   let isLoading = false;
   let bulkStartingIds = new Set<string>();
   let bulkStoppingIds = new Set<string>();
+  let serviceActionIds = new Set<string>();
 
   // Bump this to force ServiceCard overflow menus closed.
   let serviceMenuCloseSignal = 0;
@@ -30,7 +38,7 @@
   let moveLoading = false;
 
   // Inline rename state
-  let renamingProject: string | null = null;
+  let renamingProjectTarget: ProjectTarget | null = null;
   let renameValue = "";
   let renameInput: HTMLInputElement;
   let renameSaving = false;
@@ -40,7 +48,7 @@
   let headerMenuEls: Record<string, HTMLElement> = {};
 
   // Delete confirmation
-  let deletingProjectId: string | null = null;
+  let deletingProjectTarget: ProjectTarget | null = null;
   let deletingProject: Project | null = null;
   let deleteLoading = false;
   let projectSaveQueue: Promise<void> = Promise.resolve();
@@ -60,6 +68,65 @@
     };
   }
 
+  function sameServiceIds(a: string[], b: string[]): boolean {
+    return a.length === b.length && a.every((id, index) => id === b[index]);
+  }
+
+  function createProjectTarget(project: Project, currentProjects: Project[] = get(projects)): ProjectTarget {
+    const exactIndex = currentProjects.indexOf(project);
+    const fallbackIndex = currentProjects.findIndex(
+      (candidate) => candidate.name === project.name && sameServiceIds(candidate.serviceIds, project.serviceIds)
+    );
+    const index = exactIndex !== -1 ? exactIndex : fallbackIndex;
+    const normalizedName = getProjectId(project);
+    const normalizedOrdinal = currentProjects
+      .slice(0, index === -1 ? currentProjects.length : index + 1)
+      .filter((candidate) => getProjectId(candidate) === normalizedName).length - 1;
+
+    return {
+      name: project.name,
+      normalizedName,
+      normalizedOrdinal: Math.max(normalizedOrdinal, 0),
+      serviceIds: [...project.serviceIds],
+    };
+  }
+
+  function findProjectIndex(projectsList: Project[], target: ProjectTarget): number {
+    const exactMatches = projectsList
+      .map((project, index) => ({ project, index }))
+      .filter(
+        ({ project }) => project.name === target.name && sameServiceIds(project.serviceIds, target.serviceIds)
+      );
+
+    if (exactMatches.length > 0) {
+      return exactMatches[Math.min(target.normalizedOrdinal, exactMatches.length - 1)].index;
+    }
+
+    const normalizedMatches = projectsList
+      .map((project, index) => ({ project, index }))
+      .filter(({ project }) => getProjectId(project) === target.normalizedName);
+
+    if (normalizedMatches.length === 0) {
+      return -1;
+    }
+
+    return normalizedMatches[Math.min(target.normalizedOrdinal, normalizedMatches.length - 1)].index;
+  }
+
+  function isRenamingProject(project: Project): boolean {
+    if (!renamingProjectTarget) return false;
+    const index = findProjectIndex($projects, renamingProjectTarget);
+    return index !== -1 && $projects[index] === project;
+  }
+
+  function handleServiceActionStart(serviceId: string) {
+    serviceActionIds = new Set([...serviceActionIds, serviceId]);
+  }
+
+  function handleServiceActionEnd(serviceId: string) {
+    serviceActionIds = new Set([...serviceActionIds].filter((id) => id !== serviceId));
+  }
+
   async function mutateProjects(
     updater: (currentProjects: Project[]) => Project[]
   ): Promise<Project[]> {
@@ -75,8 +142,11 @@
     return updatedProjects;
   }
 
-  $: deletingProject = deletingProjectId
-    ? $projects.find((project) => getProjectId(project) === deletingProjectId) ?? null
+  $: deletingProject = deletingProjectTarget
+    ? (() => {
+        const index = findProjectIndex($projects, deletingProjectTarget);
+        return index === -1 ? null : $projects[index];
+      })()
     : null;
 
   function closeServiceMenus() {
@@ -122,12 +192,14 @@
   }
 
   function idleServices(project: Project): ServiceSummary[] {
-    return getProjectServices(project).filter((s) => s.state === "idle");
+    return getProjectServices(project).filter((s) => s.state === "idle" && !serviceActionIds.has(s.id));
   }
 
   function runningServices(project: Project): ServiceSummary[] {
     return getProjectServices(project).filter(
-      (s) => s.state === "ready" || s.state === "starting" || s.state === "spawning"
+      (s) =>
+        (s.state === "ready" || s.state === "starting" || s.state === "spawning") &&
+        !serviceActionIds.has(s.id)
     );
   }
 
@@ -264,48 +336,48 @@
   // ── Inline project rename ────────────────────────────────────────────────────
 
   function startRename(project: Project) {
-    renamingProject = project.name;
+    renamingProjectTarget = createProjectTarget(project, $projects);
     renameValue = project.name;
     openHeaderMenu = null;
     setTimeout(() => renameInput?.focus(), 0);
   }
 
   async function commitRename() {
-    if (!renamingProject || renameSaving) return;
+    if (!renamingProjectTarget || renameSaving) return;
     const trimmed = renameValue.trim();
-    if (!trimmed || trimmed === renamingProject) {
+    if (!trimmed || trimmed === renamingProjectTarget.name) {
       opError = "";
-      renamingProject = null;
+      renamingProjectTarget = null;
       return;
     }
-    const renamingProjectId = normalizeProjectName(renamingProject);
     renameSaving = true;
     try {
       await mutateProjects((currentProjects) => {
+        const renamingIndex = findProjectIndex(currentProjects, renamingProjectTarget);
         if (isReservedProjectName(trimmed)) {
           throw createProjectCommandError(`Reserved project name '${trimmed}' is not allowed.`);
         }
-        if (currentProjects.some((project) => getProjectId(project) !== renamingProjectId && normalizeProjectName(project.name) === normalizeProjectName(trimmed))) {
-          throw createProjectCommandError("A project with that name already exists.");
-        }
-        if (!currentProjects.some((project) => getProjectId(project) === renamingProjectId)) {
+        if (renamingIndex === -1) {
           throw new Error("Project no longer exists.");
         }
-        return currentProjects.map((project) =>
-          getProjectId(project) === renamingProjectId ? { ...project, name: trimmed } : project
+        if (currentProjects.some((project, index) => index !== renamingIndex && normalizeProjectName(project.name) === normalizeProjectName(trimmed))) {
+          throw createProjectCommandError("A project with that name already exists.");
+        }
+        return currentProjects.map((project, index) =>
+          index === renamingIndex ? { ...project, name: trimmed } : project
         );
       });
     } catch (e) {
       opError = extractErrorMessage(e);
     } finally {
       renameSaving = false;
-      renamingProject = null;
+      renamingProjectTarget = null;
     }
   }
 
   function handleRenameKeydown(e: KeyboardEvent) {
     if (e.key === "Enter") commitRename();
-    if (e.key === "Escape") { opError = ""; renamingProject = null; }
+    if (e.key === "Escape") { opError = ""; renamingProjectTarget = null; }
   }
 
   // ── Project header overflow menu ─────────────────────────────────────────────
@@ -358,8 +430,8 @@
 
   function handleGlobalKeydown(e: KeyboardEvent) {
     if (e.key !== "Escape") return;
-    if (deletingProjectId !== null && !deleteLoading) {
-      deletingProjectId = null;
+    if (deletingProjectTarget !== null && !deleteLoading) {
+      deletingProjectTarget = null;
     }
   }
 
@@ -367,16 +439,16 @@
 
   function requestDelete(project: Project) {
     openHeaderMenu = null;
-    deletingProjectId = getProjectId(project);
+    deletingProjectTarget = createProjectTarget(project, $projects);
   }
 
   async function confirmDelete() {
-    if (deletingProjectId === null || deleteLoading) return;
+    if (deletingProjectTarget === null || deleteLoading) return;
     opError = "";
     deleteLoading = true;
     try {
       await mutateProjects((currentProjects) => {
-        const deletingIndex = currentProjects.findIndex((project) => getProjectId(project) === deletingProjectId);
+        const deletingIndex = findProjectIndex(currentProjects, deletingProjectTarget);
         if (deletingIndex === -1) {
           throw new Error("Project no longer exists.");
         }
@@ -386,7 +458,7 @@
       opError = extractErrorMessage(e);
     } finally {
       deleteLoading = false;
-      deletingProjectId = null;
+      deletingProjectTarget = null;
     }
   }
 
@@ -425,7 +497,7 @@
           {@const svcList = getProjectServices(project)}
           <section class="project-section">
             <div class="project-header">
-              {#if renamingProject === project.name}
+              {#if isRenamingProject(project)}
                 <input
                   class="rename-input"
                   type="text"
@@ -523,6 +595,8 @@
                     onRefresh={load}
                     projectName={project.name}
                     onMoveRequest={handleMoveRequest}
+                    onActionStart={handleServiceActionStart}
+                    onActionEnd={handleServiceActionEnd}
                     onMenuOpen={closeHeaderMenuOnly}
                     closeSignal={serviceMenuCloseSignal}
                   />
@@ -544,6 +618,8 @@
                   onRefresh={load}
                   projectName={null}
                   onMoveRequest={handleMoveRequest}
+                  onActionStart={handleServiceActionStart}
+                  onActionEnd={handleServiceActionEnd}
                   onMenuOpen={closeHeaderMenuOnly}
                   closeSignal={serviceMenuCloseSignal}
                 />
@@ -607,12 +683,12 @@
 {#if deletingProject}
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="overlay" on:click|self={() => { if (!deleteLoading) deletingProjectId = null; }}>
+  <div class="overlay" on:click|self={() => { if (!deleteLoading) deletingProjectTarget = null; }}>
     <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-project-dialog-title">
       <p id="delete-project-dialog-title" class="confirm-text">Delete project <strong>{deletingProject.name}</strong>?</p>
       <p class="confirm-hint">Services will be returned to Other Services.</p>
       <div class="confirm-actions">
-        <button class="btn btn-cancel" on:click={() => { if (!deleteLoading) deletingProjectId = null; }} disabled={deleteLoading}>Cancel</button>
+        <button class="btn btn-cancel" on:click={() => { if (!deleteLoading) deletingProjectTarget = null; }} disabled={deleteLoading}>Cancel</button>
         <button class="btn btn-danger" on:click={confirmDelete} disabled={deleteLoading}>
           {deleteLoading ? "Deleting…" : "Delete"}
         </button>
