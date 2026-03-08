@@ -61,23 +61,11 @@ impl ProjectValidationSummary {
     }
 
     const fn is_corrective_from(self, existing: Self) -> bool {
-        let reserved_ok = if existing.reserved_names == 0 {
-            self.reserved_names == 0
-        } else {
-            self.reserved_names < existing.reserved_names
-        };
-        let blank_ok = if existing.blank_names == 0 {
-            self.blank_names == 0
-        } else {
-            self.blank_names < existing.blank_names
-        };
-        let duplicate_ok = if existing.duplicate_names == 0 {
-            self.duplicate_names == 0
-        } else {
-            self.duplicate_names < existing.duplicate_names
-        };
+        let reserved_ok = self.reserved_names <= existing.reserved_names;
+        let blank_ok = self.blank_names <= existing.blank_names;
+        let duplicate_ok = self.duplicate_names <= existing.duplicate_names;
 
-        reserved_ok && blank_ok && duplicate_ok
+        reserved_ok && blank_ok && duplicate_ok && self.score() < existing.score()
     }
 }
 
@@ -365,7 +353,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn validate_project_save_rejects_partial_fix_that_trades_error_types() {
+    async fn validate_project_save_allows_incremental_fix_when_other_error_categories_remain() {
+        with_temp_projects_path(|path| async move {
+            let legacy = config(&["__none__", "Alpha", " alpha "]);
+            let repaired = config(&["__none__", "beta"]);
+
+            tokio::fs::write(
+                &path,
+                serde_json::to_string(&legacy).expect("legacy config should serialize"),
+            )
+            .await
+            .expect("legacy config should be written");
+
+            validate_project_save(&path, &repaired)
+                .await
+                .expect("repair that reduces invalidity without worsening any category should be allowed");
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn validate_project_save_allows_partial_fix_that_keeps_other_error_types_unchanged() {
         with_temp_projects_path(|path| async move {
             let legacy = config(&["__none__", "Alpha", " alpha "]);
             let partial_fix = config(&["__new__", "beta"]);
@@ -377,11 +385,9 @@ mod tests {
             .await
             .expect("legacy config should be written");
 
-            let err = validate_project_save(&path, &partial_fix)
+            validate_project_save(&path, &partial_fix)
                 .await
-                .expect_err("save that trades duplicate for reserved name should fail");
-
-            assert_eq!(err.code, "PROJ004");
+                .expect("save that improves one invalidity category without worsening others should be allowed");
         })
         .await;
     }

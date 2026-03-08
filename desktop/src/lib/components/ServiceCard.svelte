@@ -75,8 +75,9 @@
 
   function openMenu(e: MouseEvent) {
     e.stopPropagation();
-    showMenu = !showMenu;
-    if (showMenu) onMenuOpen?.();
+    const nextShowMenu = !showMenu;
+    if (nextShowMenu) onMenuOpen?.();
+    showMenu = nextShowMenu;
     if (showMenu) {
       setTimeout(() => {
         const firstItem = menuEl?.querySelector('.overflow-item') as HTMLElement;
