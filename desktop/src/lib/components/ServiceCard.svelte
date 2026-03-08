@@ -13,6 +13,8 @@
   export let onMoveRequest: ((service: ServiceSummary, projectName: string | null) => void) | null = null;
   /** Called when this card's overflow menu opens, so the parent can close other open menus. */
   export let onMenuOpen: (() => void) | null = null;
+  export let onActionStart: ((serviceId: string) => void) | null = null;
+  export let onActionEnd: ((serviceId: string) => void) | null = null;
   /** Incremented by parent to force-close any open overflow menu on this card. */
   export let closeSignal = 0;
 
@@ -34,6 +36,7 @@
   async function handle(action: () => Promise<void>) {
     loading = true;
     actionError = "";
+    onActionStart?.(service.id);
     try {
       await action();
       await new Promise<void>((resolve) => setTimeout(resolve, 400));
@@ -43,6 +46,7 @@
       actionError = extractErrorMessage(e);
       setTimeout(() => { actionError = ""; }, 4000);
     } finally {
+      onActionEnd?.(service.id);
       loading = false;
     }
   }
