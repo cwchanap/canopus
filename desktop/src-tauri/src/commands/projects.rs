@@ -198,23 +198,27 @@ mod tests {
         }
     }
 
-    async fn with_temp_projects_path<F, Fut>(test: F)
-    where
-        F: FnOnce(std::path::PathBuf) -> Fut,
-        Fut: std::future::Future<Output = ()>,
-    {
-        let unique = format!(
-            "canopus-projects-{}-{}.json",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("system time should be after unix epoch")
-                .as_nanos()
-        );
-        let path = std::env::temp_dir().join(unique);
-        test(path.clone()).await;
-        let _ = tokio::fs::remove_file(path).await;
-    }
+	async fn with_temp_projects_path<F, Fut>(test: F)
+	where
+		F: FnOnce(std::path::PathBuf) -> Fut,
+		Fut: std::future::Future<Output = ()>,
+	{
+		// Use timestamp + random suffix to prevent collisions from concurrent tests.
+		// rand::random::<u32>() provides ~4 billion unique values, making collisions
+		// effectively impossible even when multiple tests start at the same nanosecond.
+		let unique = format!(
+			"canopus-projects-{}-{}-{}.json",
+			std::process::id(),
+			SystemTime::now()
+				.duration_since(UNIX_EPOCH)
+				.expect("system time should be after unix epoch")
+				.as_nanos(),
+			rand::random::<u32>()
+		);
+		let path = std::env::temp_dir().join(unique);
+		test(path.clone()).await;
+		let _ = tokio::fs::remove_file(path).await;
+	}
 
     #[test]
     fn proj004_none_is_reserved() {
