@@ -47,6 +47,7 @@ fn validate_project_names(projects: &[crate::state::Project]) -> Result<(), Comm
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(clippy::struct_field_names)]
 struct ProjectValidationSummary {
     blank_names: usize,
     reserved_names: usize,
@@ -54,15 +55,33 @@ struct ProjectValidationSummary {
 }
 
 impl ProjectValidationSummary {
-    fn score(self) -> usize {
+    #[allow(dead_code, clippy::arithmetic_side_effects)]
+    const fn score(self) -> usize {
         self.blank_names + self.reserved_names + self.duplicate_names
     }
 
-    fn is_valid(self) -> bool {
-        self.score() == 0
+    const fn is_corrective_from(self, existing: Self) -> bool {
+        let reserved_ok = if existing.reserved_names == 0 {
+            self.reserved_names == 0
+        } else {
+            self.reserved_names < existing.reserved_names
+        };
+        let blank_ok = if existing.blank_names == 0 {
+            self.blank_names == 0
+        } else {
+            self.blank_names < existing.blank_names
+        };
+        let duplicate_ok = if existing.duplicate_names == 0 {
+            self.duplicate_names == 0
+        } else {
+            self.duplicate_names < existing.duplicate_names
+        };
+
+        reserved_ok && blank_ok && duplicate_ok
     }
 }
 
+#[allow(clippy::arithmetic_side_effects)]
 fn summarize_project_names(projects: &[crate::state::Project]) -> ProjectValidationSummary {
     let mut seen_names = HashSet::new();
     let mut blank_names = 0;
@@ -108,7 +127,7 @@ async fn validate_project_save(path: &Path, config: &ProjectConfig) -> Result<()
             let existing_summary = summarize_project_names(&existing.projects);
             let new_summary = summarize_project_names(&config.projects);
 
-            if !existing_summary.is_valid() && new_summary.score() < existing_summary.score() {
+            if new_summary.is_corrective_from(existing_summary) {
                 return Ok(());
             }
 
@@ -341,6 +360,50 @@ mod tests {
             validate_project_save(&path, &repaired)
                 .await
                 .expect("repairing duplicate project names should be allowed");
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn validate_project_save_rejects_partial_fix_that_trades_error_types() {
+        with_temp_projects_path(|path| async move {
+            let legacy = config(&["__none__", "Alpha", " alpha "]);
+            let partial_fix = config(&["__new__", "beta"]);
+
+            tokio::fs::write(
+                &path,
+                serde_json::to_string(&legacy).expect("legacy config should serialize"),
+            )
+            .await
+            .expect("legacy config should be written");
+
+            let err = validate_project_save(&path, &partial_fix)
+                .await
+                .expect_err("save that trades duplicate for reserved name should fail");
+
+            assert_eq!(err.code, "PROJ004");
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn validate_project_save_rejects_fix_that_introduces_new_error_category() {
+        with_temp_projects_path(|path| async move {
+            let legacy = config(&["Alpha", " alpha "]);
+            let introduces_reserved = config(&["__none__", "beta"]);
+
+            tokio::fs::write(
+                &path,
+                serde_json::to_string(&legacy).expect("legacy config should serialize"),
+            )
+            .await
+            .expect("legacy config should be written");
+
+            let err = validate_project_save(&path, &introduces_reserved)
+                .await
+                .expect_err("save that introduces reserved name should fail");
+
+            assert_eq!(err.code, "PROJ004");
         })
         .await;
     }
