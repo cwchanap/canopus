@@ -1,18 +1,27 @@
 <script lang="ts">
-  import type { Project } from "../types";
   import { isReservedProjectName } from "../utils";
 
-  export let projects: Project[];
-  export let currentProjectName: string | null;
+  type ProjectOption = {
+    key: string;
+    name: string;
+  };
+
+  type MoveTargetSelection =
+    | { type: "existing"; key: string }
+    | { type: "new"; name: string }
+    | { type: "none" };
+
+  export let projectOptions: ProjectOption[];
+  export let currentProjectKey: string | null;
   export let serviceName: string;
-  export let onConfirm: (targetProjectName: string | null) => void;
+  export let onConfirm: (selection: MoveTargetSelection) => void;
   export let onClose: () => void;
   export let loading: boolean = false;
 
   const NONE = {};
   const NEW = {};
 
-  let selected: string | typeof NONE | typeof NEW = currentProjectName ?? NONE;
+  let selected: string | typeof NONE | typeof NEW = currentProjectKey ?? NONE;
   let showNewProject = false;
   let newProjectName = "";
   let newProjectInput: HTMLInputElement;
@@ -24,7 +33,7 @@
       selected = NEW;
       setTimeout(() => newProjectInput?.focus(), 0);
     } else {
-      if (selected === NEW) selected = currentProjectName ?? NONE;
+      if (selected === NEW) selected = currentProjectKey ?? NONE;
       newProjectName = "";
       newProjectError = "";
     }
@@ -39,15 +48,15 @@
         newProjectError = "Reserved project name.";
         return;
       }
-      if (projects.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+      if (projectOptions.some((project) => project.name.toLowerCase() === name.toLowerCase())) {
         newProjectError = "A project with that name already exists.";
         return;
       }
-      onConfirm(name);
+      onConfirm({ type: "new", name });
     } else if (selected === NONE) {
-      onConfirm(null);
+      onConfirm({ type: "none" });
     } else {
-      onConfirm(selected as string);
+      onConfirm({ type: "existing", key: selected as string });
     }
   }
 
@@ -78,9 +87,9 @@
           <span class="option-label">Other Services <span class="option-hint">(ungrouped)</span></span>
         </label>
 
-        {#each projects as project}
+        {#each projectOptions as project}
           <label class="option">
-            <input type="radio" bind:group={selected} value={project.name} />
+            <input type="radio" bind:group={selected} value={project.key} />
             <span class="option-label">{project.name}</span>
           </label>
         {/each}

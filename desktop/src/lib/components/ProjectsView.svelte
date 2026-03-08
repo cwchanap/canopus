@@ -17,6 +17,17 @@
     serviceIds: string[];
   };
 
+  type ProjectOption = {
+    key: string;
+    name: string;
+    target: ProjectTarget;
+  };
+
+  type MoveTargetSelection =
+    | { type: "existing"; key: string }
+    | { type: "new"; name: string }
+    | { type: "none" };
+
   let loading = true;
   let error = "";
   let opError = "";
@@ -34,7 +45,8 @@
 
   // Move-to-project modal state
   let moveService: ServiceSummary | null = null;
-  let moveServiceCurrentProject: string | null = null;
+  let moveProjectOptions: ProjectOption[] = [];
+  let moveServiceCurrentProjectKey: string | null = null;
   let moveLoading = false;
 
   // Inline rename state
@@ -44,7 +56,7 @@
   let renameSaving = false;
 
   // Project header overflow menu
-  let openHeaderMenu: string | null = null;
+  let openHeaderMenuKey: string | null = null;
   let headerMenuEls: Record<string, HTMLElement> = {};
 
   // Delete confirmation
@@ -88,6 +100,19 @@
       normalizedName,
       normalizedOrdinal: Math.max(normalizedOrdinal, 0),
       serviceIds: [...project.serviceIds],
+    };
+  }
+
+  function getProjectTargetKey(target: ProjectTarget): string {
+    return `${target.normalizedName}::${target.normalizedOrdinal}`;
+  }
+
+  function createProjectOption(project: Project, currentProjects: Project[] = get(projects)): ProjectOption {
+    const target = createProjectTarget(project, currentProjects);
+    return {
+      key: getProjectTargetKey(target),
+      name: project.name,
+      target,
     };
   }
 
@@ -148,6 +173,7 @@
         return index === -1 ? null : $projects[index];
       })()
     : null;
+  $: moveProjectOptions = $projects.map((project) => createProjectOption(project, $projects));
 
   function closeServiceMenus() {
     serviceMenuCloseSignal += 1;
@@ -284,12 +310,12 @@
 
   // ── Move-to-project logic ────────────────────────────────────────────────────
 
-  function handleMoveRequest(service: ServiceSummary, currentProject: string | null) {
+  function handleMoveRequest(service: ServiceSummary, currentProjectTarget: ProjectTarget | null) {
     moveService = service;
-    moveServiceCurrentProject = currentProject;
+    moveServiceCurrentProjectKey = currentProjectTarget ? getProjectTargetKey(currentProjectTarget) : null;
   }
 
-  async function handleMoveConfirm(targetProjectName: string | null) {
+  async function handleMoveConfirm(selection: MoveTargetSelection) {
     if (!moveService) return;
     const serviceId = moveService.id;
 
@@ -297,21 +323,23 @@
     moveLoading = true;
     try {
       await mutateProjects((currentProjects) => {
-        if (targetProjectName !== null) {
-          const targetId = normalizeProjectName(targetProjectName);
-          const existingProject = currentProjects.find((project) => getProjectId(project) === targetId);
-          if (existingProject) {
-            const canonicalName = existingProject.name;
-            return currentProjects.map((project) => {
-              if (project.name === canonicalName) {
-                return { ...project, serviceIds: [...project.serviceIds.filter((id) => id !== serviceId), serviceId] };
-              }
-              return { ...project, serviceIds: project.serviceIds.filter((id) => id !== serviceId) };
-            });
+        if (selection.type === "existing") {
+          const targetOption = currentProjects
+            .map((project) => createProjectOption(project, currentProjects))
+            .find((option) => option.key === selection.key);
+          if (!targetOption) {
+            throw new Error("Project no longer exists.");
           }
+          const targetIndex = findProjectIndex(currentProjects, targetOption.target);
+          return currentProjects.map((project, index) => {
+            const serviceIds = project.serviceIds.filter((id) => id !== serviceId);
+            return index === targetIndex ? { ...project, serviceIds: [...serviceIds, serviceId] } : { ...project, serviceIds };
+          });
+        }
+        if (selection.type === "new") {
           return [
             ...currentProjects.map((project) => ({ ...project, serviceIds: project.serviceIds.filter((id) => id !== serviceId) })),
-            { name: targetProjectName, serviceIds: [serviceId] },
+            { name: selection.name, serviceIds: [serviceId] },
           ];
         }
         return currentProjects.map((project) => ({
@@ -324,13 +352,13 @@
     } finally {
       moveLoading = false;
       moveService = null;
-      moveServiceCurrentProject = null;
+      moveServiceCurrentProjectKey = null;
     }
   }
 
   function closeMoveModal() {
     moveService = null;
-    moveServiceCurrentProject = null;
+    moveServiceCurrentProjectKey = null;
   }
 
   // ── Inline project rename ────────────────────────────────────────────────────
@@ -338,14 +366,15 @@
   function startRename(project: Project) {
     renamingProjectTarget = createProjectTarget(project, $projects);
     renameValue = project.name;
-    openHeaderMenu = null;
+    openHeaderMenuKey = null;
     setTimeout(() => renameInput?.focus(), 0);
   }
 
   async function commitRename() {
     if (!renamingProjectTarget || renameSaving) return;
+    const target = renamingProjectTarget;
     const trimmed = renameValue.trim();
-    if (!trimmed || trimmed === renamingProjectTarget.name) {
+    if (!trimmed || trimmed === target.name) {
       opError = "";
       renamingProjectTarget = null;
       return;
@@ -353,7 +382,7 @@
     renameSaving = true;
     try {
       await mutateProjects((currentProjects) => {
-        const renamingIndex = findProjectIndex(currentProjects, renamingProjectTarget);
+        const renamingIndex = findProjectIndex(currentProjects, target);
         if (isReservedProjectName(trimmed)) {
           throw createProjectCommandError(`Reserved project name '${trimmed}' is not allowed.`);
         }
@@ -382,13 +411,13 @@
 
   // ── Project header overflow menu ─────────────────────────────────────────────
 
-  function toggleHeaderMenu(projectName: string, e: MouseEvent | KeyboardEvent) {
+  function toggleHeaderMenu(projectTargetKey: string, e: MouseEvent | KeyboardEvent) {
     e.stopPropagation();
     closeServiceMenus();
-    openHeaderMenu = openHeaderMenu === projectName ? null : projectName;
-    if (openHeaderMenu) {
+    openHeaderMenuKey = openHeaderMenuKey === projectTargetKey ? null : projectTargetKey;
+    if (openHeaderMenuKey) {
       setTimeout(() => {
-        const menu = headerMenuEls[projectName];
+        const menu = headerMenuEls[projectTargetKey];
         const firstItem = menu?.querySelector('.overflow-item') as HTMLElement;
         if (firstItem) firstItem.focus();
       }, 0);
@@ -397,7 +426,7 @@
 
   function handleMenuKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
-      openHeaderMenu = null;
+      openHeaderMenuKey = null;
       return;
     }
     
@@ -420,12 +449,12 @@
   }
 
   function closeAllMenus() {
-    openHeaderMenu = null;
+    openHeaderMenuKey = null;
     closeServiceMenus();
   }
 
   function closeHeaderMenuOnly() {
-    openHeaderMenu = null;
+    openHeaderMenuKey = null;
   }
 
   function handleGlobalKeydown(e: KeyboardEvent) {
@@ -438,17 +467,18 @@
   // ── Project delete ────────────────────────────────────────────────────────────
 
   function requestDelete(project: Project) {
-    openHeaderMenu = null;
+    openHeaderMenuKey = null;
     deletingProjectTarget = createProjectTarget(project, $projects);
   }
 
   async function confirmDelete() {
     if (deletingProjectTarget === null || deleteLoading) return;
+    const target = deletingProjectTarget;
     opError = "";
     deleteLoading = true;
     try {
       await mutateProjects((currentProjects) => {
-        const deletingIndex = findProjectIndex(currentProjects, deletingProjectTarget);
+        const deletingIndex = findProjectIndex(currentProjects, target);
         if (deletingIndex === -1) {
           throw new Error("Project no longer exists.");
         }
@@ -495,6 +525,8 @@
         {/if}
         {#each $projects as project}
           {@const svcList = getProjectServices(project)}
+          {@const projectTarget = createProjectTarget(project, $projects)}
+          {@const projectTargetKey = getProjectTargetKey(projectTarget)}
           <section class="project-section">
             <div class="project-header">
               {#if isRenamingProject(project)}
@@ -543,22 +575,22 @@
                 <div class="overflow-wrap">
                   <button
                     class="btn-overflow"
-                    on:click={(e) => toggleHeaderMenu(project.name, e)}
+                    on:click={(e) => toggleHeaderMenu(projectTargetKey, e)}
                     on:keydown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        toggleHeaderMenu(project.name, e);
+                        toggleHeaderMenu(projectTargetKey, e);
                       }
                     }}
                     aria-label="Project options"
                     aria-haspopup="menu"
-                    aria-expanded={openHeaderMenu === project.name}
+                    aria-expanded={openHeaderMenuKey === projectTargetKey}
                   >⋯</button>
-                  {#if openHeaderMenu === project.name}
+                  {#if openHeaderMenuKey === projectTargetKey}
                     <!-- svelte-ignore a11y-no-static-element-interactions -->
                     <div
                       class="overflow-menu"
-                      bind:this={headerMenuEls[project.name]}
+                      bind:this={headerMenuEls[projectTargetKey]}
                       on:keydown={handleMenuKeydown}
                       role="menu"
                       tabindex="-1"
@@ -594,7 +626,7 @@
                     {service}
                     onRefresh={load}
                     projectName={project.name}
-                    onMoveRequest={handleMoveRequest}
+                    onMoveRequest={(service) => handleMoveRequest(service, projectTarget)}
                     onActionStart={handleServiceActionStart}
                     onActionEnd={handleServiceActionEnd}
                     onMenuOpen={closeHeaderMenuOnly}
@@ -617,7 +649,7 @@
                   {service}
                   onRefresh={load}
                   projectName={null}
-                  onMoveRequest={handleMoveRequest}
+                  onMoveRequest={(service) => handleMoveRequest(service, null)}
                   onActionStart={handleServiceActionStart}
                   onActionEnd={handleServiceActionEnd}
                   onMenuOpen={closeHeaderMenuOnly}
@@ -670,8 +702,8 @@
 <!-- Move-to-project modal -->
 {#if moveService}
   <MoveToProjectModal
-    projects={$projects}
-    currentProjectName={moveServiceCurrentProject}
+    projectOptions={moveProjectOptions}
+    currentProjectKey={moveServiceCurrentProjectKey}
     serviceName={moveService.name}
     onConfirm={handleMoveConfirm}
     onClose={closeMoveModal}
