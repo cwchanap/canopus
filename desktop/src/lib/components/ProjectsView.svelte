@@ -152,6 +152,8 @@
     serviceActionIds = new Set([...serviceActionIds].filter((id) => id !== serviceId));
   }
 
+  $: busyIds = new Set([...bulkStartingIds, ...bulkStoppingIds, ...serviceActionIds]);
+
   async function mutateProjects(
     updater: (currentProjects: Project[]) => Project[]
   ): Promise<Project[]> {
@@ -457,6 +459,11 @@
     openHeaderMenuKey = null;
   }
 
+  function closeAllServiceMenus() {
+    closeHeaderMenuOnly();
+    closeServiceMenus();
+  }
+
   function handleGlobalKeydown(e: KeyboardEvent) {
     if (e.key !== "Escape") return;
     if (deletingProjectTarget !== null && !deleteLoading) {
@@ -624,12 +631,13 @@
                 {#each svcList as service}
                   <ServiceCard
                     {service}
+                    {busyIds}
                     onRefresh={load}
                     projectName={project.name}
                     onMoveRequest={(service) => handleMoveRequest(service, projectTarget)}
                     onActionStart={handleServiceActionStart}
                     onActionEnd={handleServiceActionEnd}
-                    onMenuOpen={closeHeaderMenuOnly}
+                    onMenuOpen={closeAllServiceMenus}
                     closeSignal={serviceMenuCloseSignal}
                   />
                 {/each}
@@ -647,12 +655,13 @@
               {#each ungrouped as service}
                 <ServiceCard
                   {service}
+                  {busyIds}
                   onRefresh={load}
                   projectName={null}
                   onMoveRequest={(service) => handleMoveRequest(service, null)}
                   onActionStart={handleServiceActionStart}
                   onActionEnd={handleServiceActionEnd}
-                  onMenuOpen={closeHeaderMenuOnly}
+                  onMenuOpen={closeAllServiceMenus}
                   closeSignal={serviceMenuCloseSignal}
                 />
               {/each}

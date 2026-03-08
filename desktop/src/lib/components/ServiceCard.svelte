@@ -17,6 +17,8 @@
   export let onActionEnd: ((serviceId: string) => void) | null = null;
   /** Incremented by parent to force-close any open overflow menu on this card. */
   export let closeSignal = 0;
+  /** Set of service IDs currently involved in bulk operations; buttons are disabled for these. */
+  export let busyIds: Set<string> = new Set();
 
   let showMenu = false;
   let lastCloseSignal = closeSignal;
@@ -156,14 +158,14 @@
 
   <div class="actions">
     {#if isRunning()}
-      <button class="btn btn-danger" disabled={loading || service.state === "stopping"} on:click={() => handle(() => stopService(service.id))}>
+      <button class="btn btn-danger" disabled={loading || busyIds.has(service.id) || service.state === "stopping"} on:click={() => handle(() => stopService(service.id))}>
         Stop
       </button>
-      <button class="btn btn-secondary" disabled={loading || service.state === "stopping"} on:click={() => handle(() => restartService(service.id))}>
+      <button class="btn btn-secondary" disabled={loading || busyIds.has(service.id) || service.state === "stopping"} on:click={() => handle(() => restartService(service.id))}>
         Restart
       </button>
     {:else}
-      <button class="btn btn-primary" disabled={loading} on:click={() => handle(() => startService(service.id))}>
+      <button class="btn btn-primary" disabled={loading || busyIds.has(service.id)} on:click={() => handle(() => startService(service.id))}>
         Start
       </button>
     {/if}
