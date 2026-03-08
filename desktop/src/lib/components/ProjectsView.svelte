@@ -18,8 +18,8 @@
   let newProjectInput: HTMLInputElement;
   let refreshInterval: ReturnType<typeof setInterval> | undefined;
   let isLoading = false;
-  let bulkStarting = new Set<string>();
-  let bulkStopping = new Set<string>();
+  let bulkStartingIds = new Set<string>();
+  let bulkStoppingIds = new Set<string>();
 
   // Bump this to force ServiceCard overflow menus closed.
   let serviceMenuCloseSignal = 0;
@@ -131,13 +131,25 @@
     );
   }
 
+  function hasAny(ids: string[], set: Set<string>): boolean {
+    return ids.some((id) => set.has(id));
+  }
+
+  function isBulkStarting(project: Project): boolean {
+    return hasAny(project.serviceIds, bulkStartingIds);
+  }
+
+  function isBulkStopping(project: Project): boolean {
+    return hasAny(project.serviceIds, bulkStoppingIds);
+  }
+
   async function startAll(project: Project) {
     const idle = idleServices(project);
     const ids = idle.map((s) => s.id);
     const namesById = new Map(idle.map((service) => [service.id, service.name]));
-    if (ids.length === 0 || bulkStarting.has(project.name) || bulkStopping.has(project.name)) return;
+    if (ids.length === 0 || hasAny(ids, bulkStartingIds) || hasAny(ids, bulkStoppingIds)) return;
     opError = "";
-    bulkStarting = new Set([...bulkStarting, project.name]);
+    bulkStartingIds = new Set([...bulkStartingIds, ...ids]);
     try {
       const results = await Promise.allSettled(ids.map((id) => startService(id)));
       await load();
@@ -149,7 +161,7 @@
         opError = `${failed.length} service(s) failed to start: ${names.join(", ")}`;
       }
     } finally {
-      bulkStarting = new Set([...bulkStarting].filter((n) => n !== project.name));
+      bulkStartingIds = new Set([...bulkStartingIds].filter((id) => !ids.includes(id)));
     }
   }
 
@@ -157,9 +169,9 @@
     const running = runningServices(project);
     const ids = running.map((s) => s.id);
     const namesById = new Map(running.map((service) => [service.id, service.name]));
-    if (ids.length === 0 || bulkStarting.has(project.name) || bulkStopping.has(project.name)) return;
+    if (ids.length === 0 || hasAny(ids, bulkStartingIds) || hasAny(ids, bulkStoppingIds)) return;
     opError = "";
-    bulkStopping = new Set([...bulkStopping, project.name]);
+    bulkStoppingIds = new Set([...bulkStoppingIds, ...ids]);
     try {
       const results = await Promise.allSettled(ids.map((id) => stopService(id)));
       await load();
@@ -171,7 +183,7 @@
         opError = `${failed.length} service(s) failed to stop: ${names.join(", ")}`;
       }
     } finally {
-      bulkStopping = new Set([...bulkStopping].filter((n) => n !== project.name));
+      bulkStoppingIds = new Set([...bulkStoppingIds].filter((id) => !ids.includes(id)));
     }
   }
 
@@ -436,24 +448,24 @@
               <div class="project-header-actions">
                 <button
                   class="btn-bulk"
-                  disabled={bulkStarting.has(project.name) || bulkStopping.has(project.name) || idleServices(project).length === 0}
+                  disabled={isBulkStarting(project) || isBulkStopping(project) || idleServices(project).length === 0}
                   on:click|stopPropagation={() => startAll(project)}
                   title="Start all idle services in this project"
-                  aria-label={bulkStarting.has(project.name) ? "Starting services…" : "Start all idle services"}
-                  aria-busy={bulkStarting.has(project.name)}
+                  aria-label={isBulkStarting(project) ? "Starting services…" : "Start all idle services"}
+                  aria-busy={isBulkStarting(project)}
                 >
-                  {bulkStarting.has(project.name) ? "…" : "Start all"}
+                  {isBulkStarting(project) ? "…" : "Start all"}
                 </button>
 
                 <button
                   class="btn-bulk btn-bulk-stop"
-                  disabled={bulkStarting.has(project.name) || bulkStopping.has(project.name) || runningServices(project).length === 0}
+                  disabled={isBulkStarting(project) || isBulkStopping(project) || runningServices(project).length === 0}
                   on:click|stopPropagation={() => stopAll(project)}
                   title="Stop all running services in this project"
-                  aria-label={bulkStopping.has(project.name) ? "Stopping services…" : "Stop all running services"}
-                  aria-busy={bulkStopping.has(project.name)}
+                  aria-label={isBulkStopping(project) ? "Stopping services…" : "Stop all running services"}
+                  aria-busy={isBulkStopping(project)}
                 >
-                  {bulkStopping.has(project.name) ? "…" : "Stop all"}
+                  {isBulkStopping(project) ? "…" : "Stop all"}
                 </button>
 
                 <div class="overflow-wrap">

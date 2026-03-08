@@ -3,6 +3,7 @@
 use tauri::State;
 
 use std::collections::HashSet;
+use std::path::Path;
 
 use super::CommandError;
 use crate::state::{AppState, ProjectConfig};
@@ -45,12 +46,83 @@ fn validate_project_names(projects: &[crate::state::Project]) -> Result<(), Comm
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ProjectValidationSummary {
+    blank_names: usize,
+    reserved_names: usize,
+    duplicate_names: usize,
+}
+
+impl ProjectValidationSummary {
+    fn score(self) -> usize {
+        self.blank_names + self.reserved_names + self.duplicate_names
+    }
+
+    fn is_valid(self) -> bool {
+        self.score() == 0
+    }
+}
+
+fn summarize_project_names(projects: &[crate::state::Project]) -> ProjectValidationSummary {
+    let mut seen_names = HashSet::new();
+    let mut blank_names = 0;
+    let mut reserved_names = 0;
+    let mut duplicate_names = 0;
+
+    for project in projects {
+        let name = project.name.trim();
+        if name.is_empty() {
+            blank_names += 1;
+            continue;
+        }
+        if name == "__none__" || name == "__new__" {
+            reserved_names += 1;
+        }
+
+        let normalized_name = name.to_lowercase();
+        if !seen_names.insert(normalized_name) {
+            duplicate_names += 1;
+        }
+    }
+
+    ProjectValidationSummary {
+        blank_names,
+        reserved_names,
+        duplicate_names,
+    }
+}
+
+async fn load_existing_project_config(path: &Path) -> Result<ProjectConfig, CommandError> {
+    match tokio::fs::read_to_string(path).await {
+        Ok(content) => serde_json::from_str(&content).map_err(CommandError::from),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(ProjectConfig::default()),
+        Err(e) => Err(CommandError::from(e)),
+    }
+}
+
+async fn validate_project_save(path: &Path, config: &ProjectConfig) -> Result<(), CommandError> {
+    match validate_project_names(&config.projects) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            let existing = load_existing_project_config(path).await?;
+            let existing_summary = summarize_project_names(&existing.projects);
+            let new_summary = summarize_project_names(&config.projects);
+
+            if !existing_summary.is_valid() && new_summary.score() < existing_summary.score() {
+                return Ok(());
+            }
+
+            Err(err)
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn save_projects(
     state: State<'_, AppState>,
     config: ProjectConfig,
 ) -> Result<(), CommandError> {
-    validate_project_names(&config.projects)?;
+    validate_project_save(&state.projects_path, &config).await?;
 
     let content = serde_json::to_string_pretty(&config).map_err(CommandError::from)?;
     if let Some(parent) = state.projects_path.parent() {
@@ -104,12 +176,37 @@ pub async fn save_projects(
 mod tests {
     use super::*;
     use crate::state::Project;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn project(name: &str) -> Project {
         Project {
             name: name.to_string(),
             service_ids: vec![],
         }
+    }
+
+    fn config(names: &[&str]) -> ProjectConfig {
+        ProjectConfig {
+            projects: names.iter().map(|name| project(name)).collect(),
+        }
+    }
+
+    async fn with_temp_projects_path<F, Fut>(test: F)
+    where
+        F: FnOnce(std::path::PathBuf) -> Fut,
+        Fut: std::future::Future<Output = ()>,
+    {
+        let unique = format!(
+            "canopus-projects-{}-{}.json",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time should be after unix epoch")
+                .as_nanos()
+        );
+        let path = std::env::temp_dir().join(unique);
+        test(path.clone()).await;
+        let _ = tokio::fs::remove_file(path).await;
     }
 
     #[test]
@@ -169,5 +266,82 @@ mod tests {
         let err = validate_project_names(&[project("Alpha"), project(" alpha ")]).unwrap_err();
         assert_eq!(err.code, "PROJ004");
         assert!(err.message.contains("alpha"));
+    }
+
+    #[test]
+    fn summarize_project_names_counts_invalid_entries() {
+        let summary = summarize_project_names(&[
+            project("   "),
+            project("__none__"),
+            project("Alpha"),
+            project(" alpha "),
+        ]);
+
+        assert_eq!(summary.blank_names, 1);
+        assert_eq!(summary.reserved_names, 1);
+        assert_eq!(summary.duplicate_names, 1);
+        assert_eq!(summary.score(), 3);
+    }
+
+    #[tokio::test]
+    async fn validate_project_save_allows_corrective_save_from_reserved_legacy_config() {
+        with_temp_projects_path(|path| async move {
+            let legacy = config(&["__none__", "valid"]);
+            let repaired = config(&["fixed", "valid"]);
+
+            tokio::fs::write(
+                &path,
+                serde_json::to_string(&legacy).expect("legacy config should serialize"),
+            )
+            .await
+            .expect("legacy config should be written");
+
+            validate_project_save(&path, &repaired)
+                .await
+                .expect("repairing reserved project name should be allowed");
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn validate_project_save_rejects_non_corrective_save_from_reserved_legacy_config() {
+        with_temp_projects_path(|path| async move {
+            let legacy = config(&["__none__", "valid"]);
+            let still_invalid = config(&["__none__", "valid", "another"]);
+
+            tokio::fs::write(
+                &path,
+                serde_json::to_string(&legacy).expect("legacy config should serialize"),
+            )
+            .await
+            .expect("legacy config should be written");
+
+            let err = validate_project_save(&path, &still_invalid)
+                .await
+                .expect_err("save that leaves invalidity unchanged should fail");
+
+            assert_eq!(err.code, "PROJ004");
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn validate_project_save_allows_duplicate_repair() {
+        with_temp_projects_path(|path| async move {
+            let legacy = config(&["Alpha", " alpha "]);
+            let repaired = config(&["Alpha", "beta"]);
+
+            tokio::fs::write(
+                &path,
+                serde_json::to_string(&legacy).expect("legacy config should serialize"),
+            )
+            .await
+            .expect("legacy config should be written");
+
+            validate_project_save(&path, &repaired)
+                .await
+                .expect("repairing duplicate project names should be allowed");
+        })
+        .await;
     }
 }
