@@ -29,6 +29,7 @@
   let newProjectError = "";
 
   function toggleNewProject() {
+    if (loading) return;
     showNewProject = !showNewProject;
     if (showNewProject) {
       selected = NEW;
@@ -84,13 +85,13 @@
       <div class="options">
         <!-- "No project" option (Other Services) -->
         <label class="option">
-          <input type="radio" bind:group={selected} value={NONE} />
+          <input type="radio" bind:group={selected} value={NONE} disabled={loading} />
           <span class="option-label">Other Services <span class="option-hint">(ungrouped)</span></span>
         </label>
 
         {#each projectOptions as project}
           <label class="option">
-            <input type="radio" bind:group={selected} value={project.key} />
+            <input type="radio" bind:group={selected} value={project.key} disabled={loading} />
             <span class="option-label">{project.name}</span>
           </label>
         {/each}
@@ -117,7 +118,7 @@
             {/if}
           </div>
         {:else}
-          <button class="btn-add-project" on:click={toggleNewProject}>
+          <button class="btn-add-project" on:click={toggleNewProject} disabled={loading}>
             + New project
           </button>
         {/if}

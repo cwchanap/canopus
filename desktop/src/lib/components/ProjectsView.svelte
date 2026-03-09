@@ -205,7 +205,12 @@
       }
       services.set(svcResult.value);
       if (projResult.status === 'fulfilled') {
-        projects.set(projResult.value.projects);
+        // Chain write-back onto projectSaveQueue to prevent race with mutations
+        // that were queued during the fetch
+        projectSaveQueue = projectSaveQueue.then(() => {
+          projects.set(projResult.value.projects);
+        }).catch(() => undefined);
+        await projectSaveQueue;
       } else {
         throw projResult.reason;
       }
