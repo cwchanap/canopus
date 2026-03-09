@@ -48,6 +48,7 @@
   let moveProjectOptions: ProjectOption[] = [];
   let moveServiceCurrentProjectKey: string | null = null;
   let moveLoading = false;
+  let moveError = "";
 
   // Inline rename state
   let renamingProjectTarget: ProjectTarget | null = null;
@@ -63,6 +64,7 @@
   let deletingProjectTarget: ProjectTarget | null = null;
   let deletingProject: Project | null = null;
   let deleteLoading = false;
+  let deleteCancelButton: HTMLButtonElement;
   let projectSaveQueue: Promise<void> = Promise.resolve();
 
   function normalizeProjectName(name: string): string {
@@ -313,6 +315,7 @@
   // ── Move-to-project logic ────────────────────────────────────────────────────
 
   function handleMoveRequest(service: ServiceSummary, currentProjectTarget: ProjectTarget | null) {
+    moveError = "";
     moveService = service;
     moveServiceCurrentProjectKey = currentProjectTarget ? getProjectTargetKey(currentProjectTarget) : null;
   }
@@ -322,6 +325,7 @@
     const serviceId = moveService.id;
 
     opError = "";
+    moveError = "";
     moveLoading = true;
     try {
       await mutateProjects((currentProjects) => {
@@ -339,9 +343,16 @@
           });
         }
         if (selection.type === "new") {
+          const projectName = selection.name.trim();
+          if (isReservedProjectName(projectName)) {
+            throw createProjectCommandError(`Reserved project name '${projectName}' is not allowed.`);
+          }
+          if (currentProjects.some((project) => normalizeProjectName(project.name) === normalizeProjectName(projectName))) {
+            throw createProjectCommandError("A project with that name already exists.");
+          }
           return [
             ...currentProjects.map((project) => ({ ...project, serviceIds: project.serviceIds.filter((id) => id !== serviceId) })),
-            { name: selection.name, serviceIds: [serviceId] },
+            { name: projectName, serviceIds: [serviceId] },
           ];
         }
         return currentProjects.map((project) => ({
@@ -349,16 +360,18 @@
           serviceIds: project.serviceIds.filter((id) => id !== serviceId),
         }));
       });
-    } catch (e) {
-      opError = extractErrorMessage(e);
-    } finally {
-      moveLoading = false;
       moveService = null;
       moveServiceCurrentProjectKey = null;
+      moveError = "";
+    } catch (e) {
+      moveError = extractErrorMessage(e);
+    } finally {
+      moveLoading = false;
     }
   }
 
   function closeMoveModal() {
+    moveError = "";
     moveService = null;
     moveServiceCurrentProjectKey = null;
   }
@@ -385,11 +398,11 @@
     try {
       await mutateProjects((currentProjects) => {
         const renamingIndex = findProjectIndex(currentProjects, target);
-        if (isReservedProjectName(trimmed)) {
-          throw createProjectCommandError(`Reserved project name '${trimmed}' is not allowed.`);
-        }
         if (renamingIndex === -1) {
           throw new Error("Project no longer exists.");
+        }
+        if (isReservedProjectName(trimmed)) {
+          throw createProjectCommandError(`Reserved project name '${trimmed}' is not allowed.`);
         }
         if (currentProjects.some((project, index) => index !== renamingIndex && normalizeProjectName(project.name) === normalizeProjectName(trimmed))) {
           throw createProjectCommandError("A project with that name already exists.");
@@ -455,15 +468,6 @@
     closeServiceMenus();
   }
 
-  function closeHeaderMenuOnly() {
-    openHeaderMenuKey = null;
-  }
-
-  function closeAllServiceMenus() {
-    closeHeaderMenuOnly();
-    closeServiceMenus();
-  }
-
   function handleGlobalKeydown(e: KeyboardEvent) {
     if (e.key !== "Escape") return;
     if (deletingProjectTarget !== null && !deleteLoading) {
@@ -476,6 +480,7 @@
   function requestDelete(project: Project) {
     openHeaderMenuKey = null;
     deletingProjectTarget = createProjectTarget(project, $projects);
+    setTimeout(() => deleteCancelButton?.focus(), 0);
   }
 
   async function confirmDelete() {
@@ -637,7 +642,7 @@
                     onMoveRequest={(service) => handleMoveRequest(service, projectTarget)}
                     onActionStart={handleServiceActionStart}
                     onActionEnd={handleServiceActionEnd}
-                    onMenuOpen={closeAllServiceMenus}
+                    onMenuOpen={closeAllMenus}
                     closeSignal={serviceMenuCloseSignal}
                   />
                 {/each}
@@ -661,7 +666,7 @@
                   onMoveRequest={(service) => handleMoveRequest(service, null)}
                   onActionStart={handleServiceActionStart}
                   onActionEnd={handleServiceActionEnd}
-                  onMenuOpen={closeAllServiceMenus}
+                  onMenuOpen={closeAllMenus}
                   closeSignal={serviceMenuCloseSignal}
                 />
               {/each}
@@ -717,6 +722,7 @@
     onConfirm={handleMoveConfirm}
     onClose={closeMoveModal}
     loading={moveLoading}
+    errorMessage={moveError}
   />
 {/if}
 
@@ -729,7 +735,14 @@
       <p id="delete-project-dialog-title" class="confirm-text">Delete project <strong>{deletingProject.name}</strong>?</p>
       <p class="confirm-hint">Services will be returned to Other Services.</p>
       <div class="confirm-actions">
-        <button class="btn btn-cancel" on:click={() => { if (!deleteLoading) deletingProjectTarget = null; }} disabled={deleteLoading}>Cancel</button>
+        <button
+          class="btn btn-cancel"
+          bind:this={deleteCancelButton}
+          on:click={() => { if (!deleteLoading) deletingProjectTarget = null; }}
+          disabled={deleteLoading}
+        >
+          Cancel
+        </button>
         <button class="btn btn-danger" on:click={confirmDelete} disabled={deleteLoading}>
           {deleteLoading ? "Deleting…" : "Delete"}
         </button>
