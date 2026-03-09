@@ -159,22 +159,27 @@ pub async fn save_projects(
         file.sync_all().await.map_err(CommandError::from)?;
         // On Windows `rename` fails when the destination already exists; the
         // first save succeeds but every subsequent save would return an I/O
-        // error.  Remove the destination first so the rename always succeeds.
-        // This is not fully atomic on Windows (a crash between the two calls
-        // can leave no file at all), but it is the only portable approach
-        // without pulling in a Windows-specific atomic-replace helper.
-        // On Unix, `rename` atomically replaces so this branch is a no-op.
+        // error. Try rename first, and only remove destination on AlreadyExists
+        // error. This preserves data if the second rename also fails.
+        // On Unix, `rename` atomically replaces so this is a single call.
         #[cfg(windows)]
-        let _ = tokio::fs::remove_file(&state.projects_path).await;
+        {
+            if tokio::fs::rename(&tmp_path, &state.projects_path).await.is_err() {
+                tokio::fs::remove_file(&state.projects_path)
+                    .await
+                    .map_err(CommandError::from)?;
+                tokio::fs::rename(&tmp_path, &state.projects_path)
+                    .await
+                    .map_err(CommandError::from)?;
+            }
+        }
+        #[cfg(not(windows))]
         tokio::fs::rename(&tmp_path, &state.projects_path)
             .await
-            .map_err(CommandError::from)
+            .map_err(CommandError::from)?;
+        Ok(())
     }
     .await;
-    if result.is_err() {
-        // Best-effort cleanup: remove the temp file to avoid leaving stale data.
-        let _ = tokio::fs::remove_file(&tmp_path).await;
-    }
     result
 }
 
