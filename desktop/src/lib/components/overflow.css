@@ -46,15 +46,20 @@
   transition: background 0.1s;
 }
 
-.overflow-item:hover, .overflow-item:focus {
+.overflow-item:hover {
   background: #2a2f45;
-  outline: none;
+}
+
+.overflow-item:focus-visible {
+  background: #2a2f45;
+  outline: 2px solid #7c3aed;
+  outline-offset: 2px;
 }
 
 .overflow-item-danger {
   color: #f87171;
 }
 
-.overflow-item-danger:hover, .overflow-item-danger:focus {
+.overflow-item-danger:hover, .overflow-item-danger:focus-visible {
   background: #ef444418;
 }

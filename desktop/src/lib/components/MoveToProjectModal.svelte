@@ -17,6 +17,7 @@
   export let onConfirm: (selection: MoveTargetSelection) => void;
   export let onClose: () => void;
   export let loading: boolean = false;
+  export let errorMessage = "";
 
   const NONE = {};
   const NEW = {};
@@ -122,6 +123,10 @@
         {/if}
       </div>
     </div>
+
+    {#if errorMessage}
+      <div class="modal-error" role="alert">{errorMessage}</div>
+    {/if}
 
     <div class="modal-footer">
       <button class="btn btn-cancel" on:click={onClose} disabled={loading}>Cancel</button>
@@ -291,6 +296,14 @@
     gap: 8px;
     padding: 12px 16px;
     border-top: 1px solid #1e2130;
+  }
+
+  .modal-error {
+    color: #fca5a5;
+    background: #2d1b1b;
+    border-top: 1px solid #7f1d1d;
+    padding: 10px 16px 0;
+    font-size: 12px;
   }
 
   .btn {

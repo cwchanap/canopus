@@ -55,7 +55,7 @@ struct ProjectValidationSummary {
 }
 
 impl ProjectValidationSummary {
-    #[allow(dead_code, clippy::arithmetic_side_effects)]
+    #[allow(clippy::arithmetic_side_effects)]
     const fn score(self) -> usize {
         self.blank_names + self.reserved_names + self.duplicate_names
     }
