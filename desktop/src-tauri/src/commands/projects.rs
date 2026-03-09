@@ -164,7 +164,10 @@ pub async fn save_projects(
         // On Unix, `rename` atomically replaces so this is a single call.
         #[cfg(windows)]
         {
-            if tokio::fs::rename(&tmp_path, &state.projects_path).await.is_err() {
+            if tokio::fs::rename(&tmp_path, &state.projects_path)
+                .await
+                .is_err()
+            {
                 tokio::fs::remove_file(&state.projects_path)
                     .await
                     .map_err(CommandError::from)?;
