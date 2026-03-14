@@ -350,6 +350,115 @@ mod tests {
         server.await.unwrap();
     }
 
+    // --- Direct process_message unit tests ---
+
+    #[test]
+    fn process_message_status_returns_status_response() {
+        let daemon = Daemon::new(DaemonConfig::default());
+        daemon
+            .running
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let response = daemon.process_message(Message::Status);
+        assert!(
+            matches!(response, Response::Status { running: true, .. }),
+            "expected Status response, got {response:?}"
+        );
+    }
+
+    #[test]
+    fn process_message_stop_returns_ok() {
+        let daemon = Daemon::new(DaemonConfig::default());
+        daemon
+            .running
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let response = daemon.process_message(Message::Stop);
+        assert!(
+            matches!(response, Response::Ok { ref message } if message.contains("stopping")),
+            "expected Ok(stopping), got {response:?}"
+        );
+        assert!(!daemon.running.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[test]
+    fn process_message_start_when_running_returns_already_running_error() {
+        let daemon = Daemon::new(DaemonConfig::default());
+        daemon
+            .running
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let response = daemon.process_message(Message::Start);
+        assert!(
+            matches!(
+                response,
+                Response::Error {
+                    ref code,
+                    ..
+                } if code.as_deref() == Some("DAEMON_ALREADY_RUNNING")
+            ),
+            "expected DAEMON_ALREADY_RUNNING error, got {response:?}"
+        );
+    }
+
+    #[test]
+    fn process_message_start_when_stopped_starts_daemon() {
+        let daemon = Daemon::new(DaemonConfig::default());
+        daemon
+            .running
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        let response = daemon.process_message(Message::Start);
+        assert!(
+            matches!(response, Response::Ok { .. }),
+            "expected Ok response, got {response:?}"
+        );
+        assert!(daemon.running.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[test]
+    fn process_message_restart_returns_ok() {
+        let daemon = Daemon::new(DaemonConfig::default());
+        let response = daemon.process_message(Message::Restart);
+        assert!(
+            matches!(response, Response::Ok { .. }),
+            "expected Ok response, got {response:?}"
+        );
+    }
+
+    #[test]
+    fn process_message_custom_echoes_command() {
+        let daemon = Daemon::new(DaemonConfig::default());
+        let response = daemon.process_message(Message::Custom {
+            cmd: "hello-world".to_string(),
+        });
+        match response {
+            Response::Ok { message } => {
+                assert!(
+                    message.contains("hello-world"),
+                    "expected echoed command in response, got: {message}"
+                );
+            }
+            other => panic!("expected Ok response, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn daemon_stop_clears_running_flag() {
+        let daemon = Daemon::new(DaemonConfig::default());
+        daemon
+            .running
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        daemon.stop();
+        assert!(!daemon.running.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[test]
+    fn daemon_clone_shares_running_flag() {
+        let daemon = Daemon::new(DaemonConfig::default());
+        let clone = daemon.clone();
+        daemon
+            .running
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(clone.running.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
     #[tokio::test]
     async fn test_daemon_rejects_oversized_request_incrementally() {
         let daemon = Daemon::new(DaemonConfig::default());
