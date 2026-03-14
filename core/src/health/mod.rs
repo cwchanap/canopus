@@ -65,3 +65,88 @@ pub async fn run_probe(health_check: &HealthCheck) -> Result<(), HealthError> {
     let probe = create_probe(&health_check.check_type, timeout)?;
     probe.check().await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use schema::HealthCheckType;
+    use std::time::Duration;
+
+    #[test]
+    fn create_probe_tcp_returns_ok() {
+        let check_type = HealthCheckType::Tcp { port: 8080 };
+        let result = create_probe(&check_type, Duration::from_secs(1));
+        assert!(result.is_ok(), "expected Ok for Tcp probe");
+    }
+
+    #[test]
+    fn create_probe_exec_returns_unsupported_error() {
+        let check_type = HealthCheckType::Exec {
+            command: "curl".to_string(),
+            args: vec!["-f".to_string(), "http://localhost/health".to_string()],
+        };
+        let result = create_probe(&check_type, Duration::from_secs(1));
+        assert!(result.is_err(), "expected Err for Exec probe");
+        // Extract error without unwrap_err() since Box<dyn Probe> isn't Debug
+        let err = match result {
+            Err(e) => e,
+            Ok(_) => panic!("expected error"),
+        };
+        assert!(
+            matches!(err, HealthError::UnsupportedProbeType(_)),
+            "expected UnsupportedProbeType, got {err:?}"
+        );
+        assert!(
+            err.to_string().contains("not yet implemented"),
+            "error message should mention 'not yet implemented', got: {err}"
+        );
+    }
+
+    #[test]
+    fn health_error_display_timeout() {
+        let err = HealthError::Timeout(Duration::from_secs(5));
+        assert!(
+            err.to_string().contains("5s"),
+            "expected timeout duration in message, got: {err}"
+        );
+    }
+
+    #[test]
+    fn health_error_display_unsupported() {
+        let err = HealthError::UnsupportedProbeType("MyProbe".to_string());
+        assert!(
+            err.to_string().contains("MyProbe"),
+            "expected probe type name in message, got: {err}"
+        );
+    }
+
+    #[test]
+    fn health_error_from_io_error() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "refused");
+        let health_err = HealthError::from(io_err);
+        assert!(
+            matches!(health_err, HealthError::Tcp(_)),
+            "expected Tcp variant, got {health_err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_probe_exec_returns_unsupported_error() {
+        let check = HealthCheck {
+            check_type: HealthCheckType::Exec {
+                command: "true".to_string(),
+                args: vec![],
+            },
+            interval_secs: 10,
+            timeout_secs: 1,
+            failure_threshold: 1,
+            success_threshold: 1,
+        };
+        let result = run_probe(&check).await;
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            HealthError::UnsupportedProbeType(_)
+        ));
+    }
+}
