@@ -411,4 +411,329 @@ mod tests {
         let err = load_services_from_toml_str(input).unwrap_err();
         assert!(format!("{err}").contains("type[Tcp].port"));
     }
+
+    #[test]
+    fn errors_on_empty_id() {
+        let input = r#"
+        [[services]]
+        id = "   "
+        name = "A"
+        command = "echo"
+        "#;
+        let err = load_services_from_toml_str(input).unwrap_err();
+        assert!(format!("{err}").contains(".id: cannot be empty"));
+    }
+
+    #[test]
+    fn errors_on_empty_name() {
+        let input = r#"
+        [[services]]
+        id = "s"
+        name = ""
+        command = "echo"
+        "#;
+        let err = load_services_from_toml_str(input).unwrap_err();
+        assert!(format!("{err}").contains(".name: cannot be empty"));
+    }
+
+    #[test]
+    fn errors_on_empty_command() {
+        let input = r#"
+        [[services]]
+        id = "s"
+        name = "S"
+        command = "   "
+        "#;
+        let err = load_services_from_toml_str(input).unwrap_err();
+        assert!(format!("{err}").contains(".command: cannot be empty"));
+    }
+
+    #[test]
+    fn errors_on_empty_environment_key() {
+        let input = r#"
+        [[services]]
+        id = "s"
+        name = "S"
+        command = "echo"
+        [services.environment]
+        "" = "value"
+        "#;
+        let err = load_services_from_toml_str(input).unwrap_err();
+        assert!(format!("{err}").contains(".environment: keys cannot be empty"));
+    }
+
+    #[test]
+    fn errors_on_backoff_base_delay_zero() {
+        let input = r#"
+        [[services]]
+        id = "s"
+        name = "S"
+        command = "echo"
+        [services.backoffConfig]
+        baseDelaySecs = 0
+        multiplier = 2.0
+        maxDelaySecs = 60
+        jitter = 0.0
+        failureWindowSecs = 300
+        "#;
+        let err = load_services_from_toml_str(input).unwrap_err();
+        assert!(format!("{err}").contains("backoffConfig.baseDelaySecs: must be > 0"));
+    }
+
+    #[test]
+    fn errors_on_backoff_jitter_out_of_range() {
+        let input = r#"
+        [[services]]
+        id = "s"
+        name = "S"
+        command = "echo"
+        [services.backoffConfig]
+        baseDelaySecs = 1
+        multiplier = 2.0
+        maxDelaySecs = 60
+        jitter = 1.5
+        failureWindowSecs = 300
+        "#;
+        let err = load_services_from_toml_str(input).unwrap_err();
+        assert!(format!("{err}").contains("backoffConfig.jitter: must be between 0.0 and 1.0"));
+    }
+
+    #[test]
+    fn errors_on_backoff_multiplier_zero() {
+        let input = r#"
+        [[services]]
+        id = "s"
+        name = "S"
+        command = "echo"
+        [services.backoffConfig]
+        baseDelaySecs = 1
+        multiplier = 0.0
+        maxDelaySecs = 60
+        jitter = 0.0
+        failureWindowSecs = 300
+        "#;
+        let err = load_services_from_toml_str(input).unwrap_err();
+        assert!(format!("{err}").contains("backoffConfig.multiplier: must be > 0"));
+    }
+
+    #[test]
+    fn errors_on_graceful_timeout_zero() {
+        let input = r#"
+        [[services]]
+        id = "s"
+        name = "S"
+        command = "echo"
+        gracefulTimeoutSecs = 0
+        "#;
+        let err = load_services_from_toml_str(input).unwrap_err();
+        assert!(format!("{err}").contains("gracefulTimeoutSecs: must be > 0"));
+    }
+
+    #[test]
+    fn errors_on_startup_timeout_zero() {
+        let input = r#"
+        [[services]]
+        id = "s"
+        name = "S"
+        command = "echo"
+        startupTimeoutSecs = 0
+        "#;
+        let err = load_services_from_toml_str(input).unwrap_err();
+        assert!(format!("{err}").contains("startupTimeoutSecs: must be > 0"));
+    }
+
+    #[test]
+    fn errors_on_health_check_interval_zero() {
+        let input = r#"
+        [[services]]
+        id = "s"
+        name = "S"
+        command = "echo"
+        [services.healthCheck]
+        intervalSecs = 0
+        timeoutSecs = 5
+        failureThreshold = 3
+        successThreshold = 1
+        [services.healthCheck.checkType]
+        type = "tcp"
+        port = 8080
+        "#;
+        let err = load_services_from_toml_str(input).unwrap_err();
+        assert!(format!("{err}").contains("healthCheck.intervalSecs: must be > 0"));
+    }
+
+    #[test]
+    fn errors_on_health_check_timeout_zero() {
+        let input = r#"
+        [[services]]
+        id = "s"
+        name = "S"
+        command = "echo"
+        [services.healthCheck]
+        intervalSecs = 10
+        timeoutSecs = 0
+        failureThreshold = 3
+        successThreshold = 1
+        [services.healthCheck.checkType]
+        type = "tcp"
+        port = 8080
+        "#;
+        let err = load_services_from_toml_str(input).unwrap_err();
+        assert!(format!("{err}").contains("healthCheck.timeoutSecs: must be > 0"));
+    }
+
+    #[test]
+    fn errors_on_health_check_failure_threshold_zero() {
+        let input = r#"
+        [[services]]
+        id = "s"
+        name = "S"
+        command = "echo"
+        [services.healthCheck]
+        intervalSecs = 10
+        timeoutSecs = 5
+        failureThreshold = 0
+        successThreshold = 1
+        [services.healthCheck.checkType]
+        type = "tcp"
+        port = 8080
+        "#;
+        let err = load_services_from_toml_str(input).unwrap_err();
+        assert!(format!("{err}").contains("healthCheck.failureThreshold: must be > 0"));
+    }
+
+    #[test]
+    fn errors_on_exec_check_empty_command() {
+        let input = r#"
+        [[services]]
+        id = "s"
+        name = "S"
+        command = "echo"
+        [services.healthCheck]
+        intervalSecs = 10
+        timeoutSecs = 5
+        failureThreshold = 3
+        successThreshold = 1
+        [services.healthCheck.checkType]
+        type = "exec"
+        command = "   "
+        "#;
+        let err = load_services_from_toml_str(input).unwrap_err();
+        assert!(format!("{err}").contains("type[Exec].command: cannot be empty"));
+    }
+
+    #[test]
+    fn accepts_valid_exec_health_check() {
+        let input = r#"
+        [[services]]
+        id = "s"
+        name = "S"
+        command = "echo"
+        [services.healthCheck]
+        intervalSecs = 10
+        timeoutSecs = 5
+        failureThreshold = 3
+        successThreshold = 1
+        [services.healthCheck.checkType]
+        type = "exec"
+        command = "curl -f http://localhost:8080/health"
+        "#;
+        let cfg = load_services_from_toml_str(input).expect("should parse exec health check");
+        assert_eq!(cfg.services.len(), 1);
+    }
+
+    #[test]
+    fn errors_on_readiness_check_interval_zero() {
+        let input = r#"
+        [[services]]
+        id = "s"
+        name = "S"
+        command = "echo"
+        [services.readinessCheck]
+        intervalSecs = 0
+        timeoutSecs = 5
+        successThreshold = 1
+        [services.readinessCheck.checkType]
+        type = "tcp"
+        port = 8080
+        "#;
+        let err = load_services_from_toml_str(input).unwrap_err();
+        assert!(format!("{err}").contains("readinessCheck.intervalSecs: must be > 0"));
+    }
+
+    #[test]
+    fn parses_keyed_by_id_format() {
+        let input = r#"
+        [svc1]
+        name = "Service One"
+        command = "echo"
+        args = ["hello"]
+
+        [svc2]
+        name = "Service Two"
+        command = "sh"
+        "#;
+        let cfg = load_services_from_toml_str(input).expect("should parse keyed format");
+        assert_eq!(cfg.services.len(), 2);
+        // IDs should be injected from table keys
+        let ids: std::collections::HashSet<_> = cfg.services.iter().map(|s| s.id.as_str()).collect();
+        assert!(ids.contains("svc1"));
+        assert!(ids.contains("svc2"));
+    }
+
+    // SimpleServicesFile tests
+    #[test]
+    fn simple_services_errors_on_empty() {
+        let err = load_simple_services_from_toml_str("").unwrap_err();
+        assert!(format!("{err}").contains("at least one service"));
+    }
+
+    #[test]
+    fn simple_services_errors_on_empty_hostname() {
+        let input = r#"
+        [web]
+        hostname = "   "
+        "#;
+        let err = load_simple_services_from_toml_str(input).unwrap_err();
+        assert!(format!("{err}").contains("hostname cannot be empty"));
+    }
+
+    #[test]
+    fn simple_services_errors_on_port_zero() {
+        let input = r#"
+        [web]
+        port = 0
+        "#;
+        let err = load_simple_services_from_toml_str(input).unwrap_err();
+        assert!(format!("{err}").contains("port must be 1..=65535"));
+    }
+
+    #[test]
+    fn simple_services_accepts_valid_config() {
+        let input = r#"
+        [web]
+        hostname = "app.dev"
+        port = 3000
+
+        [api]
+        port = 4000
+        "#;
+        let cfg = load_simple_services_from_toml_str(input).expect("should parse");
+        assert_eq!(cfg.services.len(), 2);
+        assert_eq!(cfg.services["web"].hostname.as_deref(), Some("app.dev"));
+        assert_eq!(cfg.services["web"].port, Some(3000));
+        assert_eq!(cfg.services["api"].hostname, None);
+    }
+
+    #[test]
+    fn simple_services_accepts_minimal_config() {
+        // Service with no hostname or port is valid
+        let input = r#"
+        [svc]
+        "#;
+        let cfg = load_simple_services_from_toml_str(input).expect("should parse minimal");
+        assert_eq!(cfg.services.len(), 1);
+        assert!(cfg.services["svc"].hostname.is_none());
+        assert!(cfg.services["svc"].port.is_none());
+    }
 }

@@ -292,4 +292,107 @@ mod tests {
         let msg = format!("{err}");
         assert!(msg.contains("Serialization error"));
     }
+
+    #[test]
+    fn load_missing_file_returns_error() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("nonexistent.json");
+
+        let err = load_snapshot(&path).unwrap_err();
+        let msg = format!("{err}");
+        // Should report an IO error (file not found)
+        assert!(msg.contains("IO error") || msg.contains("No such file"));
+    }
+
+    #[test]
+    fn wrong_snapshot_version_is_rejected() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("state.json");
+
+        // Write a snapshot with an unsupported version
+        let wrong_version = serde_json::json!({
+            "version": 999,
+            "timestamp": "2024-01-01T00:00:00Z",
+            "services": []
+        });
+        fs::write(&path, wrong_version.to_string()).unwrap();
+
+        let err = load_snapshot(&path).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("Unsupported snapshot version"));
+        assert!(msg.contains("999"));
+    }
+
+    #[test]
+    fn empty_snapshot_round_trips() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("state.json");
+
+        let snap = RegistrySnapshot::empty();
+        assert_eq!(snap.version, SNAPSHOT_VERSION);
+        assert!(snap.services.is_empty());
+
+        write_snapshot_atomic(&path, &snap).expect("write ok");
+        let loaded = load_snapshot(&path).expect("read ok");
+
+        assert_eq!(loaded.version, SNAPSHOT_VERSION);
+        assert!(loaded.services.is_empty());
+    }
+
+    #[test]
+    fn current_timestamp_is_rfc3339_format() {
+        let ts = current_timestamp();
+        // RFC3339 timestamps end with 'Z' (UTC) and contain 'T' separator
+        assert!(ts.ends_with('Z'), "timestamp should end with Z: {ts}");
+        assert!(ts.contains('T'), "timestamp should contain T separator: {ts}");
+        // Basic length check: "2024-01-01T00:00:00Z" = 20 chars
+        assert!(ts.len() >= 20, "timestamp too short: {ts}");
+    }
+
+    #[test]
+    fn atomic_write_creates_parent_directory() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("nested").join("dir").join("state.json");
+
+        // Parent does not exist yet
+        assert!(!path.parent().unwrap().exists());
+
+        let snap = RegistrySnapshot::empty();
+        write_snapshot_atomic(&path, &snap).expect("should create parent dirs");
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn snapshot_preserves_all_fields() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("state.json");
+
+        let snap = make_snap();
+        write_snapshot_atomic(&path, &snap).expect("write ok");
+
+        let loaded = load_snapshot(&path).expect("read ok");
+        let svc = &loaded.services[0];
+
+        assert_eq!(svc.id, "svc");
+        assert_eq!(svc.spec.name, "Test");
+        assert_eq!(svc.spec.command, "echo");
+        assert_eq!(svc.last_state, ServiceState::Idle);
+        assert!(svc.last_pid.is_none());
+    }
+
+    #[test]
+    fn snapshot_with_pid_round_trips() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("state.json");
+
+        let mut snap = make_snap();
+        snap.services[0].last_pid = Some(12345);
+        snap.services[0].last_state = ServiceState::Ready;
+
+        write_snapshot_atomic(&path, &snap).expect("write ok");
+        let loaded = load_snapshot(&path).expect("read ok");
+
+        assert_eq!(loaded.services[0].last_pid, Some(12345));
+        assert_eq!(loaded.services[0].last_state, ServiceState::Ready);
+    }
 }

@@ -574,4 +574,279 @@ mod unit_tests {
         handle.shutdown().unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+
+    #[tokio::test]
+    async fn test_get_pid_idle_returns_none() {
+        let spec = create_test_spec();
+        let process_adapter = Arc::new(MockProcessAdapter::new());
+        let (event_tx, _) = broadcast::channel(100);
+
+        let config = SupervisorConfig {
+            spec,
+            process_adapter,
+            event_tx,
+            proxy_adapter: Arc::new(NoopProxyAdapter),
+        };
+
+        let handle = spawn_supervisor(config);
+
+        // When idle, PID should be None
+        let pid = timeout(Duration::from_secs(1), handle.get_pid())
+            .await
+            .expect("timed out")
+            .expect("get_pid failed");
+        assert!(pid.is_none(), "Expected no PID when idle, got {pid:?}");
+
+        handle.shutdown().unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    #[tokio::test]
+    async fn test_get_spec_returns_configured_spec() {
+        let mut spec = create_test_spec();
+        spec.id = "unique-service-42".to_string();
+        spec.name = "Unique Service".to_string();
+
+        let process_adapter = Arc::new(MockProcessAdapter::new());
+        let (event_tx, _) = broadcast::channel(100);
+
+        let config = SupervisorConfig {
+            spec,
+            process_adapter,
+            event_tx,
+            proxy_adapter: Arc::new(NoopProxyAdapter),
+        };
+
+        let handle = spawn_supervisor(config);
+
+        let returned_spec = timeout(Duration::from_secs(1), handle.get_spec())
+            .await
+            .expect("timed out")
+            .expect("get_spec failed");
+
+        assert_eq!(returned_spec.id, "unique-service-42");
+        assert_eq!(returned_spec.name, "Unique Service");
+
+        handle.shutdown().unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    #[tokio::test]
+    async fn test_trigger_health_check_without_config_returns_error() {
+        // Spec has no health_check configured
+        let spec = create_test_spec(); // health_check: None
+        let process_adapter = Arc::new(MockProcessAdapter::new());
+        let (event_tx, _) = broadcast::channel(100);
+
+        let config = SupervisorConfig {
+            spec,
+            process_adapter,
+            event_tx,
+            proxy_adapter: Arc::new(NoopProxyAdapter),
+        };
+
+        let handle = spawn_supervisor(config);
+
+        let result = timeout(Duration::from_secs(1), handle.trigger_health_check())
+            .await
+            .expect("timed out");
+
+        assert!(
+            result.is_err(),
+            "Expected error when no health check configured"
+        );
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("No health check configured"),
+            "Expected 'No health check configured' in error, got: {msg}"
+        );
+
+        handle.shutdown().unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    #[tokio::test]
+    async fn test_trigger_readiness_check_without_config_returns_error() {
+        // Spec has no readiness_check configured
+        let spec = create_test_spec(); // readiness_check: None
+        let process_adapter = Arc::new(MockProcessAdapter::new());
+        let (event_tx, _) = broadcast::channel(100);
+
+        let config = SupervisorConfig {
+            spec,
+            process_adapter,
+            event_tx,
+            proxy_adapter: Arc::new(NoopProxyAdapter),
+        };
+
+        let handle = spawn_supervisor(config);
+
+        let result = timeout(Duration::from_secs(1), handle.trigger_readiness_check())
+            .await
+            .expect("timed out");
+
+        assert!(
+            result.is_err(),
+            "Expected error when no readiness check configured"
+        );
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("No readiness check configured"),
+            "Expected 'No readiness check configured' in error, got: {msg}"
+        );
+
+        handle.shutdown().unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    #[tokio::test]
+    async fn test_is_healthy_idle_service_is_not_healthy() {
+        let spec = create_test_spec();
+        let process_adapter = Arc::new(MockProcessAdapter::new());
+        let (event_tx, _) = broadcast::channel(100);
+
+        let config = SupervisorConfig {
+            spec,
+            process_adapter,
+            event_tx,
+            proxy_adapter: Arc::new(NoopProxyAdapter),
+        };
+
+        let handle = spawn_supervisor(config);
+
+        let healthy = timeout(Duration::from_secs(1), handle.is_healthy())
+            .await
+            .expect("timed out")
+            .expect("is_healthy failed");
+
+        assert!(!healthy, "Idle service should not be considered healthy");
+
+        handle.shutdown().unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    #[tokio::test]
+    async fn test_is_ready_idle_service_is_not_ready() {
+        let spec = create_test_spec();
+        let process_adapter = Arc::new(MockProcessAdapter::new());
+        let (event_tx, _) = broadcast::channel(100);
+
+        let config = SupervisorConfig {
+            spec,
+            process_adapter,
+            event_tx,
+            proxy_adapter: Arc::new(NoopProxyAdapter),
+        };
+
+        let handle = spawn_supervisor(config);
+
+        assert!(!handle.is_ready(), "Idle service should not be ready");
+
+        handle.shutdown().unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    #[tokio::test]
+    async fn test_update_spec_changes_effective_spec() {
+        let spec = create_test_spec();
+        let process_adapter = Arc::new(MockProcessAdapter::new());
+        let (event_tx, _) = broadcast::channel(100);
+
+        let config = SupervisorConfig {
+            spec,
+            process_adapter,
+            event_tx,
+            proxy_adapter: Arc::new(NoopProxyAdapter),
+        };
+
+        let handle = spawn_supervisor(config);
+
+        // Give the supervisor time to start
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Update the spec
+        let mut updated_spec = create_test_spec();
+        updated_spec.name = "Updated Service Name".to_string();
+        updated_spec.args = vec!["updated-arg".to_string()];
+
+        handle.update_spec(updated_spec).unwrap();
+
+        // Give it time to process the UpdateSpec message
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // The effective spec should now reflect the update
+        let current_spec = timeout(Duration::from_secs(1), handle.get_spec())
+            .await
+            .expect("timed out")
+            .expect("get_spec failed");
+
+        assert_eq!(current_spec.name, "Updated Service Name");
+        assert_eq!(current_spec.args, vec!["updated-arg"]);
+
+        handle.shutdown().unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    #[tokio::test]
+    async fn test_get_pid_while_process_running() {
+        use crate::supervisor::adapters::MockInstruction;
+
+        let spec = create_test_spec();
+
+        let process_adapter = Arc::new(MockProcessAdapter::new());
+        // Process that lives for a while
+        process_adapter
+            .add_instruction(MockInstruction {
+                exit_delay: Duration::from_secs(5),
+                exit_code: Some(0),
+                signal: None,
+                responds_to_signals: true,
+            })
+            .await;
+
+        let (event_tx, _) = broadcast::channel(100);
+
+        let config = SupervisorConfig {
+            spec,
+            process_adapter,
+            event_tx,
+            proxy_adapter: Arc::new(NoopProxyAdapter),
+        };
+
+        let handle = spawn_supervisor(config);
+
+        // Start the service
+        handle.start().unwrap();
+
+        // Wait for it to reach a running state
+        let mut state_rx = handle.subscribe_to_state();
+        let _ = timeout(Duration::from_secs(2), async {
+            loop {
+                state_rx.changed().await.ok();
+                let state = *state_rx.borrow();
+                if state == ServiceState::Ready || state == ServiceState::Starting || state == ServiceState::Spawning {
+                    break;
+                }
+            }
+        })
+        .await;
+
+        // Wait a bit more for process to be set
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let pid = timeout(Duration::from_secs(1), handle.get_pid())
+            .await
+            .expect("timed out")
+            .expect("get_pid failed");
+
+        // PID should be set when a process is running
+        // (state may be Spawning/Starting/Ready depending on timing)
+        let state = handle.current_state();
+        if state == ServiceState::Ready || state == ServiceState::Starting || state == ServiceState::Spawning {
+            assert!(pid.is_some(), "Expected a PID when process is running (state={state:?})");
+        }
+
+        handle.shutdown().unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
 }
