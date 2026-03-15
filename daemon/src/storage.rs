@@ -481,7 +481,10 @@ mod tests {
             .upsert_service("svc3", "Service Three", "idle", None, None, Some("myhost"))
             .await
             .expect("upsert");
-        let hostname = storage.fetch_hostname("svc3").await.expect("fetch_hostname");
+        let hostname = storage
+            .fetch_hostname("svc3")
+            .await
+            .expect("fetch_hostname");
         assert_eq!(hostname, Some("myhost".to_string()));
     }
 
@@ -492,7 +495,10 @@ mod tests {
             .upsert_service("svc4", "Service Four", "idle", None, None, None)
             .await
             .expect("upsert");
-        let hostname = storage.fetch_hostname("svc4").await.expect("fetch_hostname");
+        let hostname = storage
+            .fetch_hostname("svc4")
+            .await
+            .expect("fetch_hostname");
         assert_eq!(hostname, None);
     }
 
@@ -520,15 +526,32 @@ mod tests {
     async fn upsert_is_idempotent_last_write_wins() {
         let storage = open_in_memory();
         storage
-            .upsert_service("svc5", "Old Name", "idle", None, Some(1000), Some("old-host"))
+            .upsert_service(
+                "svc5",
+                "Old Name",
+                "idle",
+                None,
+                Some(1000),
+                Some("old-host"),
+            )
             .await
             .expect("first upsert");
         storage
-            .upsert_service("svc5", "New Name", "running", Some(42), Some(2000), Some("new-host"))
+            .upsert_service(
+                "svc5",
+                "New Name",
+                "running",
+                Some(42),
+                Some(2000),
+                Some("new-host"),
+            )
             .await
             .expect("second upsert");
         let port = storage.fetch_port("svc5").await.expect("fetch_port");
-        let hostname = storage.fetch_hostname("svc5").await.expect("fetch_hostname");
+        let hostname = storage
+            .fetch_hostname("svc5")
+            .await
+            .expect("fetch_hostname");
         assert_eq!(port, Some(2000));
         assert_eq!(hostname, Some("new-host".to_string()));
     }
@@ -567,14 +590,24 @@ mod tests {
     async fn update_hostname_changes_value() {
         let storage = open_in_memory();
         storage
-            .upsert_service("svc8", "Service Eight", "idle", None, None, Some("original"))
+            .upsert_service(
+                "svc8",
+                "Service Eight",
+                "idle",
+                None,
+                None,
+                Some("original"),
+            )
             .await
             .expect("upsert");
         storage
             .update_hostname("svc8", Some("updated"))
             .await
             .expect("update_hostname");
-        let hostname = storage.fetch_hostname("svc8").await.expect("fetch_hostname");
+        let hostname = storage
+            .fetch_hostname("svc8")
+            .await
+            .expect("fetch_hostname");
         assert_eq!(hostname, Some("updated".to_string()));
     }
 
@@ -582,14 +615,24 @@ mod tests {
     async fn update_hostname_to_null_clears_value() {
         let storage = open_in_memory();
         storage
-            .upsert_service("svc9", "Service Nine", "idle", None, None, Some("will-be-cleared"))
+            .upsert_service(
+                "svc9",
+                "Service Nine",
+                "idle",
+                None,
+                None,
+                Some("will-be-cleared"),
+            )
             .await
             .expect("upsert");
         storage
             .update_hostname("svc9", None)
             .await
             .expect("update_hostname null");
-        let hostname = storage.fetch_hostname("svc9").await.expect("fetch_hostname");
+        let hostname = storage
+            .fetch_hostname("svc9")
+            .await
+            .expect("fetch_hostname");
         assert_eq!(hostname, None);
     }
 
@@ -634,11 +677,21 @@ mod tests {
     async fn delete_service_removes_row() {
         let storage = open_in_memory();
         storage
-            .upsert_service("svc12", "Service Twelve", "idle", None, Some(8888), Some("ghost"))
+            .upsert_service(
+                "svc12",
+                "Service Twelve",
+                "idle",
+                None,
+                Some(8888),
+                Some("ghost"),
+            )
             .await
             .expect("upsert");
         // Confirm it exists before deletion
-        let port_before = storage.fetch_port("svc12").await.expect("fetch_port before");
+        let port_before = storage
+            .fetch_port("svc12")
+            .await
+            .expect("fetch_port before");
         assert_eq!(port_before, Some(8888));
 
         storage
@@ -689,7 +742,14 @@ mod tests {
         use ipc::server::ServiceMetaStore;
         let storage = open_in_memory();
         storage
-            .upsert_service("trait-svc2", "Trait Service 2", "idle", None, Some(5000), None)
+            .upsert_service(
+                "trait-svc2",
+                "Trait Service 2",
+                "idle",
+                None,
+                Some(5000),
+                None,
+            )
             .await
             .expect("upsert");
 
@@ -726,7 +786,14 @@ mod tests {
         use ipc::server::ServiceMetaStore;
         let storage = open_in_memory();
         storage
-            .upsert_service("trait-svc4", "Trait Service 4", "idle", None, Some(4444), None)
+            .upsert_service(
+                "trait-svc4",
+                "Trait Service 4",
+                "idle",
+                None,
+                Some(4444),
+                None,
+            )
             .await
             .expect("upsert");
 
