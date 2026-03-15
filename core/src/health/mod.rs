@@ -92,7 +92,7 @@ mod tests {
             panic!("expected error")
         };
         assert!(
-            matches!(err, HealthError::UnsupportedProbeType(_)),
+            matches!(&err, HealthError::UnsupportedProbeType(_)),
             "expected UnsupportedProbeType, got {err:?}"
         );
         assert!(

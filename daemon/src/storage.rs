@@ -85,19 +85,7 @@ impl SqliteStorage {
                 e
             );
         }
-        conn.execute_batch(
-            r"
-            CREATE TABLE IF NOT EXISTS services (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                state TEXT NOT NULL,
-                pid INTEGER,
-                port INTEGER,
-                hostname TEXT,
-                updated_at INTEGER NOT NULL
-            );
-            ",
-        )?;
+        init_schema(&conn)?;
 
         // Best-effort migrations for existing DBs missing new columns
         match conn.execute("ALTER TABLE services ADD COLUMN port INTEGER", []) {
@@ -354,6 +342,25 @@ fn now_ts() -> i64 {
     i64::try_from(secs).unwrap_or(i64::MAX)
 }
 
+/// Create the `services` table schema.
+///
+/// Shared by `open_default` and the test helper so both always use identical `DDL`.
+fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        r"
+        CREATE TABLE IF NOT EXISTS services (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            state TEXT NOT NULL,
+            pid INTEGER,
+            port INTEGER,
+            hostname TEXT,
+            updated_at INTEGER NOT NULL
+        );
+        ",
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -387,20 +394,7 @@ mod tests {
     fn open_in_memory() -> SqliteStorage {
         use rusqlite::Connection;
         let conn = Connection::open_in_memory().expect("in-memory db");
-        conn.execute_batch(
-            r"
-            CREATE TABLE IF NOT EXISTS services (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                state TEXT NOT NULL,
-                pid INTEGER,
-                port INTEGER,
-                hostname TEXT,
-                updated_at INTEGER NOT NULL
-            );
-            ",
-        )
-        .expect("schema");
+        init_schema(&conn).expect("schema");
         SqliteStorage {
             conn: Arc::new(Mutex::new(conn)),
         }
@@ -647,10 +641,16 @@ mod tests {
             .update_state("svc10", "running")
             .await
             .expect("update_state");
-        // State column is not exposed via a getter, but we verify indirectly
-        // by confirming no error and that port/hostname are unaffected.
-        let port = storage.fetch_port("svc10").await.expect("fetch_port");
-        assert_eq!(port, None);
+        let state: String = {
+            let conn = storage.conn.lock().await;
+            conn.query_row(
+                "SELECT state FROM services WHERE id = ?1",
+                params!["svc10"],
+                |row| row.get(0),
+            )
+            .expect("query state")
+        };
+        assert_eq!(state, "running");
     }
 
     #[tokio::test]
@@ -660,17 +660,36 @@ mod tests {
             .upsert_service("svc11", "Service Eleven", "idle", None, None, None)
             .await
             .expect("upsert");
+
         storage
             .update_pid("svc11", Some(12345))
             .await
             .expect("update_pid");
+        let pid_set: Option<i64> = {
+            let conn = storage.conn.lock().await;
+            conn.query_row(
+                "SELECT pid FROM services WHERE id = ?1",
+                params!["svc11"],
+                |row| row.get(0),
+            )
+            .expect("query pid after set")
+        };
+        assert_eq!(pid_set, Some(12345));
+
         storage
             .update_pid("svc11", None)
             .await
             .expect("update_pid null");
-        // PID column has no getter; verify port/hostname are unaffected.
-        let port = storage.fetch_port("svc11").await.expect("fetch_port");
-        assert_eq!(port, None);
+        let pid_cleared: Option<i64> = {
+            let conn = storage.conn.lock().await;
+            conn.query_row(
+                "SELECT pid FROM services WHERE id = ?1",
+                params!["svc11"],
+                |row| row.get(0),
+            )
+            .expect("query pid after clear")
+        };
+        assert_eq!(pid_cleared, None);
     }
 
     #[tokio::test]
