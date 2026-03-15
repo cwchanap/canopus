@@ -382,7 +382,7 @@ mod tests {
         }
     }
 
-    /// Create a `SqliteStorage` backed by an in-memory SQLite database for testing.
+    /// Create a `SqliteStorage` backed by an in-memory `SQLite` database for testing.
     /// This avoids touching the filesystem or environment variables.
     fn open_in_memory() -> SqliteStorage {
         use rusqlite::Connection;
