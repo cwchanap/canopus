@@ -88,10 +88,7 @@ mod tests {
         let result = create_probe(&check_type, Duration::from_secs(1));
         assert!(result.is_err(), "expected Err for Exec probe");
         // Extract error without unwrap_err() since Box<dyn Probe> isn't Debug
-        let err = match result {
-            Err(e) => e,
-            Ok(_) => panic!("expected error"),
-        };
+        let Err(err) = result else { panic!("expected error") };
         assert!(
             matches!(err, HealthError::UnsupportedProbeType(_)),
             "expected UnsupportedProbeType, got {err:?}"
