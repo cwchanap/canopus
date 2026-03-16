@@ -680,4 +680,139 @@ mod tests {
         server.await.expect("server task should complete");
         let _ = std::fs::remove_file(&socket_path);
     }
+
+    // ── jsonrpc_req ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn jsonrpc_req_sets_correct_fields() {
+        let req = jsonrpc_req("canopus.list", Value::Null, 42);
+        assert_eq!(req.jsonrpc, "2.0");
+        assert_eq!(req.method, "canopus.list");
+        assert_eq!(req.id, Some(Value::from(42_u64)));
+        // Null params should be omitted
+        assert!(req.params.is_none(), "Null params should become None");
+    }
+
+    #[test]
+    fn jsonrpc_req_includes_non_null_params() {
+        let params = serde_json::json!({"serviceId": "svc"});
+        let req = jsonrpc_req("canopus.start", params.clone(), 1);
+        assert_eq!(req.params, Some(params));
+    }
+
+    // ── read_json / write_json round-trip ────────────────────────────────────
+
+    #[tokio::test]
+    async fn write_and_read_json_round_trip() {
+        use tokio::io::AsyncWriteExt;
+
+        let (raw_reader, mut writer) = tokio::io::duplex(1024);
+        let mut reader = tokio::io::BufReader::new(raw_reader);
+
+        let value = serde_json::json!({"jsonrpc": "2.0", "result": {"version": "1.0.0"}, "id": 1});
+        write_json(&mut writer, &value).await.expect("write ok");
+
+        let parsed: Value = read_json(&mut reader).await.expect("read ok");
+        assert_eq!(parsed["result"]["version"], "1.0.0");
+    }
+
+    #[tokio::test]
+    async fn read_json_returns_empty_response_on_eof() {
+        let (raw_reader, writer) = tokio::io::duplex(1024);
+        let mut reader = tokio::io::BufReader::new(raw_reader);
+        drop(writer);
+
+        let result: Result<Value> = read_json(&mut reader).await;
+        assert!(matches!(result, Err(IpcError::EmptyResponse)));
+    }
+
+    #[tokio::test]
+    async fn read_json_returns_deserialization_error_on_invalid_json() {
+        use tokio::io::AsyncWriteExt;
+
+        let (raw_reader, mut writer) = tokio::io::duplex(1024);
+        let mut reader = tokio::io::BufReader::new(raw_reader);
+
+        writer.write_all(b"not-json\n").await.unwrap();
+
+        let result: Result<Value> = read_json(&mut reader).await;
+        assert!(
+            matches!(result, Err(IpcError::DeserializationFailed(_))),
+            "expected deserialization error, got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn read_json_strips_trailing_newline_and_crlf() {
+        use tokio::io::AsyncWriteExt;
+
+        let (raw_reader, mut writer) = tokio::io::duplex(1024);
+        let mut reader = tokio::io::BufReader::new(raw_reader);
+
+        // Write with \r\n
+        writer
+            .write_all(b"{\"ok\":true}\r\n")
+            .await
+            .expect("write ok");
+        let parsed: Value = read_json(&mut reader).await.expect("parse ok");
+        assert_eq!(parsed["ok"], true);
+    }
+
+    // ── read_value ────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn read_value_returns_empty_response_on_eof() {
+        let (raw_reader, writer) = tokio::io::duplex(1024);
+        let mut reader = tokio::io::BufReader::new(raw_reader);
+        drop(writer);
+
+        let result = read_value(&mut reader).await;
+        assert!(matches!(result, Err(IpcError::EmptyResponse)));
+    }
+
+    #[tokio::test]
+    async fn read_value_parses_arbitrary_json() {
+        use tokio::io::AsyncWriteExt;
+
+        let (raw_reader, mut writer) = tokio::io::duplex(1024);
+        let mut reader = tokio::io::BufReader::new(raw_reader);
+
+        writer
+            .write_all(b"{\"method\":\"canopus.tailLogs.update\"}\n")
+            .await
+            .unwrap();
+        let val = read_value(&mut reader).await.expect("parse ok");
+        assert_eq!(val["method"], "canopus.tailLogs.update");
+    }
+
+    // ── JsonRpcClient::new ────────────────────────────────────────────────────
+
+    #[test]
+    fn json_rpc_client_stores_socket_path_and_token() {
+        let client = JsonRpcClient::new("/tmp/test.sock", Some("tok123".to_string()));
+        assert_eq!(client.socket_path, PathBuf::from("/tmp/test.sock"));
+        assert_eq!(client.token.as_deref(), Some("tok123"));
+    }
+
+    #[test]
+    fn json_rpc_client_with_no_token() {
+        let client = JsonRpcClient::new("/tmp/test.sock", None);
+        assert!(client.token.is_none());
+    }
+
+    // ── extract_version ───────────────────────────────────────────────────────
+
+    #[test]
+    fn extract_version_returns_version_string() {
+        let val = serde_json::json!({"version": "2.0.0"});
+        let version = extract_version(&val).expect("should parse");
+        assert_eq!(version, "2.0.0");
+    }
+
+    #[test]
+    fn extract_version_errors_when_version_is_non_string() {
+        let val = serde_json::json!({"version": 123});
+        let err = extract_version(&val).expect_err("non-string should fail");
+        assert!(matches!(err, IpcError::ProtocolError(_)));
+    }
 }
