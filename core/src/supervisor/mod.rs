@@ -818,33 +818,42 @@ mod unit_tests {
         // Start the service
         handle.start().unwrap();
 
-        // Wait for it to reach a running state
+        // Wait for it to reach a running state; fail fast if it never does.
         let mut state_rx = handle.subscribe_to_state();
-        let _ = timeout(Duration::from_secs(2), async {
+        let reached_running = timeout(Duration::from_secs(2), async {
             loop {
                 state_rx.changed().await.ok();
                 let state = *state_rx.borrow();
-                if state == ServiceState::Ready || state == ServiceState::Starting || state == ServiceState::Spawning {
-                    break;
+                if state == ServiceState::Ready
+                    || state == ServiceState::Starting
+                    || state == ServiceState::Spawning
+                {
+                    break state;
                 }
             }
         })
-        .await;
+        .await
+        .expect("service did not reach a running state within 2 seconds");
 
-        // Wait a bit more for process to be set
+        assert!(
+            reached_running == ServiceState::Ready
+                || reached_running == ServiceState::Starting
+                || reached_running == ServiceState::Spawning,
+            "unexpected state after reaching running: {reached_running:?}"
+        );
+
+        // Give the supervisor task a moment to record the PID.
         tokio::time::sleep(Duration::from_millis(200)).await;
 
         let pid = timeout(Duration::from_secs(1), handle.get_pid())
             .await
-            .expect("timed out")
+            .expect("get_pid timed out")
             .expect("get_pid failed");
 
-        // PID should be set when a process is running
-        // (state may be Spawning/Starting/Ready depending on timing)
-        let state = handle.current_state();
-        if state == ServiceState::Ready || state == ServiceState::Starting || state == ServiceState::Spawning {
-            assert!(pid.is_some(), "Expected a PID when process is running (state={state:?})");
-        }
+        assert!(
+            pid.is_some(),
+            "Expected a PID when process is running (last observed state={reached_running:?})"
+        );
 
         handle.shutdown().unwrap();
         tokio::time::sleep(Duration::from_millis(200)).await;
