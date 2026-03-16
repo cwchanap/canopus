@@ -1608,9 +1608,13 @@ mod tests {
                 params: Some(serde_json::json!({})),
                 id: Some(Value::from(3)),
             };
-            let result =
-                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
-                    .await;
+            let result = route_method(
+                &default_config(),
+                Arc::new(NoopControlPlane),
+                make_writer(),
+                req,
+            )
+            .await;
             assert!(
                 matches!(result, Err(IpcError::ProtocolError(_))),
                 "expected ProtocolError for missing serviceId, got {result:?}"
@@ -1628,11 +1632,15 @@ mod tests {
                 params: Some(serde_json::json!({"serviceId": "svc"})),
                 id: Some(Value::from(3)),
             };
-            let resp =
-                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
-                    .await
-                    .unwrap()
-                    .unwrap();
+            let resp = route_method(
+                &default_config(),
+                Arc::new(NoopControlPlane),
+                make_writer(),
+                req,
+            )
+            .await
+            .unwrap()
+            .unwrap();
             assert!(resp.error.is_some(), "expected error from noop");
             assert_eq!(resp.error.unwrap().code, -32000);
         }
@@ -1649,9 +1657,13 @@ mod tests {
                 params: Some(serde_json::json!({})),
                 id: Some(Value::from(4)),
             };
-            let result =
-                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
-                    .await;
+            let result = route_method(
+                &default_config(),
+                Arc::new(NoopControlPlane),
+                make_writer(),
+                req,
+            )
+            .await;
             assert!(matches!(result, Err(IpcError::ProtocolError(_))));
         }
     }
@@ -1666,11 +1678,15 @@ mod tests {
                 params: Some(serde_json::json!({"serviceId": "svc"})),
                 id: Some(Value::from(4)),
             };
-            let resp =
-                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
-                    .await
-                    .unwrap()
-                    .unwrap();
+            let resp = route_method(
+                &default_config(),
+                Arc::new(NoopControlPlane),
+                make_writer(),
+                req,
+            )
+            .await
+            .unwrap()
+            .unwrap();
             assert!(resp.error.is_some());
         }
     }
@@ -1686,9 +1702,13 @@ mod tests {
                 params: Some(serde_json::json!({})),
                 id: Some(Value::from(5)),
             };
-            let result =
-                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
-                    .await;
+            let result = route_method(
+                &default_config(),
+                Arc::new(NoopControlPlane),
+                make_writer(),
+                req,
+            )
+            .await;
             assert!(matches!(result, Err(IpcError::ProtocolError(_))));
         }
     }
@@ -1703,11 +1723,15 @@ mod tests {
                 params: Some(serde_json::json!({"serviceId": "svc"})),
                 id: Some(Value::from(5)),
             };
-            let resp =
-                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
-                    .await
-                    .unwrap()
-                    .unwrap();
+            let resp = route_method(
+                &default_config(),
+                Arc::new(NoopControlPlane),
+                make_writer(),
+                req,
+            )
+            .await
+            .unwrap()
+            .unwrap();
             assert!(resp.error.is_some());
         }
     }
@@ -1723,9 +1747,13 @@ mod tests {
                 params: Some(serde_json::json!({})),
                 id: Some(Value::from(6)),
             };
-            let result =
-                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
-                    .await;
+            let result = route_method(
+                &default_config(),
+                Arc::new(NoopControlPlane),
+                make_writer(),
+                req,
+            )
+            .await;
             assert!(matches!(result, Err(IpcError::ProtocolError(_))));
         }
     }
@@ -1740,11 +1768,15 @@ mod tests {
                 params: Some(serde_json::json!({"serviceId": "svc"})),
                 id: Some(Value::from(6)),
             };
-            let resp =
-                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
-                    .await
-                    .unwrap()
-                    .unwrap();
+            let resp = route_method(
+                &default_config(),
+                Arc::new(NoopControlPlane),
+                make_writer(),
+                req,
+            )
+            .await
+            .unwrap()
+            .unwrap();
             assert!(resp.error.is_some());
         }
     }
@@ -1760,9 +1792,13 @@ mod tests {
                 params: Some(serde_json::json!({"host": "app.dev"})),
                 id: Some(Value::from(7)),
             };
-            let result =
-                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
-                    .await;
+            let result = route_method(
+                &default_config(),
+                Arc::new(NoopControlPlane),
+                make_writer(),
+                req,
+            )
+            .await;
             assert!(matches!(result, Err(IpcError::ProtocolError(_))));
         }
     }
@@ -1777,9 +1813,13 @@ mod tests {
                 params: Some(serde_json::json!({"serviceId": "svc"})),
                 id: Some(Value::from(7)),
             };
-            let result =
-                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
-                    .await;
+            let result = route_method(
+                &default_config(),
+                Arc::new(NoopControlPlane),
+                make_writer(),
+                req,
+            )
+            .await;
             assert!(matches!(result, Err(IpcError::ProtocolError(_))));
         }
     }
@@ -1794,11 +1834,15 @@ mod tests {
                 params: Some(serde_json::json!({"serviceId": "svc", "host": "app.dev"})),
                 id: Some(Value::from(7)),
             };
-            let resp =
-                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
-                    .await
-                    .unwrap()
-                    .unwrap();
+            let resp = route_method(
+                &default_config(),
+                Arc::new(NoopControlPlane),
+                make_writer(),
+                req,
+            )
+            .await
+            .unwrap()
+            .unwrap();
             assert!(resp.error.is_some());
         }
     }
@@ -1814,9 +1858,13 @@ mod tests {
                 params: Some(serde_json::json!({})),
                 id: Some(Value::from(8)),
             };
-            let result =
-                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
-                    .await;
+            let result = route_method(
+                &default_config(),
+                Arc::new(NoopControlPlane),
+                make_writer(),
+                req,
+            )
+            .await;
             assert!(matches!(result, Err(IpcError::ProtocolError(_))));
         }
     }
@@ -1831,11 +1879,15 @@ mod tests {
                 params: Some(serde_json::json!({"serviceId": "svc"})),
                 id: Some(Value::from(8)),
             };
-            let resp =
-                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
-                    .await
-                    .unwrap()
-                    .unwrap();
+            let resp = route_method(
+                &default_config(),
+                Arc::new(NoopControlPlane),
+                make_writer(),
+                req,
+            )
+            .await
+            .unwrap()
+            .unwrap();
             assert!(resp.error.is_some());
         }
     }
@@ -1851,9 +1903,13 @@ mod tests {
                 params: Some(serde_json::json!({})),
                 id: Some(Value::from(9)),
             };
-            let result =
-                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
-                    .await;
+            let result = route_method(
+                &default_config(),
+                Arc::new(NoopControlPlane),
+                make_writer(),
+                req,
+            )
+            .await;
             assert!(matches!(result, Err(IpcError::ProtocolError(_))));
         }
     }
@@ -1868,11 +1924,15 @@ mod tests {
                 params: Some(serde_json::json!({"serviceId": "svc"})),
                 id: Some(Value::from(9)),
             };
-            let resp =
-                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
-                    .await
-                    .unwrap()
-                    .unwrap();
+            let resp = route_method(
+                &default_config(),
+                Arc::new(NoopControlPlane),
+                make_writer(),
+                req,
+            )
+            .await
+            .unwrap()
+            .unwrap();
             assert!(resp.error.is_some());
         }
     }
@@ -1888,9 +1948,13 @@ mod tests {
                 params: Some(serde_json::json!({})),
                 id: Some(Value::from(10)),
             };
-            let result =
-                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
-                    .await;
+            let result = route_method(
+                &default_config(),
+                Arc::new(NoopControlPlane),
+                make_writer(),
+                req,
+            )
+            .await;
             assert!(matches!(result, Err(IpcError::ProtocolError(_))));
         }
     }
@@ -1906,9 +1970,13 @@ mod tests {
                 params: Some(serde_json::json!({"serviceId": "svc"})),
                 id: Some(Value::from(10)),
             };
-            let result =
-                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
-                    .await;
+            let result = route_method(
+                &default_config(),
+                Arc::new(NoopControlPlane),
+                make_writer(),
+                req,
+            )
+            .await;
             assert!(
                 result.is_err(),
                 "expected Err propagated from noop, got {result:?}"
@@ -1927,11 +1995,15 @@ mod tests {
                 params: None,
                 id: Some(Value::from(99)),
             };
-            let resp =
-                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
-                    .await
-                    .unwrap()
-                    .unwrap();
+            let resp = route_method(
+                &default_config(),
+                Arc::new(NoopControlPlane),
+                make_writer(),
+                req,
+            )
+            .await
+            .unwrap()
+            .unwrap();
             assert!(resp.error.is_some());
             assert_eq!(resp.error.unwrap().code, -32601);
         }
@@ -1950,11 +2022,15 @@ mod tests {
                 id: Some(Value::from(11)),
             };
             // With Noop this returns a controlled error, but should NOT return -32602
-            let resp =
-                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
-                    .await
-                    .unwrap()
-                    .unwrap();
+            let resp = route_method(
+                &default_config(),
+                Arc::new(NoopControlPlane),
+                make_writer(),
+                req,
+            )
+            .await
+            .unwrap()
+            .unwrap();
             // Should be a -32000 error (Noop not implemented), not a -32602 param error
             let err = resp.error.expect("expected error from noop");
             assert_eq!(err.code, -32000);

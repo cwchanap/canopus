@@ -676,7 +676,8 @@ mod tests {
         let cfg = load_services_from_toml_str(input).expect("should parse keyed format");
         assert_eq!(cfg.services.len(), 2);
         // IDs should be injected from table keys
-        let ids: std::collections::HashSet<_> = cfg.services.iter().map(|s| s.id.as_str()).collect();
+        let ids: std::collections::HashSet<_> =
+            cfg.services.iter().map(|s| s.id.as_str()).collect();
         assert!(ids.contains("svc1"));
         assert!(ids.contains("svc2"));
     }
@@ -798,8 +799,7 @@ mod tests {
     #[test]
     fn load_services_from_file_path_missing_returns_error() {
         use std::path::PathBuf;
-        let result =
-            load_services_from_toml_path(PathBuf::from("/nonexistent/services.toml"));
+        let result = load_services_from_toml_path(PathBuf::from("/nonexistent/services.toml"));
         assert!(result.is_err());
         assert!(format!("{}", result.unwrap_err()).contains("Failed to read config"));
     }

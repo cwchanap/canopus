@@ -440,6 +440,9 @@ mod tests {
     async fn bootstrap_with_invalid_config_path_returns_error() {
         let bad_path = std::path::PathBuf::from("/nonexistent/canopus/services.toml");
         let result = bootstrap_with_runtime(Some(bad_path), None, Some("127.0.0.1:0")).await;
-        assert!(result.is_err(), "expected error for nonexistent config path");
+        assert!(
+            result.is_err(),
+            "expected error for nonexistent config path"
+        );
     }
 }
