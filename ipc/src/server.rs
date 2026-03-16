@@ -1533,4 +1533,439 @@ mod tests {
         let result = read_request(&mut reader).await;
         assert!(matches!(result, Err(IpcError::EmptyResponse)));
     }
+
+    // ── Helper ────────────────────────────────────────────────────────────────
+    #[cfg(unix)]
+    fn make_writer() -> Arc<Mutex<tokio::net::unix::OwnedWriteHalf>> {
+        let (stream, _peer) = tokio::net::UnixStream::pair().expect("unix pair");
+        let (_reader, writer) = stream.into_split();
+        Arc::new(Mutex::new(writer))
+    }
+
+    #[cfg(unix)]
+    fn default_config() -> IpcServerConfig {
+        IpcServerConfig::default()
+    }
+
+    // ── canopus.version ───────────────────────────────────────────────────────
+    #[tokio::test]
+    async fn route_version_returns_configured_version() {
+        #[cfg(unix)]
+        {
+            let mut cfg = default_config();
+            cfg.version = "1.2.3-test".to_string();
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.version".to_string(),
+                params: None,
+                id: Some(Value::from(1)),
+            };
+            let resp = route_method(&cfg, Arc::new(NoopControlPlane), make_writer(), req)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+            let version = resp.result.unwrap();
+            assert_eq!(version["version"], "1.2.3-test");
+        }
+    }
+
+    // ── canopus.list ──────────────────────────────────────────────────────────
+    #[tokio::test]
+    async fn route_list_returns_empty_services() {
+        #[cfg(unix)]
+        {
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.list".to_string(),
+                params: None,
+                id: Some(Value::from(2)),
+            };
+            let resp = route_method(
+                &default_config(),
+                Arc::new(NoopControlPlane),
+                make_writer(),
+                req,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert!(resp.error.is_none());
+            let services = &resp.result.unwrap()["services"];
+            assert!(services.is_array());
+            assert_eq!(services.as_array().unwrap().len(), 0);
+        }
+    }
+
+    // ── canopus.status ────────────────────────────────────────────────────────
+    #[tokio::test]
+    async fn route_status_missing_service_id_returns_protocol_error() {
+        #[cfg(unix)]
+        {
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.status".to_string(),
+                params: Some(serde_json::json!({})),
+                id: Some(Value::from(3)),
+            };
+            let result =
+                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
+                    .await;
+            assert!(
+                matches!(result, Err(IpcError::ProtocolError(_))),
+                "expected ProtocolError for missing serviceId, got {result:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn route_status_with_service_id_returns_error_from_noop() {
+        #[cfg(unix)]
+        {
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.status".to_string(),
+                params: Some(serde_json::json!({"serviceId": "svc"})),
+                id: Some(Value::from(3)),
+            };
+            let resp =
+                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert!(resp.error.is_some(), "expected error from noop");
+            assert_eq!(resp.error.unwrap().code, -32000);
+        }
+    }
+
+    // ── canopus.start ─────────────────────────────────────────────────────────
+    #[tokio::test]
+    async fn route_start_missing_service_id_returns_protocol_error() {
+        #[cfg(unix)]
+        {
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.start".to_string(),
+                params: Some(serde_json::json!({})),
+                id: Some(Value::from(4)),
+            };
+            let result =
+                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
+                    .await;
+            assert!(matches!(result, Err(IpcError::ProtocolError(_))));
+        }
+    }
+
+    #[tokio::test]
+    async fn route_start_valid_params_returns_error_from_noop() {
+        #[cfg(unix)]
+        {
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.start".to_string(),
+                params: Some(serde_json::json!({"serviceId": "svc"})),
+                id: Some(Value::from(4)),
+            };
+            let resp =
+                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert!(resp.error.is_some());
+        }
+    }
+
+    // ── canopus.stop ──────────────────────────────────────────────────────────
+    #[tokio::test]
+    async fn route_stop_missing_service_id_returns_protocol_error() {
+        #[cfg(unix)]
+        {
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.stop".to_string(),
+                params: Some(serde_json::json!({})),
+                id: Some(Value::from(5)),
+            };
+            let result =
+                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
+                    .await;
+            assert!(matches!(result, Err(IpcError::ProtocolError(_))));
+        }
+    }
+
+    #[tokio::test]
+    async fn route_stop_valid_params_returns_error_from_noop() {
+        #[cfg(unix)]
+        {
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.stop".to_string(),
+                params: Some(serde_json::json!({"serviceId": "svc"})),
+                id: Some(Value::from(5)),
+            };
+            let resp =
+                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert!(resp.error.is_some());
+        }
+    }
+
+    // ── canopus.restart ───────────────────────────────────────────────────────
+    #[tokio::test]
+    async fn route_restart_missing_service_id_returns_protocol_error() {
+        #[cfg(unix)]
+        {
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.restart".to_string(),
+                params: Some(serde_json::json!({})),
+                id: Some(Value::from(6)),
+            };
+            let result =
+                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
+                    .await;
+            assert!(matches!(result, Err(IpcError::ProtocolError(_))));
+        }
+    }
+
+    #[tokio::test]
+    async fn route_restart_valid_params_returns_error_from_noop() {
+        #[cfg(unix)]
+        {
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.restart".to_string(),
+                params: Some(serde_json::json!({"serviceId": "svc"})),
+                id: Some(Value::from(6)),
+            };
+            let resp =
+                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert!(resp.error.is_some());
+        }
+    }
+
+    // ── canopus.bindHost ──────────────────────────────────────────────────────
+    #[tokio::test]
+    async fn route_bind_host_missing_service_id_returns_protocol_error() {
+        #[cfg(unix)]
+        {
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.bindHost".to_string(),
+                params: Some(serde_json::json!({"host": "app.dev"})),
+                id: Some(Value::from(7)),
+            };
+            let result =
+                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
+                    .await;
+            assert!(matches!(result, Err(IpcError::ProtocolError(_))));
+        }
+    }
+
+    #[tokio::test]
+    async fn route_bind_host_missing_host_returns_protocol_error() {
+        #[cfg(unix)]
+        {
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.bindHost".to_string(),
+                params: Some(serde_json::json!({"serviceId": "svc"})),
+                id: Some(Value::from(7)),
+            };
+            let result =
+                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
+                    .await;
+            assert!(matches!(result, Err(IpcError::ProtocolError(_))));
+        }
+    }
+
+    #[tokio::test]
+    async fn route_bind_host_valid_params_returns_error_from_noop() {
+        #[cfg(unix)]
+        {
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.bindHost".to_string(),
+                params: Some(serde_json::json!({"serviceId": "svc", "host": "app.dev"})),
+                id: Some(Value::from(7)),
+            };
+            let resp =
+                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert!(resp.error.is_some());
+        }
+    }
+
+    // ── canopus.assignPort ────────────────────────────────────────────────────
+    #[tokio::test]
+    async fn route_assign_port_missing_service_id_returns_protocol_error() {
+        #[cfg(unix)]
+        {
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.assignPort".to_string(),
+                params: Some(serde_json::json!({})),
+                id: Some(Value::from(8)),
+            };
+            let result =
+                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
+                    .await;
+            assert!(matches!(result, Err(IpcError::ProtocolError(_))));
+        }
+    }
+
+    #[tokio::test]
+    async fn route_assign_port_valid_params_returns_error_from_noop() {
+        #[cfg(unix)]
+        {
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.assignPort".to_string(),
+                params: Some(serde_json::json!({"serviceId": "svc"})),
+                id: Some(Value::from(8)),
+            };
+            let resp =
+                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert!(resp.error.is_some());
+        }
+    }
+
+    // ── canopus.healthCheck ───────────────────────────────────────────────────
+    #[tokio::test]
+    async fn route_health_check_missing_service_id_returns_protocol_error() {
+        #[cfg(unix)]
+        {
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.healthCheck".to_string(),
+                params: Some(serde_json::json!({})),
+                id: Some(Value::from(9)),
+            };
+            let result =
+                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
+                    .await;
+            assert!(matches!(result, Err(IpcError::ProtocolError(_))));
+        }
+    }
+
+    #[tokio::test]
+    async fn route_health_check_valid_params_returns_error_from_noop() {
+        #[cfg(unix)]
+        {
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.healthCheck".to_string(),
+                params: Some(serde_json::json!({"serviceId": "svc"})),
+                id: Some(Value::from(9)),
+            };
+            let resp =
+                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert!(resp.error.is_some());
+        }
+    }
+
+    // ── canopus.deleteMeta ────────────────────────────────────────────────────
+    #[tokio::test]
+    async fn route_delete_meta_missing_service_id_returns_protocol_error() {
+        #[cfg(unix)]
+        {
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.deleteMeta".to_string(),
+                params: Some(serde_json::json!({})),
+                id: Some(Value::from(10)),
+            };
+            let result =
+                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
+                    .await;
+            assert!(matches!(result, Err(IpcError::ProtocolError(_))));
+        }
+    }
+
+    #[tokio::test]
+    async fn route_delete_meta_valid_params_propagates_error_from_noop() {
+        #[cfg(unix)]
+        {
+            // deleteMeta uses `?` so errors propagate as Err, not as a JSON-RPC error field
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.deleteMeta".to_string(),
+                params: Some(serde_json::json!({"serviceId": "svc"})),
+                id: Some(Value::from(10)),
+            };
+            let result =
+                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
+                    .await;
+            assert!(
+                result.is_err(),
+                "expected Err propagated from noop, got {result:?}"
+            );
+        }
+    }
+
+    // ── unknown method ────────────────────────────────────────────────────────
+    #[tokio::test]
+    async fn route_unknown_method_returns_method_not_found() {
+        #[cfg(unix)]
+        {
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.unknown".to_string(),
+                params: None,
+                id: Some(Value::from(99)),
+            };
+            let resp =
+                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert!(resp.error.is_some());
+            assert_eq!(resp.error.unwrap().code, -32601);
+        }
+    }
+
+    // ── canopus.start — port=null is valid ────────────────────────────────────
+    #[tokio::test]
+    async fn route_start_null_port_is_accepted() {
+        #[cfg(unix)]
+        {
+            // port=null is valid (means "allocate automatically")
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.start".to_string(),
+                params: Some(serde_json::json!({"serviceId": "svc", "port": null})),
+                id: Some(Value::from(11)),
+            };
+            // With Noop this returns a controlled error, but should NOT return -32602
+            let resp =
+                route_method(&default_config(), Arc::new(NoopControlPlane), make_writer(), req)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            // Should be a -32000 error (Noop not implemented), not a -32602 param error
+            let err = resp.error.expect("expected error from noop");
+            assert_eq!(err.code, -32000);
+        }
+    }
+
+    // ── IpcServerConfig::default ──────────────────────────────────────────────
+    #[test]
+    fn ipc_server_config_default_has_sensible_values() {
+        let cfg = IpcServerConfig::default();
+        assert!(!cfg.version.is_empty());
+        assert!(cfg.auth_token.is_none());
+    }
 }

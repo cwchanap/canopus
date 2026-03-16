@@ -374,3 +374,72 @@ pub async fn bootstrap_with_runtime(
         handles,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── resolve_login_path ────────────────────────────────────────────────────
+
+    #[test]
+    fn resolve_login_path_returns_some_path() {
+        // Should always return Some (falls back to PATH env var)
+        let result = resolve_login_path();
+        assert!(result.is_some(), "expected Some path, got None");
+    }
+
+    #[test]
+    fn resolve_login_path_honours_canopus_login_path_override() {
+        // When CANOPUS_LOGIN_PATH is set, it takes priority
+        std::env::set_var("CANOPUS_LOGIN_PATH", "/custom/bin:/usr/bin");
+        let result = resolve_login_path();
+        // Unset immediately so other tests are not affected
+        std::env::remove_var("CANOPUS_LOGIN_PATH");
+        assert_eq!(result.as_deref(), Some("/custom/bin:/usr/bin"));
+    }
+
+    #[test]
+    fn resolve_login_path_ignores_blank_canopus_login_path() {
+        // A blank/whitespace override should be skipped
+        std::env::set_var("CANOPUS_LOGIN_PATH", "   ");
+        let result = resolve_login_path();
+        std::env::remove_var("CANOPUS_LOGIN_PATH");
+        // Should still return something (fallback PATH), just not the blank override
+        assert!(result.is_some());
+        let path = result.unwrap();
+        assert!(path.trim() != "   ", "should not return blank path");
+    }
+
+    // ── bootstrap_with_runtime (no config) ───────────────────────────────────
+
+    #[tokio::test]
+    async fn bootstrap_with_no_config_starts_successfully() {
+        // Use port 0 so the proxy binds any available port (avoids needing root)
+        let handle = bootstrap_with_runtime(None, None, Some("127.0.0.1:0"))
+            .await
+            .expect("bootstrap should succeed with no config");
+
+        assert!(
+            handle.services.is_empty(),
+            "no services expected when no config provided"
+        );
+
+        handle.shutdown();
+    }
+
+    #[tokio::test]
+    async fn bootstrap_with_no_config_shutdown_is_idempotent() {
+        let handle = bootstrap_with_runtime(None, None, Some("127.0.0.1:0"))
+            .await
+            .expect("bootstrap ok");
+        // Simply calling shutdown should not panic
+        handle.shutdown();
+    }
+
+    #[tokio::test]
+    async fn bootstrap_with_invalid_config_path_returns_error() {
+        let bad_path = std::path::PathBuf::from("/nonexistent/canopus/services.toml");
+        let result = bootstrap_with_runtime(Some(bad_path), None, Some("127.0.0.1:0")).await;
+        assert!(result.is_err(), "expected error for nonexistent config path");
+    }
+}

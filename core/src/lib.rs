@@ -100,4 +100,31 @@ mod tests {
         config.max_connections = 0;
         assert!(utils::validate_config(&config).is_err());
     }
+
+    #[test]
+    fn validate_config_error_messages() {
+        let mut config = DaemonConfig::default();
+        config.port = 0;
+        let err = utils::validate_config(&config).unwrap_err();
+        assert!(err.to_string().contains("Port cannot be 0"));
+
+        let mut config = DaemonConfig::default();
+        config.host = String::new();
+        let err = utils::validate_config(&config).unwrap_err();
+        assert!(err.to_string().contains("Host cannot be empty"));
+
+        let mut config = DaemonConfig::default();
+        config.max_connections = 0;
+        let err = utils::validate_config(&config).unwrap_err();
+        assert!(err.to_string().contains("Max connections"));
+    }
+
+    #[test]
+    fn daemon_config_default_is_valid() {
+        let config = DaemonConfig::default();
+        assert!(utils::validate_config(&config).is_ok());
+        assert_ne!(config.port, 0);
+        assert!(!config.host.is_empty());
+        assert_ne!(config.max_connections, 0);
+    }
 }

@@ -736,4 +736,79 @@ mod tests {
         assert!(cfg.services["svc"].hostname.is_none());
         assert!(cfg.services["svc"].port.is_none());
     }
+
+    #[test]
+    fn errors_on_health_check_success_threshold_zero() {
+        let input = r#"
+        [[services]]
+        id = "s"
+        name = "S"
+        command = "echo"
+        [services.healthCheck]
+        intervalSecs = 10
+        timeoutSecs = 5
+        failureThreshold = 3
+        successThreshold = 0
+        [services.healthCheck.checkType]
+        type = "tcp"
+        port = 8080
+        "#;
+        let err = load_services_from_toml_str(input).unwrap_err();
+        assert!(format!("{err}").contains("healthCheck.successThreshold: must be > 0"));
+    }
+
+    #[test]
+    fn errors_on_readiness_check_timeout_zero() {
+        let input = r#"
+        [[services]]
+        id = "s"
+        name = "S"
+        command = "echo"
+        [services.readinessCheck]
+        intervalSecs = 10
+        timeoutSecs = 0
+        successThreshold = 1
+        [services.readinessCheck.checkType]
+        type = "tcp"
+        port = 8080
+        "#;
+        let err = load_services_from_toml_str(input).unwrap_err();
+        assert!(format!("{err}").contains("readinessCheck.timeoutSecs: must be > 0"));
+    }
+
+    #[test]
+    fn errors_on_readiness_check_success_threshold_zero() {
+        let input = r#"
+        [[services]]
+        id = "s"
+        name = "S"
+        command = "echo"
+        [services.readinessCheck]
+        intervalSecs = 10
+        timeoutSecs = 5
+        successThreshold = 0
+        [services.readinessCheck.checkType]
+        type = "tcp"
+        port = 8080
+        "#;
+        let err = load_services_from_toml_str(input).unwrap_err();
+        assert!(format!("{err}").contains("readinessCheck.successThreshold: must be > 0"));
+    }
+
+    #[test]
+    fn load_services_from_file_path_missing_returns_error() {
+        use std::path::PathBuf;
+        let result =
+            load_services_from_toml_path(PathBuf::from("/nonexistent/services.toml"));
+        assert!(result.is_err());
+        assert!(format!("{}", result.unwrap_err()).contains("Failed to read config"));
+    }
+
+    #[test]
+    fn load_simple_services_from_file_path_missing_returns_error() {
+        use std::path::PathBuf;
+        let result =
+            load_simple_services_from_toml_path(PathBuf::from("/nonexistent/runtime.toml"));
+        assert!(result.is_err());
+    }
 }

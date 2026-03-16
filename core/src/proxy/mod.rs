@@ -112,3 +112,97 @@ impl<T: crate::proxy_api::ProxyApi + Send + Sync + 'static> ProxyAdapter for Api
 
 /// Type alias for the built-in `NullProxy` adapter
 pub type NullProxyAdapter = ApiProxyAdapter<crate::proxy_api::NullProxy>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::proxy_api::NullProxy;
+
+    // ── NoopProxyAdapter ──────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn noop_adapter_attach_succeeds() {
+        let adapter = NoopProxyAdapter;
+        let result = adapter.attach("app.dev", 3000).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn noop_adapter_detach_succeeds() {
+        let adapter = NoopProxyAdapter;
+        let result = adapter.detach("app.dev").await;
+        assert!(result.is_ok());
+    }
+
+    // ── MockProxyAdapter ──────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn mock_adapter_records_attach() {
+        let adapter = MockProxyAdapter::new();
+        adapter.attach("app.dev", 8080).await.unwrap();
+
+        let ops = adapter.ops().await;
+        assert_eq!(ops.len(), 1);
+        assert_eq!(
+            ops[0],
+            ProxyOp::Attach {
+                host: "app.dev".to_string(),
+                port: 8080
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn mock_adapter_records_detach() {
+        let adapter = MockProxyAdapter::new();
+        adapter.attach("app.dev", 8080).await.unwrap();
+        adapter.detach("app.dev").await.unwrap();
+
+        let ops = adapter.ops().await;
+        assert_eq!(ops.len(), 2);
+        assert_eq!(
+            ops[1],
+            ProxyOp::Detach {
+                host: "app.dev".to_string()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn mock_adapter_clear_removes_all_ops() {
+        let adapter = MockProxyAdapter::new();
+        adapter.attach("a.dev", 1000).await.unwrap();
+        adapter.attach("b.dev", 2000).await.unwrap();
+        assert_eq!(adapter.ops().await.len(), 2);
+
+        adapter.clear().await;
+        assert!(adapter.ops().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn mock_adapter_default_has_no_ops() {
+        let adapter = MockProxyAdapter::default();
+        assert!(adapter.ops().await.is_empty());
+    }
+
+    // ── ApiProxyAdapter wrapping NullProxy ────────────────────────────────────
+
+    #[tokio::test]
+    async fn api_proxy_adapter_attach_delegates_to_inner() {
+        let null = Arc::new(NullProxy::new());
+        let adapter = ApiProxyAdapter::new(null.clone());
+
+        adapter.attach("svc.dev", 9000).await.unwrap();
+        assert_eq!(null.call_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn api_proxy_adapter_detach_delegates_to_inner() {
+        let null = Arc::new(NullProxy::new());
+        let adapter = ApiProxyAdapter::new(null.clone());
+
+        adapter.attach("svc.dev", 9000).await.unwrap();
+        adapter.detach("svc.dev").await.unwrap();
+        assert_eq!(null.call_count(), 2);
+    }
+}
