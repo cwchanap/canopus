@@ -98,20 +98,13 @@ mod tests {
         let io_err = io::Error::new(io::ErrorKind::Other, "io");
         assert_eq!(CoreError::IoError(io_err).code(), "CORE005");
 
-        let serde_err =
-            serde_json::from_str::<serde_json::Value>("bad").unwrap_err();
+        let serde_err = serde_json::from_str::<serde_json::Value>("bad").unwrap_err();
         assert_eq!(CoreError::SerializationError(serde_err).code(), "CORE006");
 
         assert_eq!(CoreError::PortInUse(8080).code(), "CORE007");
-        assert_eq!(
-            CoreError::NoAvailablePort { tried: 5 }.code(),
-            "CORE008"
-        );
+        assert_eq!(CoreError::NoAvailablePort { tried: 5 }.code(), "CORE008");
         assert_eq!(CoreError::ProcessSpawn("x".to_string()).code(), "CORE009");
-        assert_eq!(
-            CoreError::ProcessSignal("x".to_string()).code(),
-            "CORE010"
-        );
+        assert_eq!(CoreError::ProcessSignal("x".to_string()).code(), "CORE010");
         assert_eq!(CoreError::ProcessWait("x".to_string()).code(), "CORE011");
     }
 

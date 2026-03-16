@@ -344,7 +344,10 @@ mod tests {
         let ts = current_timestamp();
         // RFC3339 timestamps end with 'Z' (UTC) and contain 'T' separator
         assert!(ts.ends_with('Z'), "timestamp should end with Z: {ts}");
-        assert!(ts.contains('T'), "timestamp should contain T separator: {ts}");
+        assert!(
+            ts.contains('T'),
+            "timestamp should contain T separator: {ts}"
+        );
         // Basic length check: "2024-01-01T00:00:00Z" = 20 chars
         assert!(ts.len() >= 20, "timestamp too short: {ts}");
     }
