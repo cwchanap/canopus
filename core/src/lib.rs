@@ -103,18 +103,15 @@ mod tests {
 
     #[test]
     fn validate_config_error_messages() {
-        let mut config = DaemonConfig::default();
-        config.port = 0;
+        let config = DaemonConfig { port: 0, ..Default::default() };
         let err = utils::validate_config(&config).unwrap_err();
         assert!(err.to_string().contains("Port cannot be 0"));
 
-        let mut config = DaemonConfig::default();
-        config.host = String::new();
+        let config = DaemonConfig { host: String::new(), ..Default::default() };
         let err = utils::validate_config(&config).unwrap_err();
         assert!(err.to_string().contains("Host cannot be empty"));
 
-        let mut config = DaemonConfig::default();
-        config.max_connections = 0;
+        let config = DaemonConfig { max_connections: 0, ..Default::default() };
         let err = utils::validate_config(&config).unwrap_err();
         assert!(err.to_string().contains("Max connections"));
     }

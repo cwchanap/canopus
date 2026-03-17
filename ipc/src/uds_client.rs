@@ -704,8 +704,6 @@ mod tests {
 
     #[tokio::test]
     async fn write_and_read_json_round_trip() {
-        use tokio::io::AsyncWriteExt;
-
         let (raw_reader, mut writer) = tokio::io::duplex(1024);
         let mut reader = tokio::io::BufReader::new(raw_reader);
 
