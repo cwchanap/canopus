@@ -701,10 +701,10 @@ mod tests {
 
     #[test]
     fn simple_services_errors_on_port_zero() {
-        let input = r#"
+        let input = r"
         [web]
         port = 0
-        "#;
+        ";
         let err = load_simple_services_from_toml_str(input).unwrap_err();
         assert!(format!("{err}").contains("port must be 1..=65535"));
     }
@@ -729,9 +729,9 @@ mod tests {
     #[test]
     fn simple_services_accepts_minimal_config() {
         // Service with no hostname or port is valid
-        let input = r#"
+        let input = r"
         [svc]
-        "#;
+        ";
         let cfg = load_simple_services_from_toml_str(input).expect("should parse minimal");
         assert_eq!(cfg.services.len(), 1);
         assert!(cfg.services["svc"].hostname.is_none());

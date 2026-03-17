@@ -95,7 +95,7 @@ mod tests {
 
     #[test]
     fn test_all_error_codes() {
-        let io_err = io::Error::new(io::ErrorKind::Other, "io");
+        let io_err = io::Error::other("io");
         assert_eq!(CoreError::IoError(io_err).code(), "CORE005");
 
         let serde_err = serde_json::from_str::<serde_json::Value>("bad").unwrap_err();
