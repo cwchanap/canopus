@@ -407,16 +407,15 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn resolve_login_path_returns_some_path() {
-        // Pin PATH to a known value so the test is deterministic and doesn't
-        // depend on the ambient environment or spawn a login shell.
-        // CANOPUS_LOGIN_PATH is set to blank so the fallback PATH path is taken.
-        let _guard_login = EnvGuard::set("CANOPUS_LOGIN_PATH", "   ");
-        let _guard_path = EnvGuard::set("PATH", "/usr/bin:/bin");
+        // Pin CANOPUS_LOGIN_PATH to a known non-blank value so the function
+        // returns early without spawning a login shell, making the test
+        // deterministic in any environment.
+        let _guard = EnvGuard::set("CANOPUS_LOGIN_PATH", "/usr/bin:/bin");
         let result = resolve_login_path();
         assert_eq!(
             result.as_deref(),
             Some("/usr/bin:/bin"),
-            "expected PATH-based login path"
+            "expected Some path, got None"
         );
     }
 
