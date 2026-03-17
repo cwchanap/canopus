@@ -444,6 +444,7 @@ mod tests {
     // ── bootstrap_with_runtime (no config) ───────────────────────────────────
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn bootstrap_with_no_config_starts_successfully() {
         // Use port 0 so the proxy binds any available port (avoids needing root)
         let handle = bootstrap_with_runtime(None, None, Some("127.0.0.1:0"))
@@ -459,6 +460,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn bootstrap_with_no_config_shutdown_does_not_panic() {
         let handle = bootstrap_with_runtime(None, None, Some("127.0.0.1:0"))
             .await
@@ -468,6 +470,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn bootstrap_with_invalid_config_path_returns_error() {
         let dir = tempfile::TempDir::new().expect("temp dir");
         let bad_path = dir.path().join("nonexistent/services.toml");
