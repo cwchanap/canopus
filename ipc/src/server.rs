@@ -505,8 +505,10 @@ async fn route_method(
                 .get("serviceId")
                 .and_then(Value::as_str)
                 .ok_or_else(|| IpcError::ProtocolError("missing serviceId".into()))?;
-            router.delete_meta(sid).await?;
-            JsonRpcResponse::ok(id, serde_json::json!({"ok": true}))
+            match router.delete_meta(sid).await {
+                Ok(()) => JsonRpcResponse::ok(id, serde_json::json!({"ok": true})),
+                Err(e) => JsonRpcResponse::err(id, -32000, e.to_string(), None),
+            }
         }
         _ => JsonRpcResponse::err(id, -32601, "Method not found", None),
     }))
@@ -1960,27 +1962,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn route_delete_meta_valid_params_propagates_error_from_noop() {
+    async fn route_delete_meta_valid_params_returns_json_rpc_error_from_noop() {
         #[cfg(unix)]
         {
-            // deleteMeta uses `?` so errors propagate as Err, not as a JSON-RPC error field
             let req = JsonRpcRequest {
                 jsonrpc: "2.0".to_string(),
                 method: "canopus.deleteMeta".to_string(),
                 params: Some(serde_json::json!({"serviceId": "svc"})),
                 id: Some(Value::from(10)),
             };
-            let result = route_method(
+            let resp = route_method(
                 &default_config(),
                 Arc::new(NoopControlPlane),
                 make_writer(),
                 req,
             )
-            .await;
+            .await
+            .unwrap()
+            .unwrap();
             assert!(
-                result.is_err(),
-                "expected Err propagated from noop, got {result:?}"
+                resp.error.is_some(),
+                "expected JSON-RPC error, got {resp:?}"
             );
+            assert_eq!(resp.error.unwrap().code, -32000);
         }
     }
 

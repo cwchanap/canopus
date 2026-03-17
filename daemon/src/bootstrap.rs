@@ -405,10 +405,19 @@ mod tests {
     // ── resolve_login_path ────────────────────────────────────────────────────
 
     #[test]
+    #[serial_test::serial]
     fn resolve_login_path_returns_some_path() {
-        // Should always return Some (falls back to PATH env var)
+        // Pin PATH to a known value so the test is deterministic and doesn't
+        // depend on the ambient environment or spawn a login shell.
+        // CANOPUS_LOGIN_PATH is set to blank so the fallback PATH path is taken.
+        let _guard_login = EnvGuard::set("CANOPUS_LOGIN_PATH", "   ");
+        let _guard_path = EnvGuard::set("PATH", "/usr/bin:/bin");
         let result = resolve_login_path();
-        assert!(result.is_some(), "expected Some path, got None");
+        assert_eq!(
+            result.as_deref(),
+            Some("/usr/bin:/bin"),
+            "expected PATH-based login path"
+        );
     }
 
     #[test]
@@ -451,7 +460,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn bootstrap_with_no_config_shutdown_is_idempotent() {
+    async fn bootstrap_with_no_config_shutdown_does_not_panic() {
         let handle = bootstrap_with_runtime(None, None, Some("127.0.0.1:0"))
             .await
             .expect("bootstrap ok");

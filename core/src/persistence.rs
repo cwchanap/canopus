@@ -231,6 +231,7 @@ mod tests {
     use super::*;
     use schema::BackoffConfig;
     use std::collections::HashMap;
+    use std::io::ErrorKind;
     use tempfile::tempdir;
 
     fn make_snap() -> RegistrySnapshot {
@@ -299,9 +300,12 @@ mod tests {
         let path = dir.path().join("nonexistent.json");
 
         let err = load_snapshot(&path).unwrap_err();
-        let msg = format!("{err}");
-        // Should report an IO error (file not found)
-        assert!(msg.contains("IO error") || msg.contains("No such file"));
+        match err {
+            CoreError::IoError(inner) => {
+                assert_eq!(inner.kind(), ErrorKind::NotFound);
+            }
+            other => panic!("expected IoError(NotFound), got: {other}"),
+        }
     }
 
     #[test]
