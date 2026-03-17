@@ -798,17 +798,18 @@ mod tests {
 
     #[test]
     fn load_services_from_file_path_missing_returns_error() {
-        use std::path::PathBuf;
-        let result = load_services_from_toml_path(PathBuf::from("/nonexistent/services.toml"));
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let path = dir.path().join("nonexistent/services.toml");
+        let result = load_services_from_toml_path(path);
         assert!(result.is_err());
         assert!(format!("{}", result.unwrap_err()).contains("Failed to read config"));
     }
 
     #[test]
     fn load_simple_services_from_file_path_missing_returns_error() {
-        use std::path::PathBuf;
-        let result =
-            load_simple_services_from_toml_path(PathBuf::from("/nonexistent/runtime.toml"));
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let path = dir.path().join("nonexistent/runtime.toml");
+        let result = load_simple_services_from_toml_path(path);
         assert!(result.is_err());
     }
 }

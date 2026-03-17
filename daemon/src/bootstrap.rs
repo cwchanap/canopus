@@ -379,6 +379,29 @@ pub async fn bootstrap_with_runtime(
 mod tests {
     use super::*;
 
+    /// RAII guard that restores an env variable to its original value on drop.
+    struct EnvGuard {
+        key: &'static str,
+        original: Option<std::ffi::OsString>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let original = std::env::var_os(key);
+            std::env::set_var(key, value);
+            Self { key, original }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.original {
+                Some(v) => std::env::set_var(self.key, v),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
     // ── resolve_login_path ────────────────────────────────────────────────────
 
     #[test]
@@ -389,21 +412,21 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn resolve_login_path_honours_canopus_login_path_override() {
-        // When CANOPUS_LOGIN_PATH is set, it takes priority
-        std::env::set_var("CANOPUS_LOGIN_PATH", "/custom/bin:/usr/bin");
+        // When CANOPUS_LOGIN_PATH is set, it takes priority.
+        // Save original value and restore on drop to isolate env mutation.
+        let _guard = EnvGuard::set("CANOPUS_LOGIN_PATH", "/custom/bin:/usr/bin");
         let result = resolve_login_path();
-        // Unset immediately so other tests are not affected
-        std::env::remove_var("CANOPUS_LOGIN_PATH");
         assert_eq!(result.as_deref(), Some("/custom/bin:/usr/bin"));
     }
 
     #[test]
+    #[serial_test::serial]
     fn resolve_login_path_ignores_blank_canopus_login_path() {
-        // A blank/whitespace override should be skipped
-        std::env::set_var("CANOPUS_LOGIN_PATH", "   ");
+        // A blank/whitespace override should be skipped.
+        let _guard = EnvGuard::set("CANOPUS_LOGIN_PATH", "   ");
         let result = resolve_login_path();
-        std::env::remove_var("CANOPUS_LOGIN_PATH");
         // Should still return something (fallback PATH), just not the blank override
         assert!(result.is_some());
         let path = result.unwrap();
@@ -438,7 +461,8 @@ mod tests {
 
     #[tokio::test]
     async fn bootstrap_with_invalid_config_path_returns_error() {
-        let bad_path = std::path::PathBuf::from("/nonexistent/canopus/services.toml");
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let bad_path = dir.path().join("nonexistent/services.toml");
         let result = bootstrap_with_runtime(Some(bad_path), None, Some("127.0.0.1:0")).await;
         assert!(
             result.is_err(),
