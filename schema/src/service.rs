@@ -575,9 +575,9 @@ mod tests {
     fn test_backoff_config_default_values() {
         let cfg = BackoffConfig::default();
         assert_eq!(cfg.base_delay_secs, 1);
-        assert_eq!(cfg.multiplier, 2.0);
+        assert!((cfg.multiplier - 2.0_f64).abs() < f64::EPSILON);
         assert_eq!(cfg.max_delay_secs, 300);
-        assert_eq!(cfg.jitter, 0.1);
+        assert!((cfg.jitter - 0.1_f64).abs() < f64::EPSILON);
         assert_eq!(cfg.failure_window_secs, 900);
     }
 
@@ -614,7 +614,7 @@ mod tests {
                 assert_eq!(command, "health_check.sh");
                 assert!(args.is_empty());
             }
-            _ => panic!("Expected Exec"),
+            HealthCheckType::Tcp { .. } => panic!("Expected Exec"),
         }
     }
 
