@@ -157,4 +157,111 @@ mod tests {
         let contents2: Vec<_> = v2.iter().map(|e| e.content.as_str()).collect();
         assert_eq!(contents2, vec!["c", "d"]);
     }
+
+    #[test]
+    fn test_is_empty_and_len() {
+        let mut ring = LogRing::new(5);
+        assert!(ring.is_empty());
+        assert_eq!(ring.len(), 0);
+
+        ring.push(mk_entry(schema::LogStream::Stdout, "x"));
+        assert!(!ring.is_empty());
+        assert_eq!(ring.len(), 1);
+    }
+
+    #[test]
+    fn test_next_seq_advances() {
+        let mut ring = LogRing::new(4);
+        assert_eq!(ring.next_seq(), 0);
+
+        ring.push(mk_entry(schema::LogStream::Stdout, "a"));
+        assert_eq!(ring.next_seq(), 1);
+
+        ring.push(mk_entry(schema::LogStream::Stdout, "b"));
+        assert_eq!(ring.next_seq(), 2);
+    }
+
+    #[test]
+    fn test_next_seq_after_overflow() {
+        let mut ring = LogRing::new(2);
+        // Push 5 items: ring wraps, but seq keeps incrementing
+        for i in 0..5u64 {
+            ring.push(mk_entry(schema::LogStream::Stdout, &i.to_string()));
+        }
+        assert_eq!(ring.next_seq(), 5);
+        assert_eq!(ring.total_dropped(), 3); // capacity 2, 5 pushed, 3 dropped
+    }
+
+    #[test]
+    fn test_snapshot_returns_current_entries_and_next_seq() {
+        let mut ring = LogRing::new(3);
+        ring.push(mk_entry(schema::LogStream::Stderr, "err1")); // seq 0
+        ring.push(mk_entry(schema::LogStream::Stdout, "out1")); // seq 1
+
+        let (next_seq, entries) = ring.snapshot();
+        assert_eq!(next_seq, 2);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].content, "err1");
+        assert_eq!(entries[0].stream, schema::LogStream::Stderr);
+        assert_eq!(entries[1].content, "out1");
+    }
+
+    #[test]
+    fn test_iter_after_returns_empty_when_no_newer_entries() {
+        let mut ring = LogRing::new(3);
+        ring.push(mk_entry(schema::LogStream::Stdout, "a")); // seq 0
+        ring.push(mk_entry(schema::LogStream::Stdout, "b")); // seq 1
+
+        // iter_after the last seq (1) returns nothing
+        let v = ring.iter_after(1);
+        assert!(v.is_empty());
+
+        // iter_after a very large seq also returns nothing
+        let v2 = ring.iter_after(u64::MAX - 1);
+        assert!(v2.is_empty());
+    }
+
+    #[test]
+    fn test_single_capacity_ring() {
+        let mut ring = LogRing::new(1);
+        assert!(ring.is_empty());
+
+        ring.push(mk_entry(schema::LogStream::Stdout, "first"));
+        assert_eq!(ring.len(), 1);
+        assert_eq!(ring.total_dropped(), 0);
+
+        ring.push(mk_entry(schema::LogStream::Stdout, "second"));
+        assert_eq!(ring.len(), 1);
+        assert_eq!(ring.total_dropped(), 1);
+
+        let (_, snap) = ring.snapshot();
+        assert_eq!(snap[0].content, "second");
+        assert_eq!(snap[0].seq, 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "LogRing capacity must be > 0")]
+    fn test_zero_capacity_panics() {
+        let _ring = LogRing::new(0);
+    }
+
+    #[test]
+    fn test_log_entry_fields_preserved() {
+        let mut ring = LogRing::new(10);
+        let ts = schema::ServiceEvent::current_timestamp();
+        let entry = LogEntry {
+            seq: 0, // will be overwritten
+            stream: schema::LogStream::Stderr,
+            content: "important error".to_string(),
+            timestamp: ts.clone(),
+        };
+        ring.push(entry);
+
+        let (_, snap) = ring.snapshot();
+        assert_eq!(snap.len(), 1);
+        assert_eq!(snap[0].seq, 0); // assigned by ring
+        assert_eq!(snap[0].stream, schema::LogStream::Stderr);
+        assert_eq!(snap[0].content, "important error");
+        assert_eq!(snap[0].timestamp, ts);
+    }
 }

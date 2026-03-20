@@ -769,4 +769,451 @@ mod tests {
         assert!(EventSeverity::Warning < EventSeverity::Error);
         assert!(EventSeverity::Error < EventSeverity::Critical);
     }
+
+    #[test]
+    fn test_service_event_timestamp_for_all_variants() {
+        let ts = "2024-06-01T12:00:00Z".to_string();
+        let exit_info = crate::service::ServiceExit {
+            pid: 1,
+            exit_code: Some(0),
+            signal: None,
+            timestamp: ts.clone(),
+        };
+
+        // ProcessExited gets timestamp from exit_info.timestamp
+        let process_exited = ServiceEvent::ProcessExited {
+            service_id: "s".to_string(),
+            exit_info: exit_info.clone(),
+        };
+        assert_eq!(process_exited.timestamp(), ts);
+
+        // All other variants store their own timestamp field
+        let startup_timeout = ServiceEvent::StartupTimeout {
+            service_id: "s".to_string(),
+            timestamp: ts.clone(),
+            timeout_secs: 60,
+        };
+        assert_eq!(startup_timeout.timestamp(), ts);
+
+        let unhealthy = ServiceEvent::ServiceUnhealthy {
+            service_id: "s".to_string(),
+            timestamp: ts.clone(),
+            reason: "checks failed".to_string(),
+            consecutive_failures: 3,
+        };
+        assert_eq!(unhealthy.timestamp(), ts);
+
+        let log_output = ServiceEvent::LogOutput {
+            service_id: "s".to_string(),
+            stream: LogStream::Stdout,
+            content: "hello".to_string(),
+            timestamp: ts.clone(),
+        };
+        assert_eq!(log_output.timestamp(), ts);
+
+        let route_attached = ServiceEvent::RouteAttached {
+            service_id: "s".to_string(),
+            route: "/".to_string(),
+            route_host: None,
+            route_path: None,
+            backend_address: "127.0.0.1:8080".to_string(),
+            timestamp: ts.clone(),
+        };
+        assert_eq!(route_attached.timestamp(), ts);
+
+        let route_detached = ServiceEvent::RouteDetached {
+            service_id: "s".to_string(),
+            route: "/".to_string(),
+            route_host: None,
+            route_path: None,
+            timestamp: ts.clone(),
+        };
+        assert_eq!(route_detached.timestamp(), ts);
+    }
+
+    #[test]
+    fn test_startup_timeout_and_service_unhealthy_severity() {
+        let startup_timeout = ServiceEvent::StartupTimeout {
+            service_id: "s".to_string(),
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            timeout_secs: 60,
+        };
+        assert_eq!(startup_timeout.severity(), EventSeverity::Warning);
+
+        let unhealthy = ServiceEvent::ServiceUnhealthy {
+            service_id: "s".to_string(),
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            reason: "3 consecutive failures".to_string(),
+            consecutive_failures: 3,
+        };
+        assert_eq!(unhealthy.severity(), EventSeverity::Critical);
+    }
+
+    #[test]
+    fn test_log_output_and_configuration_updated_severity() {
+        let log_output = ServiceEvent::LogOutput {
+            service_id: "s".to_string(),
+            stream: LogStream::Stderr,
+            content: "some log".to_string(),
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+        };
+        assert_eq!(log_output.severity(), EventSeverity::Debug);
+
+        let config_updated = ServiceEvent::ConfigurationUpdated {
+            service_id: "s".to_string(),
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            changed_fields: vec!["command".to_string()],
+        };
+        assert_eq!(config_updated.severity(), EventSeverity::Info);
+    }
+
+    #[test]
+    fn test_route_attached_detached_severity() {
+        let route_attached = ServiceEvent::RouteAttached {
+            service_id: "s".to_string(),
+            route: "/api".to_string(),
+            route_host: Some("api.dev".to_string()),
+            route_path: Some("/api".to_string()),
+            backend_address: "127.0.0.1:9000".to_string(),
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+        };
+        assert_eq!(route_attached.severity(), EventSeverity::Info);
+        assert_eq!(route_attached.service_id(), "s");
+
+        let route_detached = ServiceEvent::RouteDetached {
+            service_id: "s".to_string(),
+            route: "/api".to_string(),
+            route_host: None,
+            route_path: None,
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+        };
+        assert_eq!(route_detached.severity(), EventSeverity::Info);
+        assert_eq!(route_detached.service_id(), "s");
+    }
+
+    #[test]
+    fn test_process_exited_severity_success_vs_failure() {
+        let success_exit = crate::service::ServiceExit {
+            pid: 1,
+            exit_code: Some(0),
+            signal: None,
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+        };
+        let event_success = ServiceEvent::ProcessExited {
+            service_id: "s".to_string(),
+            exit_info: success_exit,
+        };
+        assert_eq!(event_success.severity(), EventSeverity::Info);
+
+        let failure_exit = crate::service::ServiceExit {
+            pid: 2,
+            exit_code: Some(1),
+            signal: None,
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+        };
+        let event_failure = ServiceEvent::ProcessExited {
+            service_id: "s".to_string(),
+            exit_info: failure_exit,
+        };
+        assert_eq!(event_failure.severity(), EventSeverity::Warning);
+    }
+
+    #[test]
+    fn test_readiness_check_result_severity() {
+        let success = ServiceEvent::ReadinessCheckResult {
+            service_id: "s".to_string(),
+            success: true,
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            error: None,
+            duration_ms: 10,
+        };
+        assert_eq!(success.severity(), EventSeverity::Debug);
+
+        let failure = ServiceEvent::ReadinessCheckResult {
+            service_id: "s".to_string(),
+            success: false,
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+            error: Some("timeout".to_string()),
+            duration_ms: 3000,
+        };
+        assert_eq!(failure.severity(), EventSeverity::Warning);
+    }
+
+    #[test]
+    fn test_event_filter_combined_service_and_severity() {
+        let filter = EventFilter {
+            service_ids: vec!["svc-a".to_string()],
+            min_severity: Some(EventSeverity::Warning),
+            event_types: Vec::new(),
+        };
+
+        // Matches: right service, high enough severity
+        let warn_a = ServiceEvent::Warning {
+            service_id: "svc-a".to_string(),
+            message: "watch out".to_string(),
+            timestamp: "t".to_string(),
+            code: None,
+        };
+        assert!(filter.matches(&warn_a));
+
+        // No match: wrong service, even with high severity
+        let warn_b = ServiceEvent::Warning {
+            service_id: "svc-b".to_string(),
+            message: "watch out".to_string(),
+            timestamp: "t".to_string(),
+            code: None,
+        };
+        assert!(!filter.matches(&warn_b));
+
+        // No match: right service, severity too low (Info < Warning)
+        let info_a = ServiceEvent::StateChanged {
+            service_id: "svc-a".to_string(),
+            from_state: ServiceState::Idle,
+            to_state: ServiceState::Ready,
+            timestamp: "t".to_string(),
+            reason: None,
+        };
+        assert!(!filter.matches(&info_a));
+    }
+
+    #[test]
+    fn test_event_filter_by_type_multiple() {
+        let filter = EventFilter {
+            service_ids: Vec::new(),
+            min_severity: None,
+            event_types: vec![
+                "processStarted".to_string(),
+                "processExited".to_string(),
+            ],
+        };
+
+        let started = ServiceEvent::ProcessStarted {
+            service_id: "s".to_string(),
+            pid: 1,
+            timestamp: "t".to_string(),
+            command: "echo".to_string(),
+            args: vec![],
+        };
+        assert!(filter.matches(&started));
+
+        let exited = ServiceEvent::ProcessExited {
+            service_id: "s".to_string(),
+            exit_info: crate::service::ServiceExit {
+                pid: 1,
+                exit_code: Some(0),
+                signal: None,
+                timestamp: "t".to_string(),
+            },
+        };
+        assert!(filter.matches(&exited));
+
+        // Does not match stateChanged
+        let state = ServiceEvent::StateChanged {
+            service_id: "s".to_string(),
+            from_state: ServiceState::Idle,
+            to_state: ServiceState::Ready,
+            timestamp: "t".to_string(),
+            reason: None,
+        };
+        assert!(!filter.matches(&state));
+    }
+
+    #[test]
+    fn test_event_constructor_process_exited() {
+        let exit_info = crate::service::ServiceExit {
+            pid: 42,
+            exit_code: Some(0),
+            signal: None,
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+        };
+        let event = ServiceEvent::process_exited("my-svc".to_string(), exit_info.clone());
+        assert_eq!(event.service_id(), "my-svc");
+        match event {
+            ServiceEvent::ProcessExited {
+                service_id,
+                exit_info: ei,
+            } => {
+                assert_eq!(service_id, "my-svc");
+                assert_eq!(ei.pid, 42);
+            }
+            _ => panic!("Expected ProcessExited"),
+        }
+    }
+
+    #[test]
+    fn test_event_constructor_readiness_check_result() {
+        let event = ServiceEvent::readiness_check_result(
+            "svc".to_string(),
+            true,
+            None,
+            25,
+        );
+        assert_eq!(event.service_id(), "svc");
+        match event {
+            ServiceEvent::ReadinessCheckResult {
+                success,
+                duration_ms,
+                ..
+            } => {
+                assert!(success);
+                assert_eq!(duration_ms, 25);
+            }
+            _ => panic!("Expected ReadinessCheckResult"),
+        }
+    }
+
+    #[test]
+    fn test_event_constructor_restart_scheduled_and_attempt() {
+        let scheduled = ServiceEvent::restart_scheduled(
+            "svc".to_string(),
+            5,
+            2,
+            "crashed".to_string(),
+        );
+        assert_eq!(scheduled.service_id(), "svc");
+        assert_eq!(scheduled.severity(), EventSeverity::Warning);
+
+        let attempt = ServiceEvent::restart_attempt("svc".to_string(), 3);
+        assert_eq!(attempt.service_id(), "svc");
+        assert_eq!(attempt.severity(), EventSeverity::Info);
+        match attempt {
+            ServiceEvent::RestartAttempt { attempt, .. } => assert_eq!(attempt, 3),
+            _ => panic!("Expected RestartAttempt"),
+        }
+    }
+
+    #[test]
+    fn test_event_filter_type_all_known_event_types() {
+        // Verify every event type string is correctly matched by the filter
+        let all_types = vec![
+            "stateChanged",
+            "processStarted",
+            "processExited",
+            "healthCheckResult",
+            "readinessCheckResult",
+            "restartScheduled",
+            "restartAttempt",
+            "configurationUpdated",
+            "routeAttached",
+            "routeDetached",
+            "logOutput",
+            "warning",
+            "error",
+            "startupTimeout",
+            "serviceUnhealthy",
+        ];
+        let exit_info = crate::service::ServiceExit {
+            pid: 1,
+            exit_code: Some(0),
+            signal: None,
+            timestamp: "t".to_string(),
+        };
+        let events: Vec<ServiceEvent> = vec![
+            ServiceEvent::StateChanged {
+                service_id: "s".to_string(),
+                from_state: ServiceState::Idle,
+                to_state: ServiceState::Ready,
+                timestamp: "t".to_string(),
+                reason: None,
+            },
+            ServiceEvent::ProcessStarted {
+                service_id: "s".to_string(),
+                pid: 1,
+                timestamp: "t".to_string(),
+                command: "echo".to_string(),
+                args: vec![],
+            },
+            ServiceEvent::ProcessExited {
+                service_id: "s".to_string(),
+                exit_info: exit_info.clone(),
+            },
+            ServiceEvent::HealthCheckResult {
+                service_id: "s".to_string(),
+                success: true,
+                timestamp: "t".to_string(),
+                error: None,
+                duration_ms: 1,
+            },
+            ServiceEvent::ReadinessCheckResult {
+                service_id: "s".to_string(),
+                success: true,
+                timestamp: "t".to_string(),
+                error: None,
+                duration_ms: 1,
+            },
+            ServiceEvent::RestartScheduled {
+                service_id: "s".to_string(),
+                delay_secs: 1,
+                attempt_count: 1,
+                timestamp: "t".to_string(),
+                reason: "r".to_string(),
+            },
+            ServiceEvent::RestartAttempt {
+                service_id: "s".to_string(),
+                attempt: 1,
+                timestamp: "t".to_string(),
+            },
+            ServiceEvent::ConfigurationUpdated {
+                service_id: "s".to_string(),
+                timestamp: "t".to_string(),
+                changed_fields: vec![],
+            },
+            ServiceEvent::RouteAttached {
+                service_id: "s".to_string(),
+                route: "/".to_string(),
+                route_host: None,
+                route_path: None,
+                backend_address: "127.0.0.1:1".to_string(),
+                timestamp: "t".to_string(),
+            },
+            ServiceEvent::RouteDetached {
+                service_id: "s".to_string(),
+                route: "/".to_string(),
+                route_host: None,
+                route_path: None,
+                timestamp: "t".to_string(),
+            },
+            ServiceEvent::LogOutput {
+                service_id: "s".to_string(),
+                stream: LogStream::Stdout,
+                content: "x".to_string(),
+                timestamp: "t".to_string(),
+            },
+            ServiceEvent::Warning {
+                service_id: "s".to_string(),
+                message: "w".to_string(),
+                timestamp: "t".to_string(),
+                code: None,
+            },
+            ServiceEvent::Error {
+                service_id: "s".to_string(),
+                message: "e".to_string(),
+                timestamp: "t".to_string(),
+                code: None,
+            },
+            ServiceEvent::StartupTimeout {
+                service_id: "s".to_string(),
+                timestamp: "t".to_string(),
+                timeout_secs: 60,
+            },
+            ServiceEvent::ServiceUnhealthy {
+                service_id: "s".to_string(),
+                timestamp: "t".to_string(),
+                reason: "r".to_string(),
+                consecutive_failures: 1,
+            },
+        ];
+        assert_eq!(all_types.len(), events.len());
+        for (type_str, event) in all_types.iter().zip(events.iter()) {
+            let filter = EventFilter {
+                service_ids: Vec::new(),
+                min_severity: None,
+                event_types: vec![type_str.to_string()],
+            };
+            assert!(
+                filter.matches(event),
+                "Filter for type '{type_str}' should match its event"
+            );
+        }
+    }
 }

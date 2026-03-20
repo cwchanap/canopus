@@ -232,4 +232,177 @@ mod tests {
         assert_eq!(client_config.daemon_host, "127.0.0.1");
         assert_eq!(client_config.daemon_port, 49384);
     }
+
+    #[test]
+    fn test_daemon_config_defaults() {
+        let cfg = DaemonConfig::default();
+        assert_eq!(cfg.log_level, "info");
+        assert_eq!(cfg.max_connections, 100);
+    }
+
+    #[test]
+    fn test_client_config_default_timeout() {
+        let cfg = ClientConfig::default();
+        assert_eq!(cfg.timeout_seconds, 30);
+    }
+
+    #[test]
+    fn test_message_all_variants_serialize() {
+        let msgs = vec![
+            Message::Status,
+            Message::Start,
+            Message::Stop,
+            Message::Restart,
+            Message::Custom {
+                cmd: "do_thing".to_string(),
+            },
+        ];
+        for msg in &msgs {
+            let json = serde_json::to_string(msg).expect("serialize");
+            let back: Message = serde_json::from_str(&json).expect("deserialize");
+            // Check round-trip by re-serializing
+            let json2 = serde_json::to_string(&back).expect("re-serialize");
+            assert_eq!(json, json2);
+        }
+    }
+
+    #[test]
+    fn test_response_all_variants_serialize() {
+        let resps = vec![
+            Response::Ok {
+                message: "done".to_string(),
+            },
+            Response::Error {
+                message: "bad".to_string(),
+                code: Some("ERR001".to_string()),
+            },
+            Response::Error {
+                message: "no code".to_string(),
+                code: None,
+            },
+            Response::Status {
+                running: true,
+                uptime_seconds: 100,
+                pid: 1234,
+                version: Some("1.0.0".to_string()),
+            },
+            Response::Status {
+                running: false,
+                uptime_seconds: 0,
+                pid: 0,
+                version: None,
+            },
+        ];
+        for resp in &resps {
+            let json = serde_json::to_string(resp).expect("serialize");
+            let back: Response = serde_json::from_str(&json).expect("deserialize");
+            let json2 = serde_json::to_string(&back).expect("re-serialize");
+            assert_eq!(json, json2);
+        }
+    }
+
+    #[test]
+    fn test_response_error_code_omitted_when_none() {
+        let resp = Response::Error {
+            message: "oops".to_string(),
+            code: None,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        // code field should be absent (skip_serializing_if = "Option::is_none")
+        assert!(
+            !json.contains("\"code\""),
+            "code field should be omitted when None, got: {json}"
+        );
+    }
+
+    #[test]
+    fn test_response_status_version_omitted_when_none() {
+        let resp = Response::Status {
+            running: false,
+            uptime_seconds: 0,
+            pid: 0,
+            version: None,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(
+            !json.contains("\"version\""),
+            "version field should be omitted when None, got: {json}"
+        );
+    }
+
+    #[test]
+    fn test_system_state_roundtrip() {
+        let state = SystemState {
+            daemon_running: true,
+            active_connections: 5,
+            uptime_seconds: 3600,
+            version: "2.0.0".to_string(),
+            last_updated: "2024-01-01T00:00:00Z".to_string(),
+        };
+        let json = serde_json::to_string(&state).unwrap();
+        let back: SystemState = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.daemon_running, state.daemon_running);
+        assert_eq!(back.active_connections, state.active_connections);
+        assert_eq!(back.uptime_seconds, state.uptime_seconds);
+        assert_eq!(back.version, state.version);
+        assert_eq!(back.last_updated, state.last_updated);
+    }
+
+    #[test]
+    fn test_event_all_variants_serialize() {
+        let events = vec![
+            Event::DaemonStarted {
+                timestamp: "2024-01-01T00:00:00Z".to_string(),
+                version: "1.0.0".to_string(),
+            },
+            Event::DaemonStopped {
+                timestamp: "2024-01-01T00:00:01Z".to_string(),
+            },
+            Event::ClientConnected {
+                timestamp: "2024-01-01T00:00:02Z".to_string(),
+                client_id: "client-1".to_string(),
+            },
+            Event::ClientDisconnected {
+                timestamp: "2024-01-01T00:00:03Z".to_string(),
+                client_id: "client-1".to_string(),
+            },
+            Event::Custom {
+                event_type: "my_event".to_string(),
+                timestamp: "2024-01-01T00:00:04Z".to_string(),
+                data: serde_json::json!({"key": "value"}),
+            },
+        ];
+        for event in &events {
+            let json = serde_json::to_string(event).expect("serialize");
+            let back: Event = serde_json::from_str(&json).expect("deserialize");
+            let json2 = serde_json::to_string(&back).expect("re-serialize");
+            assert_eq!(json, json2);
+        }
+    }
+
+    #[test]
+    fn test_message_camel_case_serialization() {
+        // Custom variant field should be "command" due to rename
+        let msg = Message::Custom {
+            cmd: "hello".to_string(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(
+            json.contains("\"command\""),
+            "cmd field renamed to 'command', got: {json}"
+        );
+    }
+
+    #[test]
+    fn test_daemon_config_serialization_camel_case() {
+        let cfg = DaemonConfig {
+            host: "0.0.0.0".to_string(),
+            port: 8080,
+            log_level: "debug".to_string(),
+            max_connections: 50,
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(json.contains("\"logLevel\""), "got: {json}");
+        assert!(json.contains("\"maxConnections\""), "got: {json}");
+    }
 }
