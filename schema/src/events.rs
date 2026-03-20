@@ -783,7 +783,7 @@ mod tests {
         // ProcessExited gets timestamp from exit_info.timestamp
         let process_exited = ServiceEvent::ProcessExited {
             service_id: "s".to_string(),
-            exit_info: exit_info.clone(),
+            exit_info,
         };
         assert_eq!(process_exited.timestamp(), ts);
 
@@ -1023,7 +1023,7 @@ mod tests {
             signal: None,
             timestamp: "2024-01-01T00:00:00Z".to_string(),
         };
-        let event = ServiceEvent::process_exited("my-svc".to_string(), exit_info.clone());
+        let event = ServiceEvent::process_exited("my-svc".to_string(), exit_info);
         assert_eq!(event.service_id(), "my-svc");
         match event {
             ServiceEvent::ProcessExited {
@@ -1071,6 +1071,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn test_event_filter_type_all_known_event_types() {
         // Verify every event type string is correctly matched by the filter
         let all_types = vec![
@@ -1113,7 +1114,7 @@ mod tests {
             },
             ServiceEvent::ProcessExited {
                 service_id: "s".to_string(),
-                exit_info: exit_info.clone(),
+                exit_info,
             },
             ServiceEvent::HealthCheckResult {
                 service_id: "s".to_string(),
