@@ -981,10 +981,7 @@ mod tests {
         let filter = EventFilter {
             service_ids: Vec::new(),
             min_severity: None,
-            event_types: vec![
-                "processStarted".to_string(),
-                "processExited".to_string(),
-            ],
+            event_types: vec!["processStarted".to_string(), "processExited".to_string()],
         };
 
         let started = ServiceEvent::ProcessStarted {
@@ -1042,12 +1039,7 @@ mod tests {
 
     #[test]
     fn test_event_constructor_readiness_check_result() {
-        let event = ServiceEvent::readiness_check_result(
-            "svc".to_string(),
-            true,
-            None,
-            25,
-        );
+        let event = ServiceEvent::readiness_check_result("svc".to_string(), true, None, 25);
         assert_eq!(event.service_id(), "svc");
         match event {
             ServiceEvent::ReadinessCheckResult {
@@ -1064,12 +1056,8 @@ mod tests {
 
     #[test]
     fn test_event_constructor_restart_scheduled_and_attempt() {
-        let scheduled = ServiceEvent::restart_scheduled(
-            "svc".to_string(),
-            5,
-            2,
-            "crashed".to_string(),
-        );
+        let scheduled =
+            ServiceEvent::restart_scheduled("svc".to_string(), 5, 2, "crashed".to_string());
         assert_eq!(scheduled.service_id(), "svc");
         assert_eq!(scheduled.severity(), EventSeverity::Warning);
 
