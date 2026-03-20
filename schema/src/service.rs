@@ -538,11 +538,9 @@ mod tests {
 
     #[test]
     fn test_service_state_starting_predicates() {
-        // Starting state: running but not ready and not transitional
+        // Starting is running (process is up), not yet ready, and transitional
         assert!(ServiceState::Starting.is_running());
         assert!(!ServiceState::Starting.is_ready());
-        // Starting is not in the transitional set (Spawning | Starting | Stopping)
-        // Wait: let's check the code - Starting IS in the transitional set
         assert!(ServiceState::Starting.is_transitional());
     }
 
