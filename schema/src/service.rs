@@ -535,4 +535,102 @@ mod tests {
             HealthCheckType::Tcp { .. } => panic!("Expected Exec check"),
         }
     }
+
+    #[test]
+    fn test_service_state_starting_predicates() {
+        // Starting state: running but not ready and not transitional
+        assert!(ServiceState::Starting.is_running());
+        assert!(!ServiceState::Starting.is_ready());
+        // Starting is not in the transitional set (Spawning | Starting | Stopping)
+        // Wait: let's check the code - Starting IS in the transitional set
+        assert!(ServiceState::Starting.is_transitional());
+    }
+
+    #[test]
+    fn test_service_exit_with_signal_only() {
+        // Process killed by signal (no exit code)
+        let exit = ServiceExit {
+            pid: 99,
+            exit_code: None,
+            signal: Some(15), // SIGTERM
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+        };
+        assert!(!exit.is_success());
+        assert!(exit.is_failure());
+    }
+
+    #[test]
+    fn test_service_exit_with_no_code_no_signal_is_failure() {
+        // Edge case: neither exit code nor signal (unusual but possible)
+        let exit = ServiceExit {
+            pid: 77,
+            exit_code: None,
+            signal: None,
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+        };
+        // is_success checks exit_code == Some(0), which is false
+        assert!(!exit.is_success());
+        assert!(exit.is_failure());
+    }
+
+    #[test]
+    fn test_backoff_config_default_values() {
+        let cfg = BackoffConfig::default();
+        assert_eq!(cfg.base_delay_secs, 1);
+        assert_eq!(cfg.multiplier, 2.0);
+        assert_eq!(cfg.max_delay_secs, 300);
+        assert_eq!(cfg.jitter, 0.1);
+        assert_eq!(cfg.failure_window_secs, 900);
+    }
+
+    #[test]
+    fn test_service_spec_graceful_and_startup_timeouts_as_duration() {
+        let spec = ServiceSpec {
+            id: "x".to_string(),
+            name: "X".to_string(),
+            command: "true".to_string(),
+            args: vec![],
+            environment: HashMap::new(),
+            working_directory: None,
+            route: None,
+            restart_policy: RestartPolicy::Never,
+            backoff_config: BackoffConfig::default(),
+            health_check: None,
+            readiness_check: None,
+            graceful_timeout_secs: 45,
+            startup_timeout_secs: 120,
+        };
+        assert_eq!(spec.graceful_timeout(), Duration::from_secs(45));
+        assert_eq!(spec.startup_timeout(), Duration::from_secs(120));
+    }
+
+    #[test]
+    fn test_health_check_exec_args_default_empty() {
+        // Verify Exec check with default (empty) args works
+        let check = HealthCheckType::Exec {
+            command: "health_check.sh".to_string(),
+            args: vec![],
+        };
+        match check {
+            HealthCheckType::Exec { command, args } => {
+                assert_eq!(command, "health_check.sh");
+                assert!(args.is_empty());
+            }
+            _ => panic!("Expected Exec"),
+        }
+    }
+
+    #[test]
+    fn test_readiness_check_default_initial_delay() {
+        let check = ReadinessCheck {
+            check_type: HealthCheckType::Tcp { port: 3000 },
+            initial_delay_secs: 0,
+            interval_secs: 5,
+            timeout_secs: 2,
+            success_threshold: 1,
+        };
+        assert_eq!(check.initial_delay(), Duration::ZERO);
+        assert_eq!(check.interval(), Duration::from_secs(5));
+        assert_eq!(check.timeout(), Duration::from_secs(2));
+    }
 }
