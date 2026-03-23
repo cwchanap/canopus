@@ -598,10 +598,8 @@ mod tests {
 
     #[tokio::test]
     async fn status_returns_ok_when_daemon_running() {
-        let port = mock_server_once(
-            r#"{"status":{"running":true,"uptime_seconds":42,"pid":999}}"#,
-        )
-        .await;
+        let port =
+            mock_server_once(r#"{"status":{"running":true,"uptime_seconds":42,"pid":999}}"#).await;
         let client = make_client(port);
         let result = client.status().await;
         assert!(result.is_ok(), "expected Ok, got {result:?}");
@@ -609,13 +607,14 @@ mod tests {
 
     #[tokio::test]
     async fn status_returns_ok_when_daemon_running_false() {
-        let port = mock_server_once(
-            r#"{"status":{"running":false,"uptime_seconds":0,"pid":0}}"#,
-        )
-        .await;
+        let port =
+            mock_server_once(r#"{"status":{"running":false,"uptime_seconds":0,"pid":0}}"#).await;
         let client = make_client(port);
         let result = client.status().await;
-        assert!(result.is_ok(), "expected Ok even for running=false, got {result:?}");
+        assert!(
+            result.is_ok(),
+            "expected Ok even for running=false, got {result:?}"
+        );
     }
 
     #[tokio::test]
@@ -628,7 +627,10 @@ mod tests {
         let client = make_client(port);
         let result = client.status().await;
         // ConnectionFailed is treated as "not started" → still Ok
-        assert!(result.is_ok(), "expected Ok for connection refused, got {result:?}");
+        assert!(
+            result.is_ok(),
+            "expected Ok for connection refused, got {result:?}"
+        );
     }
 
     #[tokio::test]
@@ -684,10 +686,8 @@ mod tests {
 
     #[tokio::test]
     async fn stop_returns_err_on_unexpected_status_response() {
-        let port = mock_server_once(
-            r#"{"status":{"running":true,"uptime_seconds":0,"pid":1}}"#,
-        )
-        .await;
+        let port =
+            mock_server_once(r#"{"status":{"running":true,"uptime_seconds":0,"pid":1}}"#).await;
         let client = make_client(port);
         let result = client.stop().await;
         assert!(result.is_err());
@@ -717,10 +717,8 @@ mod tests {
 
     #[tokio::test]
     async fn restart_returns_err_on_unexpected_status_response() {
-        let port = mock_server_once(
-            r#"{"status":{"running":true,"uptime_seconds":0,"pid":1}}"#,
-        )
-        .await;
+        let port =
+            mock_server_once(r#"{"status":{"running":true,"uptime_seconds":0,"pid":1}}"#).await;
         let client = make_client(port);
         let result = client.restart().await;
         assert!(result.is_err());
@@ -750,10 +748,8 @@ mod tests {
 
     #[tokio::test]
     async fn custom_returns_err_on_unexpected_status_response() {
-        let port = mock_server_once(
-            r#"{"status":{"running":true,"uptime_seconds":0,"pid":1}}"#,
-        )
-        .await;
+        let port =
+            mock_server_once(r#"{"status":{"running":true,"uptime_seconds":0,"pid":1}}"#).await;
         let client = make_client(port);
         let result = client.custom("anything").await;
         assert!(result.is_err());
@@ -814,7 +810,10 @@ mod tests {
         let client = make_client(port);
         let result = client.start().await;
         // DAEMON_ALREADY_RUNNING error code is treated as success
-        assert!(result.is_ok(), "expected Ok for DAEMON_ALREADY_RUNNING, got {result:?}");
+        assert!(
+            result.is_ok(),
+            "expected Ok for DAEMON_ALREADY_RUNNING, got {result:?}"
+        );
     }
 
     #[tokio::test]
@@ -837,10 +836,8 @@ mod tests {
 
     #[tokio::test]
     async fn start_returns_err_on_unexpected_status_response() {
-        let port = mock_server_once(
-            r#"{"status":{"running":true,"uptime_seconds":0,"pid":1}}"#,
-        )
-        .await;
+        let port =
+            mock_server_once(r#"{"status":{"running":true,"uptime_seconds":0,"pid":1}}"#).await;
         let client = make_client(port);
         let result = client.start().await;
         assert!(result.is_err());
@@ -859,15 +856,17 @@ mod tests {
         let client = make_client(port);
         let result = client.send_message(Message::Status).await;
         assert!(
-            matches!(result, Err(CliError::IpcError(ipc::IpcError::ConnectionFailed(_)))),
+            matches!(
+                result,
+                Err(CliError::IpcError(ipc::IpcError::ConnectionFailed(_)))
+            ),
             "expected ConnectionFailed IPC error, got {result:?}"
         );
     }
 
     #[tokio::test]
     async fn send_message_returns_parsed_response() {
-        let port =
-            mock_server_once(r#"{"ok":{"message":"hello from daemon"}}"#).await;
+        let port = mock_server_once(r#"{"ok":{"message":"hello from daemon"}}"#).await;
         let client = make_client(port);
         let result = client.send_message(Message::Status).await;
         assert!(result.is_ok());
