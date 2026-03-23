@@ -551,6 +551,7 @@ mod tests {
     use super::*;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::net::TcpListener;
+    use tokio::task::JoinHandle;
 
     /// Create a Client pointing to a specific local port.
     fn make_client(port: u16) -> Client {
@@ -562,21 +563,27 @@ mod tests {
     }
 
     /// Spawn a one-shot mock TCP server that reads one newline-terminated request,
-    /// then writes `response_json` followed by `\n`. Returns the bound port.
-    async fn mock_server_once(response_json: &'static str) -> u16 {
+    /// validates it deserializes as a `Message`, then writes `response_json`
+    /// followed by `\n`. Returns the bound port and the server `JoinHandle` so
+    /// callers can await it and surface any panics that occur inside the task.
+    async fn mock_server_once(response_json: &'static str) -> (u16, JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
             let (reader, mut writer) = stream.into_split();
             let mut reader = BufReader::new(reader);
             let mut line = String::new();
             let _ = reader.read_line(&mut line).await;
+            // Validate the client sent a well-formed Message; a panic here will
+            // propagate when the test awaits the handle.
+            serde_json::from_str::<Message>(line.trim_end())
+                .expect("mock server: client sent invalid Message JSON");
             let mut resp = response_json.as_bytes().to_vec();
             resp.push(b'\n');
             writer.write_all(&resp).await.unwrap();
         });
-        port
+        (port, handle)
     }
 
     // ── Client::new ───────────────────────────────────────────────────────────
@@ -598,16 +605,17 @@ mod tests {
 
     #[tokio::test]
     async fn status_returns_ok_when_daemon_running() {
-        let port =
+        let (port, server) =
             mock_server_once(r#"{"status":{"running":true,"uptime_seconds":42,"pid":999}}"#).await;
         let client = make_client(port);
         let result = client.status().await;
         assert!(result.is_ok(), "expected Ok, got {result:?}");
+        server.await.expect("mock server panicked");
     }
 
     #[tokio::test]
     async fn status_returns_ok_when_daemon_running_false() {
-        let port =
+        let (port, server) =
             mock_server_once(r#"{"status":{"running":false,"uptime_seconds":0,"pid":0}}"#).await;
         let client = make_client(port);
         let result = client.status().await;
@@ -615,16 +623,14 @@ mod tests {
             result.is_ok(),
             "expected Ok even for running=false, got {result:?}"
         );
+        server.await.expect("mock server panicked");
     }
 
     #[tokio::test]
     async fn status_returns_ok_when_connection_refused() {
-        // Bind a listener, get port, then drop it so the port is free but not listening.
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        drop(listener);
-
-        let client = make_client(port);
+        // Port 1 is a privileged port never bound in test environments, so
+        // connecting to it deterministically yields IpcError::ConnectionFailed.
+        let client = make_client(1);
         let result = client.status().await;
         // ConnectionFailed is treated as "not started" → still Ok
         assert!(
@@ -635,46 +641,50 @@ mod tests {
 
     #[tokio::test]
     async fn status_returns_err_on_error_response() {
-        let port = mock_server_once(r#"{"error":{"message":"internal error"}}"#).await;
+        let (port, server) = mock_server_once(r#"{"error":{"message":"internal error"}}"#).await;
         let client = make_client(port);
         let result = client.status().await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), CliError::DaemonError(_)));
+        server.await.expect("mock server panicked");
     }
 
     #[tokio::test]
     async fn status_returns_err_on_unexpected_ok_response() {
-        let port = mock_server_once(r#"{"ok":{"message":"unexpected"}}"#).await;
+        let (port, server) = mock_server_once(r#"{"ok":{"message":"unexpected"}}"#).await;
         let client = make_client(port);
         let result = client.status().await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), CliError::DaemonError(_)));
+        server.await.expect("mock server panicked");
     }
 
     #[tokio::test]
     async fn status_includes_version_when_present() {
-        let port = mock_server_once(
+        let (port, server) = mock_server_once(
             r#"{"status":{"running":true,"uptime_seconds":0,"pid":1,"version":"2.0.0"}}"#,
         )
         .await;
         let client = make_client(port);
         let result = client.status().await;
         assert!(result.is_ok(), "expected Ok, got {result:?}");
+        server.await.expect("mock server panicked");
     }
 
     // ── stop() ────────────────────────────────────────────────────────────────
 
     #[tokio::test]
     async fn stop_returns_ok_on_success() {
-        let port = mock_server_once(r#"{"ok":{"message":"Daemon stopped"}}"#).await;
+        let (port, server) = mock_server_once(r#"{"ok":{"message":"Daemon stopped"}}"#).await;
         let client = make_client(port);
         let result = client.stop().await;
         assert!(result.is_ok(), "expected Ok, got {result:?}");
+        server.await.expect("mock server panicked");
     }
 
     #[tokio::test]
     async fn stop_returns_err_on_error_response() {
-        let port =
+        let (port, server) =
             mock_server_once(r#"{"error":{"message":"stop failed","code":"STOP001"}}"#).await;
         let client = make_client(port);
         let result = client.stop().await;
@@ -682,96 +692,105 @@ mod tests {
         let err = result.unwrap_err();
         assert!(matches!(err, CliError::DaemonError(_)));
         assert!(err.to_string().contains("stop failed"));
+        server.await.expect("mock server panicked");
     }
 
     #[tokio::test]
     async fn stop_returns_err_on_unexpected_status_response() {
-        let port =
+        let (port, server) =
             mock_server_once(r#"{"status":{"running":true,"uptime_seconds":0,"pid":1}}"#).await;
         let client = make_client(port);
         let result = client.stop().await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), CliError::DaemonError(_)));
+        server.await.expect("mock server panicked");
     }
 
     // ── restart() ─────────────────────────────────────────────────────────────
 
     #[tokio::test]
     async fn restart_returns_ok_on_success() {
-        let port = mock_server_once(r#"{"ok":{"message":"Daemon restarted"}}"#).await;
+        let (port, server) = mock_server_once(r#"{"ok":{"message":"Daemon restarted"}}"#).await;
         let client = make_client(port);
         let result = client.restart().await;
         assert!(result.is_ok(), "expected Ok, got {result:?}");
+        server.await.expect("mock server panicked");
     }
 
     #[tokio::test]
     async fn restart_returns_err_on_error_response() {
-        let port = mock_server_once(r#"{"error":{"message":"restart failed"}}"#).await;
+        let (port, server) = mock_server_once(r#"{"error":{"message":"restart failed"}}"#).await;
         let client = make_client(port);
         let result = client.restart().await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, CliError::DaemonError(_)));
         assert!(err.to_string().contains("restart failed"));
+        server.await.expect("mock server panicked");
     }
 
     #[tokio::test]
     async fn restart_returns_err_on_unexpected_status_response() {
-        let port =
+        let (port, server) =
             mock_server_once(r#"{"status":{"running":true,"uptime_seconds":0,"pid":1}}"#).await;
         let client = make_client(port);
         let result = client.restart().await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), CliError::DaemonError(_)));
+        server.await.expect("mock server panicked");
     }
 
     // ── custom() ──────────────────────────────────────────────────────────────
 
     #[tokio::test]
     async fn custom_returns_ok_on_success() {
-        let port = mock_server_once(r#"{"ok":{"message":"command executed"}}"#).await;
+        let (port, server) = mock_server_once(r#"{"ok":{"message":"command executed"}}"#).await;
         let client = make_client(port);
         let result = client.custom("my-command").await;
         assert!(result.is_ok(), "expected Ok, got {result:?}");
+        server.await.expect("mock server panicked");
     }
 
     #[tokio::test]
     async fn custom_returns_err_on_error_response() {
-        let port = mock_server_once(r#"{"error":{"message":"command failed"}}"#).await;
+        let (port, server) = mock_server_once(r#"{"error":{"message":"command failed"}}"#).await;
         let client = make_client(port);
         let result = client.custom("my-command").await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(matches!(err, CliError::DaemonError(_)));
         assert!(err.to_string().contains("command failed"));
+        server.await.expect("mock server panicked");
     }
 
     #[tokio::test]
     async fn custom_returns_err_on_unexpected_status_response() {
-        let port =
+        let (port, server) =
             mock_server_once(r#"{"status":{"running":true,"uptime_seconds":0,"pid":1}}"#).await;
         let client = make_client(port);
         let result = client.custom("anything").await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), CliError::DaemonError(_)));
+        server.await.expect("mock server panicked");
     }
 
     // ── version() ─────────────────────────────────────────────────────────────
 
     #[tokio::test]
     async fn version_prints_version_when_present() {
-        let port = mock_server_once(
+        let (port, server) = mock_server_once(
             r#"{"status":{"running":true,"uptime_seconds":0,"pid":1,"version":"1.2.3"}}"#,
         )
         .await;
         let client = make_client(port);
         let result = client.version().await;
         assert!(result.is_ok(), "expected Ok, got {result:?}");
+        server.await.expect("mock server panicked");
     }
 
     #[tokio::test]
     async fn version_returns_err_when_version_absent() {
-        let port =
+        let (port, server) =
             mock_server_once(r#"{"status":{"running":true,"uptime_seconds":0,"pid":1}}"#).await;
         let client = make_client(port);
         let result = client.version().await;
@@ -779,31 +798,34 @@ mod tests {
         let err = result.unwrap_err();
         assert!(matches!(err, CliError::DaemonError(_)));
         assert!(err.to_string().contains("unavailable"));
+        server.await.expect("mock server panicked");
     }
 
     #[tokio::test]
     async fn version_returns_err_on_error_response() {
-        let port = mock_server_once(r#"{"error":{"message":"version error"}}"#).await;
+        let (port, server) = mock_server_once(r#"{"error":{"message":"version error"}}"#).await;
         let client = make_client(port);
         let result = client.version().await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), CliError::DaemonError(_)));
+        server.await.expect("mock server panicked");
     }
 
     #[tokio::test]
     async fn version_returns_err_on_unexpected_ok_response() {
-        let port = mock_server_once(r#"{"ok":{"message":"unexpected"}}"#).await;
+        let (port, server) = mock_server_once(r#"{"ok":{"message":"unexpected"}}"#).await;
         let client = make_client(port);
         let result = client.version().await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), CliError::DaemonError(_)));
+        server.await.expect("mock server panicked");
     }
 
     // ── start() special cases ─────────────────────────────────────────────────
 
     #[tokio::test]
     async fn start_returns_ok_on_daemon_already_running() {
-        let port = mock_server_once(
+        let (port, server) = mock_server_once(
             r#"{"error":{"message":"already running","code":"DAEMON_ALREADY_RUNNING"}}"#,
         )
         .await;
@@ -814,46 +836,47 @@ mod tests {
             result.is_ok(),
             "expected Ok for DAEMON_ALREADY_RUNNING, got {result:?}"
         );
+        server.await.expect("mock server panicked");
     }
 
     #[tokio::test]
     async fn start_returns_ok_on_success_ok_response() {
-        let port = mock_server_once(r#"{"ok":{"message":"daemon started"}}"#).await;
+        let (port, server) = mock_server_once(r#"{"ok":{"message":"daemon started"}}"#).await;
         let client = make_client(port);
         let result = client.start().await;
         assert!(result.is_ok(), "expected Ok, got {result:?}");
+        server.await.expect("mock server panicked");
     }
 
     #[tokio::test]
     async fn start_returns_err_on_error_response_with_unknown_code() {
-        let port =
+        let (port, server) =
             mock_server_once(r#"{"error":{"message":"start failed","code":"SOME_ERROR"}}"#).await;
         let client = make_client(port);
         let result = client.start().await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), CliError::DaemonError(_)));
+        server.await.expect("mock server panicked");
     }
 
     #[tokio::test]
     async fn start_returns_err_on_unexpected_status_response() {
-        let port =
+        let (port, server) =
             mock_server_once(r#"{"status":{"running":true,"uptime_seconds":0,"pid":1}}"#).await;
         let client = make_client(port);
         let result = client.start().await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), CliError::DaemonError(_)));
+        server.await.expect("mock server panicked");
     }
 
     // ── send_message() ────────────────────────────────────────────────────────
 
     #[tokio::test]
     async fn send_message_wraps_ipc_connection_failure() {
-        // Bind and immediately drop to get a port that's definitely not listening
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        drop(listener);
-
-        let client = make_client(port);
+        // Port 1 is a privileged port never bound in test environments, so
+        // connecting to it deterministically yields IpcError::ConnectionFailed.
+        let client = make_client(1);
         let result = client.send_message(Message::Status).await;
         assert!(
             matches!(
@@ -866,12 +889,13 @@ mod tests {
 
     #[tokio::test]
     async fn send_message_returns_parsed_response() {
-        let port = mock_server_once(r#"{"ok":{"message":"hello from daemon"}}"#).await;
+        let (port, server) = mock_server_once(r#"{"ok":{"message":"hello from daemon"}}"#).await;
         let client = make_client(port);
         let result = client.send_message(Message::Status).await;
         assert!(result.is_ok());
         assert!(
             matches!(result.unwrap(), Response::Ok { message } if message == "hello from daemon")
         );
+        server.await.expect("mock server panicked");
     }
 }
