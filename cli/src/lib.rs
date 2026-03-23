@@ -589,8 +589,9 @@ mod tests {
             timeout_seconds: 15,
         };
         let client = Client::new(config);
-        // Client was created; the internal IpcClient uses host/port
-        let _ = client;
+        assert_eq!(client.config.daemon_host, "10.0.0.1");
+        assert_eq!(client.config.daemon_port, 9999);
+        assert_eq!(client.config.timeout_seconds, 15);
     }
 
     // ── status() ──────────────────────────────────────────────────────────────
