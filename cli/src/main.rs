@@ -659,3 +659,334 @@ async fn handle_inbox_command(cmd: &InboxCmd) -> canopus_core::Result<()> {
 fn inbox_to_core(e: &canopus_inbox::InboxError) -> canopus_core::CoreError {
     canopus_core::CoreError::ServiceError(e.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    // ── SourceAgentArg → SourceAgent ─────────────────────────────────────────
+
+    #[test]
+    fn source_agent_arg_claude_code_converts() {
+        assert_eq!(
+            SourceAgent::from(SourceAgentArg::ClaudeCode),
+            SourceAgent::ClaudeCode
+        );
+    }
+
+    #[test]
+    fn source_agent_arg_codex_converts() {
+        assert_eq!(SourceAgent::from(SourceAgentArg::Codex), SourceAgent::Codex);
+    }
+
+    #[test]
+    fn source_agent_arg_windsurf_converts() {
+        assert_eq!(
+            SourceAgent::from(SourceAgentArg::Windsurf),
+            SourceAgent::Windsurf
+        );
+    }
+
+    #[test]
+    fn source_agent_arg_opencode_converts() {
+        assert_eq!(
+            SourceAgent::from(SourceAgentArg::OpenCode),
+            SourceAgent::OpenCode
+        );
+    }
+
+    #[test]
+    fn source_agent_arg_other_converts() {
+        assert_eq!(SourceAgent::from(SourceAgentArg::Other), SourceAgent::Other);
+    }
+
+    // ── InboxStatusArg → InboxStatus ─────────────────────────────────────────
+
+    #[test]
+    fn inbox_status_arg_unread_converts() {
+        assert_eq!(
+            InboxStatus::from(InboxStatusArg::Unread),
+            InboxStatus::Unread
+        );
+    }
+
+    #[test]
+    fn inbox_status_arg_read_converts() {
+        assert_eq!(InboxStatus::from(InboxStatusArg::Read), InboxStatus::Read);
+    }
+
+    #[test]
+    fn inbox_status_arg_dismissed_converts() {
+        assert_eq!(
+            InboxStatus::from(InboxStatusArg::Dismissed),
+            InboxStatus::Dismissed
+        );
+    }
+
+    // ── Helper conversion functions ──────────────────────────────────────────
+
+    #[test]
+    fn anyhow_to_core_produces_service_error_with_message() {
+        let ipc_err = ipc::IpcError::ConnectionFailed("host down".to_string());
+        let core_err = anyhow_to_core(&ipc_err);
+        assert!(
+            matches!(core_err, canopus_core::CoreError::ServiceError(_)),
+            "expected ServiceError variant, got {core_err:?}"
+        );
+        assert!(
+            core_err.to_string().contains("host down"),
+            "got: {core_err}"
+        );
+    }
+
+    #[test]
+    fn cli_to_core_produces_service_error_with_message() {
+        let cli_err = cli::CliError::DaemonError("daemon is down".to_string());
+        let core_err = cli_to_core(&cli_err);
+        assert!(
+            matches!(core_err, canopus_core::CoreError::ServiceError(_)),
+            "expected ServiceError variant, got {core_err:?}"
+        );
+        assert!(
+            core_err.to_string().contains("daemon is down"),
+            "got: {core_err}"
+        );
+    }
+
+    #[test]
+    fn inbox_to_core_produces_service_error_with_message() {
+        let inbox_err = canopus_inbox::InboxError::NotFound("item-123".to_string());
+        let core_err = inbox_to_core(&inbox_err);
+        assert!(
+            matches!(core_err, canopus_core::CoreError::ServiceError(_)),
+            "expected ServiceError variant, got {core_err:?}"
+        );
+        assert!(
+            core_err.to_string().contains("item-123"),
+            "got: {core_err}"
+        );
+    }
+
+    // ── print_event ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn print_event_log_output_stdout_does_not_panic() {
+        let evt = schema::ServiceEvent::LogOutput {
+            service_id: "svc-1".to_string(),
+            stream: schema::LogStream::Stdout,
+            content: "hello world".to_string(),
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+        };
+        print_event(&evt);
+    }
+
+    #[test]
+    fn print_event_log_output_stderr_does_not_panic() {
+        let evt = schema::ServiceEvent::LogOutput {
+            service_id: "svc-1".to_string(),
+            stream: schema::LogStream::Stderr,
+            content: "error output".to_string(),
+            timestamp: "2024-01-01T00:00:00Z".to_string(),
+        };
+        print_event(&evt);
+    }
+
+    #[test]
+    fn print_event_other_variant_does_not_panic() {
+        let evt = schema::ServiceEvent::warning(
+            "svc-1".to_string(),
+            "something happened".to_string(),
+            None,
+        );
+        print_event(&evt);
+    }
+
+    // ── Clap argument parsing ────────────────────────────────────────────────
+
+    #[test]
+    fn cli_parses_status_command_with_defaults() {
+        let cli = Cli::try_parse_from(["canopus", "status"]).unwrap();
+        assert!(matches!(cli.command, Commands::Status));
+        assert_eq!(cli.host, "127.0.0.1");
+        assert_eq!(cli.port, 49384);
+    }
+
+    #[test]
+    fn cli_parses_start_command() {
+        let cli = Cli::try_parse_from(["canopus", "start"]).unwrap();
+        assert!(matches!(cli.command, Commands::Start));
+    }
+
+    #[test]
+    fn cli_parses_stop_command() {
+        let cli = Cli::try_parse_from(["canopus", "stop"]).unwrap();
+        assert!(matches!(cli.command, Commands::Stop));
+    }
+
+    #[test]
+    fn cli_parses_restart_command() {
+        let cli = Cli::try_parse_from(["canopus", "restart"]).unwrap();
+        assert!(matches!(cli.command, Commands::Restart));
+    }
+
+    #[test]
+    fn cli_parses_version_command() {
+        let cli = Cli::try_parse_from(["canopus", "version"]).unwrap();
+        assert!(matches!(cli.command, Commands::Version));
+    }
+
+    #[test]
+    fn cli_parses_custom_command_with_payload() {
+        let cli = Cli::try_parse_from(["canopus", "custom", "my-command"]).unwrap();
+        match &cli.command {
+            Commands::Custom { command } => assert_eq!(command, "my-command"),
+            _ => panic!("expected Custom variant"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_services_list_with_default_socket() {
+        let cli = Cli::try_parse_from(["canopus", "services", "list"]).unwrap();
+        match &cli.command {
+            Commands::Services { cmd, socket, token } => {
+                assert!(matches!(cmd, ServicesCmd::List));
+                assert_eq!(socket, "/tmp/canopus.sock");
+                assert!(token.is_none());
+            }
+            _ => panic!("expected Services variant"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_services_list_with_custom_socket() {
+        let cli = Cli::try_parse_from([
+            "canopus",
+            "services",
+            "--socket",
+            "/var/run/canopus.sock",
+            "list",
+        ])
+        .unwrap();
+        match &cli.command {
+            Commands::Services { socket, .. } => {
+                assert_eq!(socket, "/var/run/canopus.sock");
+            }
+            _ => panic!("expected Services variant"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_services_start_with_service_id() {
+        let cli =
+            Cli::try_parse_from(["canopus", "services", "start", "my-service"]).unwrap();
+        match &cli.command {
+            Commands::Services { cmd, .. } => match cmd {
+                ServicesCmd::Start {
+                    service_id,
+                    port,
+                    hostname,
+                    config,
+                } => {
+                    assert_eq!(service_id.as_deref(), Some("my-service"));
+                    assert!(port.is_none());
+                    assert!(hostname.is_none());
+                    assert!(config.is_none());
+                }
+                _ => panic!("expected Start variant"),
+            },
+            _ => panic!("expected Services variant"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_services_stop_with_service_id() {
+        let cli =
+            Cli::try_parse_from(["canopus", "services", "stop", "svc-1"]).unwrap();
+        match &cli.command {
+            Commands::Services { cmd, .. } => {
+                assert!(
+                    matches!(cmd, ServicesCmd::Stop { service_id } if service_id == "svc-1")
+                );
+            }
+            _ => panic!("expected Services variant"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_services_health_with_service_id() {
+        let cli =
+            Cli::try_parse_from(["canopus", "services", "health", "svc-1"]).unwrap();
+        match &cli.command {
+            Commands::Services { cmd, .. } => {
+                assert!(
+                    matches!(cmd, ServicesCmd::Health { service_id } if service_id == "svc-1")
+                );
+            }
+            _ => panic!("expected Services variant"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_custom_host_and_port() {
+        let cli = Cli::try_parse_from([
+            "canopus", "--host", "192.168.1.1", "--port", "8080", "status",
+        ])
+        .unwrap();
+        assert_eq!(cli.host, "192.168.1.1");
+        assert_eq!(cli.port, 8080);
+        assert!(matches!(cli.command, Commands::Status));
+    }
+
+    #[test]
+    fn cli_fails_on_unknown_command() {
+        let result = Cli::try_parse_from(["canopus", "unknown-command"]);
+        assert!(result.is_err(), "expected parse error for unknown command");
+    }
+
+    #[test]
+    fn cli_parses_services_restart_with_service_id() {
+        let cli =
+            Cli::try_parse_from(["canopus", "services", "restart", "svc-2"]).unwrap();
+        match &cli.command {
+            Commands::Services { cmd, .. } => {
+                assert!(
+                    matches!(cmd, ServicesCmd::Restart { service_id } if service_id == "svc-2")
+                );
+            }
+            _ => panic!("expected Services variant"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_services_tail_logs_with_service_id() {
+        let cli =
+            Cli::try_parse_from(["canopus", "services", "tail-logs", "svc-3"]).unwrap();
+        match &cli.command {
+            Commands::Services { cmd, .. } => {
+                assert!(
+                    matches!(cmd, ServicesCmd::TailLogs { service_id } if service_id == "svc-3")
+                );
+            }
+            _ => panic!("expected Services variant"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_services_with_bearer_token() {
+        let cli = Cli::try_parse_from([
+            "canopus",
+            "services",
+            "--token",
+            "my-secret-token",
+            "list",
+        ])
+        .unwrap();
+        match &cli.command {
+            Commands::Services { token, .. } => {
+                assert_eq!(token.as_deref(), Some("my-secret-token"));
+            }
+            _ => panic!("expected Services variant"),
+        }
+    }
+}
