@@ -251,3 +251,204 @@ pub struct InboxFilter {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Duration;
+
+    // ── SourceAgent ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn source_agent_display_name_all_variants() {
+        assert_eq!(SourceAgent::ClaudeCode.display_name(), "Claude Code");
+        assert_eq!(SourceAgent::Codex.display_name(), "Codex CLI");
+        assert_eq!(SourceAgent::Windsurf.display_name(), "Windsurf");
+        assert_eq!(SourceAgent::OpenCode.display_name(), "OpenCode");
+        assert_eq!(SourceAgent::Other.display_name(), "Other");
+    }
+
+    #[test]
+    fn source_agent_as_str_all_variants() {
+        assert_eq!(SourceAgent::ClaudeCode.as_str(), "claude-code");
+        assert_eq!(SourceAgent::Codex.as_str(), "codex");
+        assert_eq!(SourceAgent::Windsurf.as_str(), "windsurf");
+        assert_eq!(SourceAgent::OpenCode.as_str(), "opencode");
+        assert_eq!(SourceAgent::Other.as_str(), "other");
+    }
+
+    #[test]
+    fn source_agent_from_str_canonical_values() {
+        assert_eq!(SourceAgent::from_str("claude-code"), SourceAgent::ClaudeCode);
+        assert_eq!(SourceAgent::from_str("codex"), SourceAgent::Codex);
+        assert_eq!(SourceAgent::from_str("windsurf"), SourceAgent::Windsurf);
+        assert_eq!(SourceAgent::from_str("opencode"), SourceAgent::OpenCode);
+        assert_eq!(SourceAgent::from_str("unknown-agent"), SourceAgent::Other);
+    }
+
+    #[test]
+    fn source_agent_from_str_recognized_aliases() {
+        assert_eq!(SourceAgent::from_str("claudecode"), SourceAgent::ClaudeCode);
+        assert_eq!(SourceAgent::from_str("claude"), SourceAgent::ClaudeCode);
+        assert_eq!(SourceAgent::from_str("codex-cli"), SourceAgent::Codex);
+        assert_eq!(SourceAgent::from_str("open-code"), SourceAgent::OpenCode);
+    }
+
+    #[test]
+    fn source_agent_from_str_is_case_insensitive() {
+        assert_eq!(SourceAgent::from_str("CLAUDE-CODE"), SourceAgent::ClaudeCode);
+        assert_eq!(SourceAgent::from_str("CODEX"), SourceAgent::Codex);
+        assert_eq!(SourceAgent::from_str("Windsurf"), SourceAgent::Windsurf);
+        assert_eq!(SourceAgent::from_str("OPENCODE"), SourceAgent::OpenCode);
+    }
+
+    #[test]
+    fn source_agent_display_matches_display_name() {
+        for agent in [
+            SourceAgent::ClaudeCode,
+            SourceAgent::Codex,
+            SourceAgent::Windsurf,
+            SourceAgent::OpenCode,
+            SourceAgent::Other,
+        ] {
+            assert_eq!(
+                agent.to_string(),
+                agent.display_name(),
+                "Display and display_name differ for {agent:?}"
+            );
+        }
+    }
+
+    // ── InboxStatus ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn inbox_status_as_str_all_variants() {
+        assert_eq!(InboxStatus::Unread.as_str(), "unread");
+        assert_eq!(InboxStatus::Read.as_str(), "read");
+        assert_eq!(InboxStatus::Dismissed.as_str(), "dismissed");
+    }
+
+    #[test]
+    fn inbox_status_from_str_all_variants() {
+        assert_eq!(InboxStatus::from_str("read"), InboxStatus::Read);
+        assert_eq!(InboxStatus::from_str("dismissed"), InboxStatus::Dismissed);
+        // Unknown values default to Unread
+        assert_eq!(InboxStatus::from_str("unread"), InboxStatus::Unread);
+        assert_eq!(InboxStatus::from_str("anything-else"), InboxStatus::Unread);
+    }
+
+    #[test]
+    fn inbox_status_from_str_is_case_insensitive() {
+        assert_eq!(InboxStatus::from_str("READ"), InboxStatus::Read);
+        assert_eq!(InboxStatus::from_str("DISMISSED"), InboxStatus::Dismissed);
+    }
+
+    #[test]
+    fn inbox_status_display_matches_as_str() {
+        for status in [InboxStatus::Unread, InboxStatus::Read, InboxStatus::Dismissed] {
+            assert_eq!(
+                status.to_string(),
+                status.as_str(),
+                "Display and as_str differ for {status:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn inbox_status_default_is_unread() {
+        assert_eq!(InboxStatus::default(), InboxStatus::Unread);
+    }
+
+    // ── NewInboxItem ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn new_inbox_item_new_sets_all_fields() {
+        let item = NewInboxItem::new(
+            "my-project",
+            "All tests passing",
+            "Review PR #42",
+            SourceAgent::ClaudeCode,
+        );
+        assert_eq!(item.project_name, "my-project");
+        assert_eq!(item.status_summary, "All tests passing");
+        assert_eq!(item.action_required, "Review PR #42");
+        assert_eq!(item.source_agent, SourceAgent::ClaudeCode);
+        assert!(item.details.is_none());
+    }
+
+    #[test]
+    fn new_inbox_item_with_details_attaches_json() {
+        let details = serde_json::json!({"key": "value", "count": 42});
+        let item = NewInboxItem::new("proj", "status", "action", SourceAgent::Other)
+            .with_details(details.clone());
+        assert_eq!(item.details.unwrap(), details);
+    }
+
+    // ── InboxItem::from_new ──────────────────────────────────────────────────
+
+    #[test]
+    fn inbox_item_from_new_has_expected_fields() {
+        let new_item = NewInboxItem::new("proj", "done", "do this", SourceAgent::Codex);
+        let item = InboxItem::from_new(new_item);
+        assert_eq!(item.project_name, "proj");
+        assert_eq!(item.status_summary, "done");
+        assert_eq!(item.action_required, "do this");
+        assert_eq!(item.source_agent, SourceAgent::Codex);
+        assert_eq!(item.status, InboxStatus::Unread);
+        assert!(!item.notified);
+        assert!(item.dismissed_at.is_none());
+        assert!(item.details.is_none());
+        assert!(!item.id.is_empty());
+    }
+
+    #[test]
+    fn inbox_item_from_new_with_details_preserves_them() {
+        let details = serde_json::json!({"pr": 99});
+        let new_item = NewInboxItem::new("p", "s", "a", SourceAgent::Windsurf)
+            .with_details(details.clone());
+        let item = InboxItem::from_new(new_item);
+        assert_eq!(item.details.unwrap(), details);
+    }
+
+    // ── InboxItem::age_display ───────────────────────────────────────────────
+
+    fn make_item_with_age(created_at: DateTime<Utc>) -> InboxItem {
+        InboxItem {
+            id: "test-id".to_string(),
+            project_name: "proj".to_string(),
+            status_summary: "s".to_string(),
+            action_required: "a".to_string(),
+            source_agent: SourceAgent::Other,
+            details: None,
+            status: InboxStatus::Unread,
+            created_at,
+            updated_at: Utc::now(),
+            dismissed_at: None,
+            notified: false,
+        }
+    }
+
+    #[test]
+    fn age_display_just_now_for_recent_items() {
+        let item = make_item_with_age(Utc::now());
+        assert_eq!(item.age_display(), "just now");
+    }
+
+    #[test]
+    fn age_display_minutes_ago() {
+        let item = make_item_with_age(Utc::now() - Duration::minutes(7));
+        assert_eq!(item.age_display(), "7m ago");
+    }
+
+    #[test]
+    fn age_display_hours_ago() {
+        let item = make_item_with_age(Utc::now() - Duration::hours(3));
+        assert_eq!(item.age_display(), "3h ago");
+    }
+
+    #[test]
+    fn age_display_days_ago() {
+        let item = make_item_with_age(Utc::now() - Duration::days(2));
+        assert_eq!(item.age_display(), "2d ago");
+    }
+}
