@@ -391,7 +391,7 @@ mod tests {
         let details = serde_json::json!({"key": "value", "count": 42});
         let item = NewInboxItem::new("proj", "status", "action", SourceAgent::Other)
             .with_details(details.clone());
-        assert_eq!(item.details.unwrap(), details);
+        assert_eq!(item.details, Some(details));
     }
 
     // ── InboxItem::from_new ──────────────────────────────────────────────────
@@ -417,7 +417,7 @@ mod tests {
         let new_item =
             NewInboxItem::new("p", "s", "a", SourceAgent::Windsurf).with_details(details.clone());
         let item = InboxItem::from_new(new_item);
-        assert_eq!(item.details.unwrap(), details);
+        assert_eq!(item.details, Some(details));
     }
 
     // ── InboxItem::age_display ───────────────────────────────────────────────
