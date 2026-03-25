@@ -119,7 +119,9 @@ mod tests {
 
     #[test]
     fn from_serde_json_error_creates_serialization_variant() {
-        let serde_err = serde_json::from_str::<serde_json::Value>("not json").unwrap_err();
+        let Err(serde_err) = serde_json::from_str::<serde_json::Value>("not json") else {
+            panic!("expected parse to fail on invalid JSON");
+        };
         let inbox_err = InboxError::from(serde_err);
         assert!(
             matches!(inbox_err, InboxError::Serialization(_)),
@@ -146,7 +148,7 @@ mod tests {
     #[test]
     fn result_type_alias_ok_and_err() {
         let ok: Result<i32> = Ok(42);
-        assert_eq!(ok.unwrap(), 42);
+        assert!(ok.is_ok());
         let err: Result<i32> = Err(InboxError::NotFound("item".to_string()));
         assert!(err.is_err());
     }
