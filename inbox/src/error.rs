@@ -119,15 +119,15 @@ mod tests {
 
     #[test]
     fn from_serde_json_error_creates_serialization_variant() {
-        let Err(serde_err) = serde_json::from_str::<serde_json::Value>("not json") else {
-            panic!("expected parse to fail on invalid JSON");
-        };
-        let inbox_err = InboxError::from(serde_err);
+        let result: Result<serde_json::Value> =
+            serde_json::from_str("not json").map_err(InboxError::from);
         assert!(
-            matches!(inbox_err, InboxError::Serialization(_)),
-            "expected Serialization variant, got {inbox_err:?}"
+            matches!(result, Err(InboxError::Serialization(_))),
+            "expected Serialization variant, got {result:?}"
         );
-        assert_eq!(inbox_err.code(), "INBOX003");
+        if let Err(inbox_err) = result {
+            assert_eq!(inbox_err.code(), "INBOX003");
+        }
     }
 
     #[test]
