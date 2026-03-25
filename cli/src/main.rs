@@ -762,10 +762,7 @@ mod tests {
             matches!(core_err, canopus_core::CoreError::ServiceError(_)),
             "expected ServiceError variant, got {core_err:?}"
         );
-        assert!(
-            core_err.to_string().contains("item-123"),
-            "got: {core_err}"
-        );
+        assert!(core_err.to_string().contains("item-123"), "got: {core_err}");
     }
 
     // ── print_event ──────────────────────────────────────────────────────────
@@ -878,8 +875,7 @@ mod tests {
 
     #[test]
     fn cli_parses_services_start_with_service_id() {
-        let cli =
-            Cli::try_parse_from(["canopus", "services", "start", "my-service"]).unwrap();
+        let cli = Cli::try_parse_from(["canopus", "services", "start", "my-service"]).unwrap();
         match &cli.command {
             Commands::Services { cmd, .. } => match cmd {
                 ServicesCmd::Start {
@@ -901,13 +897,10 @@ mod tests {
 
     #[test]
     fn cli_parses_services_stop_with_service_id() {
-        let cli =
-            Cli::try_parse_from(["canopus", "services", "stop", "svc-1"]).unwrap();
+        let cli = Cli::try_parse_from(["canopus", "services", "stop", "svc-1"]).unwrap();
         match &cli.command {
             Commands::Services { cmd, .. } => {
-                assert!(
-                    matches!(cmd, ServicesCmd::Stop { service_id } if service_id == "svc-1")
-                );
+                assert!(matches!(cmd, ServicesCmd::Stop { service_id } if service_id == "svc-1"));
             }
             _ => panic!("expected Services variant"),
         }
@@ -915,13 +908,10 @@ mod tests {
 
     #[test]
     fn cli_parses_services_health_with_service_id() {
-        let cli =
-            Cli::try_parse_from(["canopus", "services", "health", "svc-1"]).unwrap();
+        let cli = Cli::try_parse_from(["canopus", "services", "health", "svc-1"]).unwrap();
         match &cli.command {
             Commands::Services { cmd, .. } => {
-                assert!(
-                    matches!(cmd, ServicesCmd::Health { service_id } if service_id == "svc-1")
-                );
+                assert!(matches!(cmd, ServicesCmd::Health { service_id } if service_id == "svc-1"));
             }
             _ => panic!("expected Services variant"),
         }
@@ -930,7 +920,12 @@ mod tests {
     #[test]
     fn cli_parses_custom_host_and_port() {
         let cli = Cli::try_parse_from([
-            "canopus", "--host", "192.168.1.1", "--port", "8080", "status",
+            "canopus",
+            "--host",
+            "192.168.1.1",
+            "--port",
+            "8080",
+            "status",
         ])
         .unwrap();
         assert_eq!(cli.host, "192.168.1.1");
@@ -946,8 +941,7 @@ mod tests {
 
     #[test]
     fn cli_parses_services_restart_with_service_id() {
-        let cli =
-            Cli::try_parse_from(["canopus", "services", "restart", "svc-2"]).unwrap();
+        let cli = Cli::try_parse_from(["canopus", "services", "restart", "svc-2"]).unwrap();
         match &cli.command {
             Commands::Services { cmd, .. } => {
                 assert!(
@@ -960,8 +954,7 @@ mod tests {
 
     #[test]
     fn cli_parses_services_tail_logs_with_service_id() {
-        let cli =
-            Cli::try_parse_from(["canopus", "services", "tail-logs", "svc-3"]).unwrap();
+        let cli = Cli::try_parse_from(["canopus", "services", "tail-logs", "svc-3"]).unwrap();
         match &cli.command {
             Commands::Services { cmd, .. } => {
                 assert!(
@@ -974,14 +967,9 @@ mod tests {
 
     #[test]
     fn cli_parses_services_with_bearer_token() {
-        let cli = Cli::try_parse_from([
-            "canopus",
-            "services",
-            "--token",
-            "my-secret-token",
-            "list",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["canopus", "services", "--token", "my-secret-token", "list"])
+                .unwrap();
         match &cli.command {
             Commands::Services { token, .. } => {
                 assert_eq!(token.as_deref(), Some("my-secret-token"));
