@@ -725,6 +725,10 @@ mod tests {
     }
 
     // ── Helper conversion functions ──────────────────────────────────────────
+    // NOTE: These helpers intentionally use the coarse CoreError::ServiceError
+    // variant for all IPC, CLI, and inbox errors. Future implementations may
+    // map specific source variants (e.g., IpcError::SerializationFailed) to
+    // more precise CoreError variants such as SerializationError or IoError.
 
     #[test]
     fn anyhow_to_core_produces_service_error_with_message() {
