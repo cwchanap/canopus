@@ -74,7 +74,10 @@ mod tests {
     fn error_codes_for_all_variants() {
         assert_eq!(InboxError::NotFound("x".to_string()).code(), "INBOX001");
         assert_eq!(InboxError::Database("x".to_string()).code(), "INBOX002");
-        assert_eq!(InboxError::Serialization("x".to_string()).code(), "INBOX003");
+        assert_eq!(
+            InboxError::Serialization("x".to_string()).code(),
+            "INBOX003"
+        );
         assert_eq!(InboxError::Notification("x".to_string()).code(), "INBOX004");
         assert_eq!(InboxError::InvalidInput("x".to_string()).code(), "INBOX005");
         assert_eq!(InboxError::Io("x".to_string()).code(), "INBOX006");
@@ -103,10 +106,7 @@ mod tests {
                 InboxError::InvalidInput("bad input".to_string()),
                 "Invalid input: bad input",
             ),
-            (
-                InboxError::Io("io fail".to_string()),
-                "IO error: io fail",
-            ),
+            (InboxError::Io("io fail".to_string()), "IO error: io fail"),
         ];
         for (err, expected) in cases {
             assert_eq!(
@@ -137,7 +137,10 @@ mod tests {
             "expected Io variant, got {inbox_err:?}"
         );
         assert_eq!(inbox_err.code(), "INBOX006");
-        assert!(inbox_err.to_string().contains("IO error"), "got: {inbox_err}");
+        assert!(
+            inbox_err.to_string().contains("IO error"),
+            "got: {inbox_err}"
+        );
     }
 
     #[test]

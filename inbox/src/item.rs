@@ -279,7 +279,10 @@ mod tests {
 
     #[test]
     fn source_agent_from_str_canonical_values() {
-        assert_eq!(SourceAgent::from_str("claude-code"), SourceAgent::ClaudeCode);
+        assert_eq!(
+            SourceAgent::from_str("claude-code"),
+            SourceAgent::ClaudeCode
+        );
         assert_eq!(SourceAgent::from_str("codex"), SourceAgent::Codex);
         assert_eq!(SourceAgent::from_str("windsurf"), SourceAgent::Windsurf);
         assert_eq!(SourceAgent::from_str("opencode"), SourceAgent::OpenCode);
@@ -296,7 +299,10 @@ mod tests {
 
     #[test]
     fn source_agent_from_str_is_case_insensitive() {
-        assert_eq!(SourceAgent::from_str("CLAUDE-CODE"), SourceAgent::ClaudeCode);
+        assert_eq!(
+            SourceAgent::from_str("CLAUDE-CODE"),
+            SourceAgent::ClaudeCode
+        );
         assert_eq!(SourceAgent::from_str("CODEX"), SourceAgent::Codex);
         assert_eq!(SourceAgent::from_str("Windsurf"), SourceAgent::Windsurf);
         assert_eq!(SourceAgent::from_str("OPENCODE"), SourceAgent::OpenCode);
@@ -345,7 +351,11 @@ mod tests {
 
     #[test]
     fn inbox_status_display_matches_as_str() {
-        for status in [InboxStatus::Unread, InboxStatus::Read, InboxStatus::Dismissed] {
+        for status in [
+            InboxStatus::Unread,
+            InboxStatus::Read,
+            InboxStatus::Dismissed,
+        ] {
             assert_eq!(
                 status.to_string(),
                 status.as_str(),
@@ -404,8 +414,8 @@ mod tests {
     #[test]
     fn inbox_item_from_new_with_details_preserves_them() {
         let details = serde_json::json!({"pr": 99});
-        let new_item = NewInboxItem::new("p", "s", "a", SourceAgent::Windsurf)
-            .with_details(details.clone());
+        let new_item =
+            NewInboxItem::new("p", "s", "a", SourceAgent::Windsurf).with_details(details.clone());
         let item = InboxItem::from_new(new_item);
         assert_eq!(item.details.unwrap(), details);
     }
