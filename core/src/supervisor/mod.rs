@@ -858,4 +858,137 @@ mod unit_tests {
         handle.shutdown().unwrap();
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
+
+    // ── InternalState → ServiceState conversions ─────────────────────────────
+
+    #[test]
+    fn internal_state_idle_converts_to_service_state_idle() {
+        let s: ServiceState = InternalState::Idle.into();
+        assert_eq!(s, ServiceState::Idle);
+    }
+
+    #[test]
+    fn internal_state_spawning_converts_to_service_state_spawning() {
+        let s: ServiceState = InternalState::Spawning.into();
+        assert_eq!(s, ServiceState::Spawning);
+    }
+
+    #[test]
+    fn internal_state_starting_converts_to_service_state_starting() {
+        let s: ServiceState = InternalState::Starting.into();
+        assert_eq!(s, ServiceState::Starting);
+    }
+
+    #[test]
+    fn internal_state_ready_converts_to_service_state_ready() {
+        let s: ServiceState = InternalState::Ready.into();
+        assert_eq!(s, ServiceState::Ready);
+    }
+
+    #[test]
+    fn internal_state_stopping_converts_to_service_state_stopping() {
+        let s: ServiceState = InternalState::Stopping.into();
+        assert_eq!(s, ServiceState::Stopping);
+    }
+
+    // ── HealthCheckStatus / ReadinessCheckStatus construction ────────────────
+
+    #[test]
+    fn health_check_status_fields_are_accessible() {
+        use std::time::{Duration, SystemTime};
+        let status = HealthCheckStatus {
+            success: true,
+            timestamp: SystemTime::UNIX_EPOCH,
+            duration: Duration::from_millis(42),
+            error: None,
+        };
+        assert!(status.success);
+        assert_eq!(status.duration, Duration::from_millis(42));
+        assert!(status.error.is_none());
+    }
+
+    #[test]
+    fn health_check_status_clone_equality() {
+        use std::time::{Duration, SystemTime};
+        let status = HealthCheckStatus {
+            success: false,
+            timestamp: SystemTime::UNIX_EPOCH,
+            duration: Duration::from_secs(1),
+            error: Some("timeout".to_string()),
+        };
+        let cloned = status.clone();
+        assert_eq!(status, cloned);
+    }
+
+    #[test]
+    fn readiness_check_status_fields_are_accessible() {
+        use std::time::{Duration, SystemTime};
+        let status = ReadinessCheckStatus {
+            success: true,
+            timestamp: SystemTime::UNIX_EPOCH,
+            duration: Duration::from_millis(10),
+            error: None,
+        };
+        assert!(status.success);
+        assert!(status.error.is_none());
+    }
+
+    #[test]
+    fn readiness_check_status_clone_equality() {
+        use std::time::{Duration, SystemTime};
+        let a = ReadinessCheckStatus {
+            success: false,
+            timestamp: SystemTime::UNIX_EPOCH,
+            duration: Duration::from_millis(5),
+            error: Some("connection refused".to_string()),
+        };
+        assert_eq!(a, a.clone());
+    }
+
+    // ── HealthStatus equality ─────────────────────────────────────────────────
+
+    #[test]
+    fn health_status_equality() {
+        use std::time::{Duration, SystemTime};
+        let make = || HealthStatus {
+            state: ServiceState::Ready,
+            health_check_enabled: true,
+            readiness_check_enabled: false,
+            consecutive_health_failures: 0,
+            consecutive_readiness_successes: 2,
+            next_readiness_check_in: None,
+            next_health_check_in: Some(Duration::from_secs(10)),
+            startup_timeout_in: None,
+            last_health_check: Some(HealthCheckStatus {
+                success: true,
+                timestamp: SystemTime::UNIX_EPOCH,
+                duration: Duration::from_millis(5),
+                error: None,
+            }),
+            last_readiness_check: None,
+        };
+        assert_eq!(make(), make());
+    }
+
+    // ── SupervisorHandle on a closed channel ─────────────────────────────────
+
+    #[test]
+    fn supervisor_handle_send_on_closed_channel_returns_error() {
+        use tokio::sync::{mpsc, watch};
+        let spec = create_test_spec();
+        let (control_tx, control_rx) = mpsc::unbounded_channel::<ControlMsg>();
+        let (_state_tx, state_rx) = watch::channel(ServiceState::Idle);
+
+        let handle = SupervisorHandle {
+            spec,
+            control_tx,
+            state_rx,
+        };
+
+        // Drop the receiver end so the channel is closed.
+        drop(control_rx);
+
+        let result = handle.send(ControlMsg::Start);
+        assert!(result.is_err(), "send on closed channel should return error");
+    }
 }

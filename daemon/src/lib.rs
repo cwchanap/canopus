@@ -459,6 +459,73 @@ mod tests {
         assert!(clone.running.load(std::sync::atomic::Ordering::SeqCst));
     }
 
+    #[test]
+    fn daemon_new_starts_with_running_false() {
+        let daemon = Daemon::new(DaemonConfig::default());
+        assert!(
+            !daemon.running.load(std::sync::atomic::Ordering::SeqCst),
+            "daemon should not be running immediately after new()"
+        );
+    }
+
+    #[test]
+    fn process_message_status_version_field_is_set() {
+        let daemon = Daemon::new(DaemonConfig::default());
+        let response = daemon.process_message(Message::Status);
+        match response {
+            Response::Status { version, .. } => {
+                assert!(version.is_some(), "version should be present in status response");
+                let v = version.unwrap();
+                assert!(!v.is_empty(), "version string should not be empty");
+            }
+            other => panic!("expected Status response, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn process_message_stop_sets_running_to_false() {
+        let daemon = Daemon::new(DaemonConfig::default());
+        daemon.running.store(true, std::sync::atomic::Ordering::SeqCst);
+        daemon.process_message(Message::Stop);
+        assert!(
+            !daemon.running.load(std::sync::atomic::Ordering::SeqCst),
+            "running should be false after Stop message"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_daemon_handles_legacy_frame_without_newline() {
+        // Send a valid JSON Message without a trailing newline and verify the daemon
+        // still responds (legacy framing path).
+        let daemon = Daemon::new(DaemonConfig::default());
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            // Connection error is expected when client disconnects
+            let _ = daemon.handle_connection(stream).await;
+        });
+
+        let mut client = TcpStream::connect(addr).await.unwrap();
+        // Send Status without a newline terminator (legacy framing path)
+        let request = serde_json::to_vec(&Message::Status).unwrap();
+        client.write_all(&request).await.unwrap();
+
+        // The daemon should parse the complete JSON and send back a response
+        let mut reader = BufReader::new(&mut client);
+        let mut frame = Vec::new();
+        let n = reader.read_until(b'\n', &mut frame).await.unwrap();
+        assert!(n > 0, "should have received a response for legacy frame");
+        frame.pop(); // strip newline
+        let response: Response = serde_json::from_slice(&frame).unwrap();
+        assert!(matches!(response, Response::Status { .. }));
+
+        // Drop client so server task can finish
+        drop(client);
+        server.await.unwrap();
+    }
+
     #[tokio::test]
     async fn test_daemon_rejects_oversized_request_incrementally() {
         let daemon = Daemon::new(DaemonConfig::default());
