@@ -1870,7 +1870,10 @@ mod tests {
             watch::channel(ServiceState::Idle).0,
         );
         let changed = supervisor.get_changed_fields(&spec);
-        assert!(changed.is_empty(), "identical spec should yield no changed fields");
+        assert!(
+            changed.is_empty(),
+            "identical spec should yield no changed fields"
+        );
     }
 
     #[test]
@@ -1886,7 +1889,10 @@ mod tests {
         let mut new_spec = spec;
         new_spec.command = "ls".to_string();
         let changed = supervisor.get_changed_fields(&new_spec);
-        assert!(changed.contains(&"command".to_string()), "command change should be detected");
+        assert!(
+            changed.contains(&"command".to_string()),
+            "command change should be detected"
+        );
     }
 
     #[test]
@@ -1902,7 +1908,10 @@ mod tests {
         let mut new_spec = spec;
         new_spec.args = vec!["--verbose".to_string()];
         let changed = supervisor.get_changed_fields(&new_spec);
-        assert!(changed.contains(&"args".to_string()), "args change should be detected");
+        assert!(
+            changed.contains(&"args".to_string()),
+            "args change should be detected"
+        );
     }
 
     #[test]
@@ -1916,9 +1925,14 @@ mod tests {
             watch::channel(ServiceState::Idle).0,
         );
         let mut new_spec = spec;
-        new_spec.environment.insert("MY_VAR".to_string(), "value".to_string());
+        new_spec
+            .environment
+            .insert("MY_VAR".to_string(), "value".to_string());
         let changed = supervisor.get_changed_fields(&new_spec);
-        assert!(changed.contains(&"environment".to_string()), "environment change should be detected");
+        assert!(
+            changed.contains(&"environment".to_string()),
+            "environment change should be detected"
+        );
     }
 
     #[test]
