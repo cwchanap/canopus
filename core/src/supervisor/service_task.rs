@@ -1858,4 +1858,257 @@ mod tests {
             "backoffConfig should be in changed_fields: {changed:?}",
         );
     }
+
+    #[test]
+    fn get_changed_fields_no_change_returns_empty() {
+        let spec = create_test_spec();
+        let supervisor = ServiceSupervisor::new(
+            spec.clone(),
+            Arc::new(MockProcessAdapter::new()),
+            Arc::new(crate::proxy::NoopProxyAdapter),
+            broadcast::channel(16).0,
+            watch::channel(ServiceState::Idle).0,
+        );
+        let changed = supervisor.get_changed_fields(&spec);
+        assert!(changed.is_empty(), "identical spec should yield no changed fields");
+    }
+
+    #[test]
+    fn get_changed_fields_command_change() {
+        let spec = create_test_spec();
+        let supervisor = ServiceSupervisor::new(
+            spec.clone(),
+            Arc::new(MockProcessAdapter::new()),
+            Arc::new(crate::proxy::NoopProxyAdapter),
+            broadcast::channel(16).0,
+            watch::channel(ServiceState::Idle).0,
+        );
+        let mut new_spec = spec;
+        new_spec.command = "ls".to_string();
+        let changed = supervisor.get_changed_fields(&new_spec);
+        assert!(changed.contains(&"command".to_string()), "command change should be detected");
+    }
+
+    #[test]
+    fn get_changed_fields_args_change() {
+        let spec = create_test_spec();
+        let supervisor = ServiceSupervisor::new(
+            spec.clone(),
+            Arc::new(MockProcessAdapter::new()),
+            Arc::new(crate::proxy::NoopProxyAdapter),
+            broadcast::channel(16).0,
+            watch::channel(ServiceState::Idle).0,
+        );
+        let mut new_spec = spec;
+        new_spec.args = vec!["--verbose".to_string()];
+        let changed = supervisor.get_changed_fields(&new_spec);
+        assert!(changed.contains(&"args".to_string()), "args change should be detected");
+    }
+
+    #[test]
+    fn get_changed_fields_environment_change() {
+        let spec = create_test_spec();
+        let supervisor = ServiceSupervisor::new(
+            spec.clone(),
+            Arc::new(MockProcessAdapter::new()),
+            Arc::new(crate::proxy::NoopProxyAdapter),
+            broadcast::channel(16).0,
+            watch::channel(ServiceState::Idle).0,
+        );
+        let mut new_spec = spec;
+        new_spec.environment.insert("MY_VAR".to_string(), "value".to_string());
+        let changed = supervisor.get_changed_fields(&new_spec);
+        assert!(changed.contains(&"environment".to_string()), "environment change should be detected");
+    }
+
+    #[test]
+    fn get_changed_fields_working_directory_change() {
+        let spec = create_test_spec();
+        let supervisor = ServiceSupervisor::new(
+            spec.clone(),
+            Arc::new(MockProcessAdapter::new()),
+            Arc::new(crate::proxy::NoopProxyAdapter),
+            broadcast::channel(16).0,
+            watch::channel(ServiceState::Idle).0,
+        );
+        let mut new_spec = spec;
+        new_spec.working_directory = Some("/tmp".to_string());
+        let changed = supervisor.get_changed_fields(&new_spec);
+        assert!(
+            changed.contains(&"workingDirectory".to_string()),
+            "workingDirectory change should be detected"
+        );
+    }
+
+    #[test]
+    fn get_changed_fields_restart_policy_change() {
+        let spec = create_test_spec();
+        let supervisor = ServiceSupervisor::new(
+            spec.clone(),
+            Arc::new(MockProcessAdapter::new()),
+            Arc::new(crate::proxy::NoopProxyAdapter),
+            broadcast::channel(16).0,
+            watch::channel(ServiceState::Idle).0,
+        );
+        let mut new_spec = spec;
+        new_spec.restart_policy = RestartPolicy::Always;
+        let changed = supervisor.get_changed_fields(&new_spec);
+        assert!(
+            changed.contains(&"restartPolicy".to_string()),
+            "restartPolicy change should be detected"
+        );
+    }
+
+    #[test]
+    fn get_changed_fields_health_check_change() {
+        use schema::{HealthCheck, HealthCheckType};
+        let spec = create_test_spec();
+        let supervisor = ServiceSupervisor::new(
+            spec.clone(),
+            Arc::new(MockProcessAdapter::new()),
+            Arc::new(crate::proxy::NoopProxyAdapter),
+            broadcast::channel(16).0,
+            watch::channel(ServiceState::Idle).0,
+        );
+        let mut new_spec = spec;
+        new_spec.health_check = Some(HealthCheck {
+            check_type: HealthCheckType::Tcp { port: 8080 },
+            interval_secs: 10,
+            timeout_secs: 2,
+            failure_threshold: 3,
+            success_threshold: 1,
+        });
+        let changed = supervisor.get_changed_fields(&new_spec);
+        assert!(
+            changed.contains(&"healthCheck".to_string()),
+            "healthCheck change should be detected"
+        );
+    }
+
+    #[test]
+    fn get_changed_fields_readiness_check_change() {
+        use schema::{HealthCheckType, ReadinessCheck};
+        let spec = create_test_spec();
+        let supervisor = ServiceSupervisor::new(
+            spec.clone(),
+            Arc::new(MockProcessAdapter::new()),
+            Arc::new(crate::proxy::NoopProxyAdapter),
+            broadcast::channel(16).0,
+            watch::channel(ServiceState::Idle).0,
+        );
+        let mut new_spec = spec;
+        new_spec.readiness_check = Some(ReadinessCheck {
+            check_type: HealthCheckType::Tcp { port: 9000 },
+            initial_delay_secs: 1,
+            interval_secs: 5,
+            timeout_secs: 2,
+            success_threshold: 2,
+        });
+        let changed = supervisor.get_changed_fields(&new_spec);
+        assert!(
+            changed.contains(&"readinessCheck".to_string()),
+            "readinessCheck change should be detected"
+        );
+    }
+
+    #[test]
+    fn get_changed_fields_graceful_timeout_change() {
+        let spec = create_test_spec();
+        let supervisor = ServiceSupervisor::new(
+            spec.clone(),
+            Arc::new(MockProcessAdapter::new()),
+            Arc::new(crate::proxy::NoopProxyAdapter),
+            broadcast::channel(16).0,
+            watch::channel(ServiceState::Idle).0,
+        );
+        let mut new_spec = spec;
+        new_spec.graceful_timeout_secs = 30;
+        let changed = supervisor.get_changed_fields(&new_spec);
+        assert!(
+            changed.contains(&"gracefulTimeoutSecs".to_string()),
+            "gracefulTimeoutSecs change should be detected"
+        );
+    }
+
+    #[test]
+    fn get_changed_fields_startup_timeout_change() {
+        let spec = create_test_spec();
+        let supervisor = ServiceSupervisor::new(
+            spec.clone(),
+            Arc::new(MockProcessAdapter::new()),
+            Arc::new(crate::proxy::NoopProxyAdapter),
+            broadcast::channel(16).0,
+            watch::channel(ServiceState::Idle).0,
+        );
+        let mut new_spec = spec;
+        new_spec.startup_timeout_secs = 120;
+        let changed = supervisor.get_changed_fields(&new_spec);
+        assert!(
+            changed.contains(&"startupTimeoutSecs".to_string()),
+            "startupTimeoutSecs change should be detected"
+        );
+    }
+
+    #[test]
+    fn needs_restart_for_spec_change_empty_returns_false() {
+        let fields: Vec<String> = vec![];
+        assert!(
+            !ServiceSupervisor::needs_restart_for_spec_change(&fields),
+            "empty changed_fields should not require restart"
+        );
+    }
+
+    #[test]
+    fn needs_restart_for_spec_change_non_empty_returns_true() {
+        let fields = vec!["command".to_string()];
+        assert!(
+            ServiceSupervisor::needs_restart_for_spec_change(&fields),
+            "non-empty changed_fields should require restart"
+        );
+    }
+
+    #[test]
+    fn get_changed_fields_multiple_changes_detected() {
+        let spec = create_test_spec();
+        let supervisor = ServiceSupervisor::new(
+            spec.clone(),
+            Arc::new(MockProcessAdapter::new()),
+            Arc::new(crate::proxy::NoopProxyAdapter),
+            broadcast::channel(16).0,
+            watch::channel(ServiceState::Idle).0,
+        );
+        let mut new_spec = spec;
+        new_spec.command = "new-cmd".to_string();
+        new_spec.args = vec!["--flag".to_string()];
+        new_spec.graceful_timeout_secs = 99;
+        let changed = supervisor.get_changed_fields(&new_spec);
+        assert!(changed.contains(&"command".to_string()));
+        assert!(changed.contains(&"args".to_string()));
+        assert!(changed.contains(&"gracefulTimeoutSecs".to_string()));
+        assert_eq!(changed.len(), 3, "exactly three fields should be changed");
+    }
+
+    #[tokio::test]
+    async fn transition_to_same_state_is_noop() {
+        let (event_tx, mut event_rx) = broadcast::channel(16);
+        let (state_tx, _state_rx) = watch::channel(ServiceState::Idle);
+        let mut supervisor = ServiceSupervisor::new(
+            create_test_spec(),
+            Arc::new(MockProcessAdapter::new()),
+            Arc::new(crate::proxy::NoopProxyAdapter),
+            event_tx,
+            state_tx,
+        );
+        // State is already Idle; transitioning to Idle again should not emit an event.
+        supervisor
+            .transition_to(InternalState::Idle, None)
+            .await
+            .expect("transition should succeed");
+
+        // No event should be emitted for a no-op transition
+        assert!(
+            event_rx.try_recv().is_err(),
+            "no event should be emitted when transitioning to the same state"
+        );
+    }
 }
