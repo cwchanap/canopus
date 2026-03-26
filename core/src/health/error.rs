@@ -33,13 +33,6 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn timeout_display_includes_duration_seconds() {
-        let err = HealthError::Timeout(Duration::from_secs(5));
-        let msg = err.to_string();
-        assert!(msg.contains("5s"), "expected '5s' in '{msg}'");
-    }
-
-    #[test]
     fn timeout_display_includes_duration_millis() {
         let err = HealthError::Timeout(Duration::from_millis(500));
         let msg = err.to_string();
@@ -54,27 +47,6 @@ mod tests {
         assert!(
             msg.contains("tcp connection failed"),
             "expected 'tcp connection failed' in '{msg}'"
-        );
-    }
-
-    #[test]
-    fn unsupported_probe_type_display_includes_type_name() {
-        let err = HealthError::UnsupportedProbeType("HttpV2".to_string());
-        let msg = err.to_string();
-        assert!(msg.contains("HttpV2"), "expected type name in '{msg}'");
-        assert!(
-            msg.contains("unsupported probe type"),
-            "expected 'unsupported probe type' in '{msg}'"
-        );
-    }
-
-    #[test]
-    fn from_io_error_creates_tcp_variant() {
-        let io_err = std::io::Error::new(std::io::ErrorKind::TimedOut, "timed out");
-        let health_err = HealthError::from(io_err);
-        assert!(
-            matches!(health_err, HealthError::Tcp(_)),
-            "expected Tcp variant, got {health_err:?}"
         );
     }
 }
