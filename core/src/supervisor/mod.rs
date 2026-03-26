@@ -989,6 +989,9 @@ mod unit_tests {
         drop(control_rx);
 
         let result = handle.send(ControlMsg::Start);
-        assert!(result.is_err(), "send on closed channel should return error");
+        assert!(
+            result.is_err(),
+            "send on closed channel should return error"
+        );
     }
 }

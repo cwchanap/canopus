@@ -474,7 +474,10 @@ mod tests {
         let response = daemon.process_message(Message::Status);
         match response {
             Response::Status { version, .. } => {
-                assert!(version.is_some(), "version should be present in status response");
+                assert!(
+                    version.is_some(),
+                    "version should be present in status response"
+                );
                 let v = version.unwrap();
                 assert!(!v.is_empty(), "version string should not be empty");
             }
@@ -485,7 +488,9 @@ mod tests {
     #[test]
     fn process_message_stop_sets_running_to_false() {
         let daemon = Daemon::new(DaemonConfig::default());
-        daemon.running.store(true, std::sync::atomic::Ordering::SeqCst);
+        daemon
+            .running
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         daemon.process_message(Message::Stop);
         assert!(
             !daemon.running.load(std::sync::atomic::Ordering::SeqCst),

@@ -148,7 +148,11 @@ mod tests {
         }
         // Ensure all codes are unique
         let codes: std::collections::HashSet<_> = variants.iter().map(|(_, c)| *c).collect();
-        assert_eq!(codes.len(), variants.len(), "all error codes should be unique");
+        assert_eq!(
+            codes.len(),
+            variants.len(),
+            "all error codes should be unique"
+        );
     }
 
     #[test]
