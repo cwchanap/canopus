@@ -1860,7 +1860,7 @@ mod tests {
     }
 
     #[test]
-    fn get_changed_fields_no_change_returns_empty() {
+    fn test_get_changed_fields_no_change_returns_empty() {
         let spec = create_test_spec();
         let supervisor = ServiceSupervisor::new(
             spec.clone(),
@@ -1877,7 +1877,7 @@ mod tests {
     }
 
     #[test]
-    fn get_changed_fields_command_change() {
+    fn test_get_changed_fields_command_change() {
         let spec = create_test_spec();
         let supervisor = ServiceSupervisor::new(
             spec.clone(),
@@ -1896,7 +1896,7 @@ mod tests {
     }
 
     #[test]
-    fn get_changed_fields_args_change() {
+    fn test_get_changed_fields_args_change() {
         let spec = create_test_spec();
         let supervisor = ServiceSupervisor::new(
             spec.clone(),
@@ -1915,7 +1915,7 @@ mod tests {
     }
 
     #[test]
-    fn get_changed_fields_environment_change() {
+    fn test_get_changed_fields_environment_change() {
         let spec = create_test_spec();
         let supervisor = ServiceSupervisor::new(
             spec.clone(),
@@ -1936,7 +1936,7 @@ mod tests {
     }
 
     #[test]
-    fn get_changed_fields_working_directory_change() {
+    fn test_get_changed_fields_working_directory_change() {
         let spec = create_test_spec();
         let supervisor = ServiceSupervisor::new(
             spec.clone(),
@@ -1955,7 +1955,7 @@ mod tests {
     }
 
     #[test]
-    fn get_changed_fields_restart_policy_change() {
+    fn test_get_changed_fields_restart_policy_change() {
         let spec = create_test_spec();
         let supervisor = ServiceSupervisor::new(
             spec.clone(),
@@ -1974,7 +1974,7 @@ mod tests {
     }
 
     #[test]
-    fn get_changed_fields_health_check_change() {
+    fn test_get_changed_fields_health_check_change() {
         use schema::{HealthCheck, HealthCheckType};
         let spec = create_test_spec();
         let supervisor = ServiceSupervisor::new(
@@ -2000,7 +2000,7 @@ mod tests {
     }
 
     #[test]
-    fn get_changed_fields_readiness_check_change() {
+    fn test_get_changed_fields_readiness_check_change() {
         use schema::{HealthCheckType, ReadinessCheck};
         let spec = create_test_spec();
         let supervisor = ServiceSupervisor::new(
@@ -2026,7 +2026,7 @@ mod tests {
     }
 
     #[test]
-    fn get_changed_fields_graceful_timeout_change() {
+    fn test_get_changed_fields_graceful_timeout_change() {
         let spec = create_test_spec();
         let supervisor = ServiceSupervisor::new(
             spec.clone(),
@@ -2045,7 +2045,7 @@ mod tests {
     }
 
     #[test]
-    fn get_changed_fields_startup_timeout_change() {
+    fn test_get_changed_fields_startup_timeout_change() {
         let spec = create_test_spec();
         let supervisor = ServiceSupervisor::new(
             spec.clone(),
@@ -2064,7 +2064,7 @@ mod tests {
     }
 
     #[test]
-    fn needs_restart_for_spec_change_empty_returns_false() {
+    fn test_needs_restart_for_spec_change_empty_returns_false() {
         let fields: Vec<String> = vec![];
         assert!(
             !ServiceSupervisor::needs_restart_for_spec_change(&fields),
@@ -2073,7 +2073,7 @@ mod tests {
     }
 
     #[test]
-    fn needs_restart_for_spec_change_non_empty_returns_true() {
+    fn test_needs_restart_for_spec_change_non_empty_returns_true() {
         let fields = vec!["command".to_string()];
         assert!(
             ServiceSupervisor::needs_restart_for_spec_change(&fields),
@@ -2082,7 +2082,7 @@ mod tests {
     }
 
     #[test]
-    fn get_changed_fields_multiple_changes_detected() {
+    fn test_get_changed_fields_multiple_changes_detected() {
         let spec = create_test_spec();
         let supervisor = ServiceSupervisor::new(
             spec.clone(),
@@ -2103,7 +2103,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn transition_to_same_state_is_noop() {
+    async fn test_transition_to_same_state_is_noop() {
         let (event_tx, mut event_rx) = broadcast::channel(16);
         let (state_tx, _state_rx) = watch::channel(ServiceState::Idle);
         let mut supervisor = ServiceSupervisor::new(

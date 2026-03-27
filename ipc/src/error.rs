@@ -90,58 +90,64 @@ mod tests {
     }
 
     #[test]
-    fn send_failed_display() {
+    fn test_send_failed_display() {
         let e = IpcError::SendFailed("broken pipe".to_string());
         assert_eq!(e.to_string(), "Failed to send message: broken pipe");
     }
 
     #[test]
-    fn receive_failed_display() {
+    fn test_receive_failed_display() {
         let e = IpcError::ReceiveFailed("eof".to_string());
         assert_eq!(e.to_string(), "Failed to receive response: eof");
     }
 
     #[test]
-    fn serialization_failed_display() {
+    fn test_serialization_failed_display() {
         let e = IpcError::SerializationFailed("invalid type".to_string());
         assert_eq!(e.to_string(), "Serialization failed: invalid type");
     }
 
     #[test]
-    fn deserialization_failed_display() {
+    fn test_deserialization_failed_display() {
         let e = IpcError::DeserializationFailed("unexpected token".to_string());
         assert_eq!(e.to_string(), "Deserialization failed: unexpected token");
     }
 
     #[test]
-    fn empty_response_display() {
+    fn test_empty_response_display() {
         let e = IpcError::EmptyResponse;
         assert_eq!(e.to_string(), "Received empty response");
     }
 
     #[test]
-    fn protocol_error_display() {
+    fn test_protocol_error_display() {
         let e = IpcError::ProtocolError("missing handshake".to_string());
         assert_eq!(e.to_string(), "Protocol error: missing handshake");
     }
 
     #[test]
-    fn timeout_display() {
+    fn test_timeout_display() {
         let e = IpcError::Timeout("30s elapsed".to_string());
         assert_eq!(e.to_string(), "Timeout error: 30s elapsed");
     }
 
     #[test]
-    fn all_variants_have_unique_codes() {
+    fn test_all_variants_have_unique_codes() {
         let variants: &[(&str, &str)] = &[
-            ("IPC001", IpcError::ConnectionFailed("".into()).code()),
-            ("IPC002", IpcError::SendFailed("".into()).code()),
-            ("IPC003", IpcError::ReceiveFailed("".into()).code()),
-            ("IPC004", IpcError::SerializationFailed("".into()).code()),
-            ("IPC005", IpcError::DeserializationFailed("".into()).code()),
+            ("IPC001", IpcError::ConnectionFailed(String::new()).code()),
+            ("IPC002", IpcError::SendFailed(String::new()).code()),
+            ("IPC003", IpcError::ReceiveFailed(String::new()).code()),
+            (
+                "IPC004",
+                IpcError::SerializationFailed(String::new()).code(),
+            ),
+            (
+                "IPC005",
+                IpcError::DeserializationFailed(String::new()).code(),
+            ),
             ("IPC006", IpcError::EmptyResponse.code()),
-            ("IPC007", IpcError::ProtocolError("".into()).code()),
-            ("IPC008", IpcError::Timeout("".into()).code()),
+            ("IPC007", IpcError::ProtocolError(String::new()).code()),
+            ("IPC008", IpcError::Timeout(String::new()).code()),
         ];
         for (expected, actual) in variants {
             assert_eq!(expected, actual);
@@ -156,7 +162,7 @@ mod tests {
     }
 
     #[test]
-    fn error_source_is_none_for_non_wrapping_variants() {
+    fn test_error_source_is_none_for_non_wrapping_variants() {
         use std::error::Error;
         assert!(IpcError::ConnectionFailed("x".into()).source().is_none());
         assert!(IpcError::SendFailed("x".into()).source().is_none());

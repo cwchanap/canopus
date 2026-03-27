@@ -517,17 +517,19 @@ mod tests {
         let request = serde_json::to_vec(&Message::Status).unwrap();
         client.write_all(&request).await.unwrap();
 
-        // The daemon should parse the complete JSON and send back a response
-        let mut reader = BufReader::new(&mut client);
+        // Take ownership of client so the reader can release it afterwards
+        let mut reader = BufReader::new(client);
         let mut frame = Vec::new();
         let n = reader.read_until(b'\n', &mut frame).await.unwrap();
         assert!(n > 0, "should have received a response for legacy frame");
-        frame.pop(); // strip newline
+        if frame.last() == Some(&b'\n') {
+            frame.pop();
+        }
         let response: Response = serde_json::from_slice(&frame).unwrap();
         assert!(matches!(response, Response::Status { .. }));
 
-        // Drop client so server task can finish
-        drop(client);
+        // Drop the reader (and the underlying stream) so the server task can finish
+        drop(reader);
         server.await.unwrap();
     }
 
