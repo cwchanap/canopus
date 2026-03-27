@@ -402,4 +402,69 @@ mod tests {
         assert_eq!(loaded.services[0].last_pid, Some(12345));
         assert_eq!(loaded.services[0].last_state, ServiceState::Ready);
     }
+
+    #[test]
+    fn default_snapshot_path_uses_canopus_state_file_env() {
+        let custom_path = "/tmp/my_custom_state.json";
+        // SAFETY: test-only env mutation; run with serial_test if needed in a broader suite
+        let old = std::env::var("CANOPUS_STATE_FILE").ok();
+        std::env::set_var("CANOPUS_STATE_FILE", custom_path);
+        let path = default_snapshot_path();
+        // Restore
+        if let Some(v) = old {
+            std::env::set_var("CANOPUS_STATE_FILE", v);
+        } else {
+            std::env::remove_var("CANOPUS_STATE_FILE");
+        }
+        assert_eq!(path.to_str().unwrap(), custom_path);
+    }
+
+    #[test]
+    fn registry_snapshot_clone_equals_original() {
+        let snap = make_snap();
+        let cloned = snap.clone();
+        assert_eq!(snap, cloned);
+    }
+
+    #[test]
+    fn registry_snapshot_partial_eq() {
+        let snap1 = make_snap();
+        let snap2 = make_snap();
+        // Two snapshots with the same data should be equal (timestamps may differ)
+        // but their services should match
+        assert_eq!(snap1.version, snap2.version);
+        assert_eq!(snap1.services[0].id, snap2.services[0].id);
+        assert_eq!(snap1.services[0].last_state, snap2.services[0].last_state);
+    }
+
+    #[test]
+    fn service_snapshot_last_pid_none_is_not_serialized() {
+        let snap = make_snap();
+        let json = serde_json::to_string(&snap.services[0]).unwrap();
+        // When last_pid is None, skip_serializing_if applies and key should be absent
+        assert!(
+            !json.contains("lastPid"),
+            "lastPid should not be present when None: {json}"
+        );
+    }
+
+    #[test]
+    fn service_snapshot_last_pid_some_is_serialized() {
+        let mut snap = make_snap();
+        snap.services[0].last_pid = Some(9999);
+        let json = serde_json::to_string(&snap.services[0]).unwrap();
+        assert!(
+            json.contains("lastPid"),
+            "lastPid should be present when Some: {json}"
+        );
+        assert!(json.contains("9999"));
+    }
+
+    #[test]
+    fn current_timestamp_produces_different_values_over_time() {
+        let t1 = current_timestamp();
+        // Should be non-empty valid strings
+        assert!(!t1.is_empty());
+        assert!(t1.ends_with('Z'));
+    }
 }

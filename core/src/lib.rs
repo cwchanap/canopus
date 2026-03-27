@@ -133,4 +133,44 @@ mod tests {
         assert!(!config.host.is_empty());
         assert_ne!(config.max_connections, 0);
     }
+
+    #[test]
+    fn validate_config_port_zero_error_message() {
+        let config = DaemonConfig { port: 0, ..Default::default() };
+        let err = utils::validate_config(&config).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Port cannot be 0"),
+            "expected port-zero message, got: {msg}"
+        );
+        assert_eq!(err.code(), "CORE001", "should be a ConfigurationError");
+    }
+
+    #[test]
+    fn validate_config_empty_host_error_message() {
+        let config = DaemonConfig {
+            host: String::new(),
+            ..Default::default()
+        };
+        let err = utils::validate_config(&config).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Host cannot be empty"),
+            "expected empty-host message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn validate_config_max_connections_zero_error_message() {
+        let config = DaemonConfig {
+            max_connections: 0,
+            ..Default::default()
+        };
+        let err = utils::validate_config(&config).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Max connections"),
+            "expected max-connections message, got: {msg}"
+        );
+    }
 }

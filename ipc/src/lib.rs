@@ -318,6 +318,89 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_send_message_with_newline_terminated_invalid_json_returns_deserialization_error() {
+        // When the server sends invalid JSON with a trailing newline, the client
+        // should return a DeserializationFailed error (not ProtocolError).
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            // Drain the request
+            let mut buf = [0u8; 256];
+            loop {
+                let n = stream.read(&mut buf).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                if buf[..n].contains(&b'\n') {
+                    break;
+                }
+            }
+            // Send invalid JSON with newline delimiter
+            stream
+                .write_all(b"not-valid-json\n")
+                .await
+                .unwrap();
+        });
+
+        let client = IpcClient::new(addr.ip().to_string(), addr.port());
+        let result = client.send_message(&Message::Status).await;
+        assert!(
+            matches!(result, Err(IpcError::DeserializationFailed(_))),
+            "expected DeserializationFailed, got {result:?}"
+        );
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_send_message_with_crlf_delimiter_parses_correctly() {
+        // The client should handle \r\n delimiters (strip both \r and \n)
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 256];
+            loop {
+                let n = stream.read(&mut buf).await.unwrap();
+                if n == 0 || buf[..n].contains(&b'\n') {
+                    break;
+                }
+            }
+            // Send response with \r\n ending
+            let response = b"{\"ok\":{\"message\":\"crlf-ok\"}}\r\n";
+            stream.write_all(response).await.unwrap();
+        });
+
+        let client = IpcClient::new(addr.ip().to_string(), addr.port());
+        let result = client.send_message(&Message::Status).await;
+        assert!(
+            result.is_ok(),
+            "expected Ok for CRLF-terminated response, got {result:?}"
+        );
+        assert!(
+            matches!(result.unwrap(), Response::Ok { ref message } if message == "crlf-ok"),
+            "response message should be 'crlf-ok'"
+        );
+        server.await.unwrap();
+    }
+
+    #[test]
+    fn test_ipc_client_debug_contains_host_and_port() {
+        let client = IpcClient::new("192.168.1.1", 7777);
+        let debug_str = format!("{client:?}");
+        assert!(
+            debug_str.contains("192.168.1.1"),
+            "debug output should contain host: {debug_str}"
+        );
+        assert!(
+            debug_str.contains("7777"),
+            "debug output should contain port: {debug_str}"
+        );
+    }
+
+    #[tokio::test]
     async fn test_send_message_rejects_oversized_response() {
         // Verify that IpcClient enforces the MAX_FRAME_SIZE limit.
         // When the server sends more than 64KB without a newline, the client
