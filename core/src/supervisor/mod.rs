@@ -862,31 +862,31 @@ mod unit_tests {
     // ── InternalState → ServiceState conversions ─────────────────────────────
 
     #[test]
-    fn internal_state_idle_converts_to_service_state_idle() {
+    fn test_internal_state_idle_converts_to_service_state_idle() {
         let s: ServiceState = InternalState::Idle.into();
         assert_eq!(s, ServiceState::Idle);
     }
 
     #[test]
-    fn internal_state_spawning_converts_to_service_state_spawning() {
+    fn test_internal_state_spawning_converts_to_service_state_spawning() {
         let s: ServiceState = InternalState::Spawning.into();
         assert_eq!(s, ServiceState::Spawning);
     }
 
     #[test]
-    fn internal_state_starting_converts_to_service_state_starting() {
+    fn test_internal_state_starting_converts_to_service_state_starting() {
         let s: ServiceState = InternalState::Starting.into();
         assert_eq!(s, ServiceState::Starting);
     }
 
     #[test]
-    fn internal_state_ready_converts_to_service_state_ready() {
+    fn test_internal_state_ready_converts_to_service_state_ready() {
         let s: ServiceState = InternalState::Ready.into();
         assert_eq!(s, ServiceState::Ready);
     }
 
     #[test]
-    fn internal_state_stopping_converts_to_service_state_stopping() {
+    fn test_internal_state_stopping_converts_to_service_state_stopping() {
         let s: ServiceState = InternalState::Stopping.into();
         assert_eq!(s, ServiceState::Stopping);
     }
@@ -894,7 +894,7 @@ mod unit_tests {
     // ── HealthCheckStatus / ReadinessCheckStatus construction ────────────────
 
     #[test]
-    fn health_check_status_fields_are_accessible() {
+    fn test_health_check_status_fields_are_accessible() {
         use std::time::{Duration, SystemTime};
         let status = HealthCheckStatus {
             success: true,
@@ -908,7 +908,7 @@ mod unit_tests {
     }
 
     #[test]
-    fn health_check_status_clone_equality() {
+    fn test_health_check_status_clone_equality() {
         use std::time::{Duration, SystemTime};
         let status = HealthCheckStatus {
             success: false,
@@ -921,7 +921,7 @@ mod unit_tests {
     }
 
     #[test]
-    fn readiness_check_status_fields_are_accessible() {
+    fn test_readiness_check_status_fields_are_accessible() {
         use std::time::{Duration, SystemTime};
         let status = ReadinessCheckStatus {
             success: true,
@@ -934,7 +934,7 @@ mod unit_tests {
     }
 
     #[test]
-    fn readiness_check_status_clone_equality() {
+    fn test_readiness_check_status_clone_equality() {
         use std::time::{Duration, SystemTime};
         let a = ReadinessCheckStatus {
             success: false,
@@ -948,7 +948,7 @@ mod unit_tests {
     // ── HealthStatus equality ─────────────────────────────────────────────────
 
     #[test]
-    fn health_status_equality() {
+    fn test_health_status_equality() {
         use std::time::{Duration, SystemTime};
         let make = || HealthStatus {
             state: ServiceState::Ready,
@@ -973,7 +973,7 @@ mod unit_tests {
     // ── SupervisorHandle on a closed channel ─────────────────────────────────
 
     #[test]
-    fn supervisor_handle_send_on_closed_channel_returns_error() {
+    fn test_supervisor_handle_send_on_closed_channel_returns_error() {
         use tokio::sync::{mpsc, watch};
         let spec = create_test_spec();
         let (control_tx, control_rx) = mpsc::unbounded_channel::<ControlMsg>();
