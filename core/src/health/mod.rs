@@ -148,4 +148,53 @@ mod tests {
             HealthError::UnsupportedProbeType(_)
         ));
     }
+
+    #[tokio::test]
+    async fn run_probe_tcp_fails_when_nothing_listening() {
+        use tokio::net::TcpListener;
+        // Bind and immediately release a port so it's not listening
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let check = HealthCheck {
+            check_type: HealthCheckType::Tcp { port },
+            interval_secs: 1,
+            timeout_secs: 1,
+            failure_threshold: 1,
+            success_threshold: 1,
+        };
+        let result = run_probe(&check).await;
+        assert!(result.is_err(), "probe should fail when nothing is listening");
+    }
+
+    #[tokio::test]
+    async fn run_probe_tcp_succeeds_when_something_is_listening() {
+        use tokio::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        // Keep the listener alive while the probe runs
+        let _server = tokio::spawn(async move {
+            while let Ok((_stream, _)) = listener.accept().await {}
+        });
+
+        let check = HealthCheck {
+            check_type: HealthCheckType::Tcp { port },
+            interval_secs: 1,
+            timeout_secs: 2,
+            failure_threshold: 1,
+            success_threshold: 1,
+        };
+        let result = run_probe(&check).await;
+        assert!(result.is_ok(), "probe should succeed when port is open");
+    }
+
+    #[test]
+    fn create_probe_uses_check_type_tcp_port() {
+        let check_type = HealthCheckType::Tcp { port: 12345 };
+        let probe = create_probe(&check_type, Duration::from_secs(1));
+        // Should succeed - TCP probes are supported
+        assert!(probe.is_ok());
+    }
 }

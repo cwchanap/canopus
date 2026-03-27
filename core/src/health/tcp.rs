@@ -161,4 +161,44 @@ mod tests {
         let probe = TcpProbe::new("127.0.0.1", 3000, Duration::from_secs(1));
         assert_eq!(probe.address(), "127.0.0.1:3000");
     }
+
+    #[test]
+    fn test_tcp_probe_new_stores_fields() {
+        let probe = TcpProbe::new("example.com", 443, Duration::from_millis(500));
+        assert_eq!(probe.host, "example.com");
+        assert_eq!(probe.port, 443);
+        assert_eq!(probe.timeout, Duration::from_millis(500));
+    }
+
+    #[test]
+    fn test_tcp_probe_clone_is_equal() {
+        let probe = TcpProbe::new("127.0.0.1", 8080, Duration::from_secs(1));
+        let cloned = probe.clone();
+        // Both should produce the same address
+        assert_eq!(probe.address(), cloned.address());
+        assert_eq!(probe.timeout, cloned.timeout);
+    }
+
+    #[test]
+    fn test_tcp_probe_debug_contains_host_and_port() {
+        let probe = TcpProbe::new("10.0.0.1", 9090, Duration::from_secs(2));
+        let debug_str = format!("{probe:?}");
+        assert!(
+            debug_str.contains("10.0.0.1"),
+            "debug output should include host: {debug_str}"
+        );
+        assert!(
+            debug_str.contains("9090"),
+            "debug output should include port: {debug_str}"
+        );
+    }
+
+    #[test]
+    fn test_tcp_probe_address_port_boundary_values() {
+        let probe_min = TcpProbe::new("host", 1, Duration::from_secs(1));
+        assert_eq!(probe_min.address(), "host:1");
+
+        let probe_max = TcpProbe::new("host", 65535, Duration::from_secs(1));
+        assert_eq!(probe_max.address(), "host:65535");
+    }
 }

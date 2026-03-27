@@ -49,4 +49,70 @@ mod tests {
             "expected 'tcp connection failed' in '{msg}'"
         );
     }
+
+    #[test]
+    fn unsupported_probe_type_display_includes_type_name() {
+        let err = HealthError::UnsupportedProbeType("ExecProbe".to_string());
+        let msg = err.to_string();
+        assert!(
+            msg.contains("ExecProbe"),
+            "expected probe type name in '{msg}'"
+        );
+        assert!(
+            msg.contains("unsupported probe type"),
+            "expected 'unsupported probe type' in '{msg}'"
+        );
+    }
+
+    #[test]
+    fn tcp_error_source_is_io_error() {
+        use std::error::Error;
+        let io_err = std::io::Error::new(std::io::ErrorKind::TimedOut, "timed out");
+        let err = HealthError::Tcp(io_err);
+        // HealthError::Tcp wraps an io::Error so source() should return Some
+        assert!(
+            err.source().is_some(),
+            "Tcp variant should have a source error"
+        );
+    }
+
+    #[test]
+    fn timeout_display_with_various_durations() {
+        let err_secs = HealthError::Timeout(Duration::from_secs(10));
+        let msg = err_secs.to_string();
+        assert!(
+            msg.contains("10s"),
+            "expected '10s' in timeout message '{msg}'"
+        );
+
+        let err_micros = HealthError::Timeout(Duration::from_micros(250));
+        let msg_micros = err_micros.to_string();
+        assert!(!msg_micros.is_empty(), "timeout display should not be empty");
+    }
+
+    #[test]
+    fn health_error_from_io_error_produces_tcp_variant() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "refused");
+        let health_err: HealthError = io_err.into();
+        assert!(
+            matches!(health_err, HealthError::Tcp(_)),
+            "From<io::Error> should produce Tcp variant"
+        );
+    }
+
+    #[test]
+    fn health_error_debug_format_is_non_empty() {
+        let err = HealthError::UnsupportedProbeType("TestProbe".to_string());
+        let debug = format!("{err:?}");
+        assert!(!debug.is_empty(), "Debug format should not be empty");
+        assert!(debug.contains("TestProbe"), "Debug should contain type name");
+    }
+
+    #[test]
+    fn timeout_display_zero_duration() {
+        let err = HealthError::Timeout(Duration::from_secs(0));
+        let msg = err.to_string();
+        // Zero duration should still display without panic
+        assert!(!msg.is_empty(), "zero-duration timeout should display non-empty");
+    }
 }

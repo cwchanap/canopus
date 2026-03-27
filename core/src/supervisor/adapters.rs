@@ -531,6 +531,176 @@ mod tests {
         assert_eq!(exit.exit_code, Some(1));
     }
 
+    #[tokio::test]
+    async fn test_mock_instruction_default_values() {
+        let inst = MockInstruction::default();
+        assert_eq!(inst.exit_delay, std::time::Duration::from_millis(100));
+        assert_eq!(inst.exit_code, Some(0));
+        assert_eq!(inst.signal, None);
+        assert!(inst.responds_to_signals);
+    }
+
+    #[tokio::test]
+    async fn test_mock_adapter_set_instructions_replaces_all() {
+        let adapter = MockProcessAdapter::new();
+        let spec = create_test_spec();
+
+        // Set multiple instructions
+        adapter
+            .set_instructions(vec![
+                MockInstruction {
+                    exit_delay: Duration::from_millis(10),
+                    exit_code: Some(42),
+                    signal: None,
+                    responds_to_signals: true,
+                },
+                MockInstruction {
+                    exit_delay: Duration::from_millis(10),
+                    exit_code: Some(99),
+                    signal: None,
+                    responds_to_signals: true,
+                },
+            ])
+            .await;
+
+        // First spawn should get exit code 42
+        let mut p1 = adapter.spawn(&spec).await.unwrap();
+        let exit1 = p1.wait().await.unwrap();
+        assert_eq!(exit1.exit_code, Some(42));
+
+        // Second spawn should get exit code 99
+        let mut p2 = adapter.spawn(&spec).await.unwrap();
+        let exit2 = p2.wait().await.unwrap();
+        assert_eq!(exit2.exit_code, Some(99));
+    }
+
+    #[tokio::test]
+    async fn test_mock_process_take_stdout_returns_none() {
+        let adapter = MockProcessAdapter::new();
+        let spec = create_test_spec();
+
+        let mut process = adapter.spawn(&spec).await.unwrap();
+        // Mock process has no stdout stream
+        assert!(
+            process.take_stdout().is_none(),
+            "mock process stdout should always be None"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_mock_process_take_stderr_returns_none() {
+        let adapter = MockProcessAdapter::new();
+        let spec = create_test_spec();
+
+        let mut process = adapter.spawn(&spec).await.unwrap();
+        // Mock process has no stderr stream
+        assert!(
+            process.take_stderr().is_none(),
+            "mock process stderr should always be None"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_mock_process_is_alive_false_after_natural_exit() {
+        let adapter = MockProcessAdapter::new();
+        adapter
+            .add_instruction(MockInstruction {
+                exit_delay: Duration::from_millis(10),
+                exit_code: Some(0),
+                signal: None,
+                responds_to_signals: true,
+            })
+            .await;
+
+        let spec = create_test_spec();
+        let mut process = adapter.spawn(&spec).await.unwrap();
+
+        // Wait for the process to exit naturally
+        let _exit = process.wait().await.unwrap();
+
+        // After wait returns, the process should no longer be alive
+        assert!(
+            !process.is_alive(),
+            "process should not be alive after natural exit"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_mock_process_not_responding_to_signals() {
+        let adapter = MockProcessAdapter::new();
+        adapter
+            .add_instruction(MockInstruction {
+                exit_delay: Duration::from_secs(10),
+                exit_code: Some(2),
+                signal: Some(99),
+                responds_to_signals: false,
+            })
+            .await;
+
+        let spec = create_test_spec();
+        let mut process = adapter.spawn(&spec).await.unwrap();
+
+        // Terminate a non-responsive process
+        process.terminate().await.unwrap();
+
+        // When responds_to_signals is false, exit should use instruction's code/signal
+        // We need to wait - the process sets terminated=true but uses instruction values
+        let exit = process.wait().await.unwrap();
+        // With responds_to_signals=false, it uses the instruction's exit_code/signal
+        assert_eq!(exit.exit_code, Some(2));
+        assert_eq!(exit.signal, Some(99));
+    }
+
+    #[tokio::test]
+    async fn test_mock_process_kill_not_responding_to_signals() {
+        let adapter = MockProcessAdapter::new();
+        adapter
+            .add_instruction(MockInstruction {
+                exit_delay: Duration::from_secs(10),
+                exit_code: Some(0),
+                signal: None,
+                responds_to_signals: false,
+            })
+            .await;
+
+        let spec = create_test_spec();
+        let mut process = adapter.spawn(&spec).await.unwrap();
+
+        process.kill().await.unwrap();
+
+        // With responds_to_signals=false, kill signal is ignored and uses instruction values
+        let exit = process.wait().await.unwrap();
+        assert_eq!(exit.exit_code, Some(0));
+        assert_eq!(exit.signal, None);
+    }
+
+    #[tokio::test]
+    async fn test_mock_adapter_spawn_with_no_instructions_uses_default() {
+        let adapter = MockProcessAdapter::new();
+        let spec = create_test_spec();
+
+        // Spawn without any explicit instructions - should use MockInstruction::default()
+        let mut process = adapter.spawn(&spec).await.unwrap();
+        let exit = process.wait().await.unwrap();
+
+        // Default instruction has exit_code Some(0)
+        assert_eq!(exit.exit_code, Some(0));
+        assert_eq!(exit.signal, None);
+    }
+
+    #[tokio::test]
+    async fn test_mock_process_pid_is_positive() {
+        let adapter = MockProcessAdapter::new();
+        let spec = create_test_spec();
+
+        let process = adapter.spawn(&spec).await.unwrap();
+        assert!(
+            process.pid() >= 1000,
+            "mock PID should be >= 1000 (generated range), got {}",
+            process.pid()
+        );
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn test_unix_is_alive_after_termination() {

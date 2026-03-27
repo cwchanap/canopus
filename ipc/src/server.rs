@@ -2048,4 +2048,92 @@ mod tests {
         assert!(!cfg.version.is_empty());
         assert!(cfg.auth_token.is_none());
     }
+
+    // ── JsonRpcResponse constructors ──────────────────────────────────────────
+    #[test]
+    fn json_rpc_response_ok_sets_result_and_no_error() {
+        let resp = JsonRpcResponse::ok(
+            Some(Value::from(1)),
+            serde_json::json!({"key": "value"}),
+        );
+        assert_eq!(resp.jsonrpc, "2.0");
+        assert!(resp.result.is_some());
+        assert!(resp.error.is_none());
+        assert_eq!(resp.id, Some(Value::from(1)));
+    }
+
+    #[test]
+    fn json_rpc_response_err_sets_error_and_no_result() {
+        let resp = JsonRpcResponse::err(
+            Some(Value::from(2)),
+            -32600,
+            "Invalid Request",
+            None,
+        );
+        assert_eq!(resp.jsonrpc, "2.0");
+        assert!(resp.result.is_none());
+        assert!(resp.error.is_some());
+        let err = resp.error.unwrap();
+        assert_eq!(err.code, -32600);
+        assert_eq!(err.message, "Invalid Request");
+        assert!(err.data.is_none());
+    }
+
+    #[test]
+    fn json_rpc_response_err_with_data() {
+        let data = serde_json::json!({"detail": "extra info"});
+        let resp = JsonRpcResponse::err(
+            None,
+            -32000,
+            "Server error",
+            Some(data.clone()),
+        );
+        assert!(resp.error.is_some());
+        let err = resp.error.unwrap();
+        assert_eq!(err.code, -32000);
+        assert_eq!(err.data, Some(data));
+    }
+
+    #[test]
+    fn ipc_server_config_clone() {
+        let cfg = IpcServerConfig {
+            version: "1.2.3".to_string(),
+            auth_token: Some("secret".to_string()),
+            unix_socket_path: Some(std::path::PathBuf::from("/tmp/test.sock")),
+            windows_pipe_name: None,
+        };
+        let cloned = cfg.clone();
+        assert_eq!(cloned.version, "1.2.3");
+        assert_eq!(cloned.auth_token.as_deref(), Some("secret"));
+    }
+
+    // ── canopus.version ───────────────────────────────────────────────────────
+    #[tokio::test]
+    async fn route_version_returns_config_version() {
+        #[cfg(unix)]
+        {
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".to_string(),
+                method: "canopus.version".to_string(),
+                params: None,
+                id: Some(Value::from(100)),
+            };
+            let config = IpcServerConfig {
+                version: "9.8.7".to_string(),
+                ..IpcServerConfig::default()
+            };
+            let resp = route_method(
+                &config,
+                Arc::new(NoopControlPlane),
+                make_writer(),
+                req,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert!(resp.error.is_none());
+            let result = resp.result.expect("expected result");
+            assert_eq!(result["version"], "9.8.7");
+        }
+    }
 }
