@@ -318,7 +318,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_send_message_with_newline_terminated_invalid_json_returns_deserialization_error() {
+    async fn test_send_message_with_newline_terminated_invalid_json_returns_deserialization_error()
+    {
         // When the server sends invalid JSON with a trailing newline, the client
         // should return a DeserializationFailed error (not ProtocolError).
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -338,10 +339,7 @@ mod tests {
                 }
             }
             // Send invalid JSON with newline delimiter
-            stream
-                .write_all(b"not-valid-json\n")
-                .await
-                .unwrap();
+            stream.write_all(b"not-valid-json\n").await.unwrap();
         });
 
         let client = IpcClient::new(addr.ip().to_string(), addr.port());

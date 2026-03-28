@@ -479,7 +479,10 @@ mod tests {
         let t1 = current_timestamp();
         assert!(!t1.is_empty(), "timestamp should not be empty");
         assert!(t1.ends_with('Z'), "timestamp should end with Z: {t1}");
-        assert!(t1.contains('T'), "timestamp should contain T separator: {t1}");
+        assert!(
+            t1.contains('T'),
+            "timestamp should contain T separator: {t1}"
+        );
 
         // Sleep briefly so the second timestamp is guaranteed to differ.
         std::thread::sleep(std::time::Duration::from_secs(1));

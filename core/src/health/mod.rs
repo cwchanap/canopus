@@ -165,7 +165,10 @@ mod tests {
             success_threshold: 1,
         };
         let result = run_probe(&check).await;
-        assert!(result.is_err(), "probe should fail when nothing is listening");
+        assert!(
+            result.is_err(),
+            "probe should fail when nothing is listening"
+        );
     }
 
     #[tokio::test]
@@ -175,9 +178,8 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
 
         // Keep the listener alive while the probe runs
-        let _server = tokio::spawn(async move {
-            while let Ok((_stream, _)) = listener.accept().await {}
-        });
+        let _server =
+            tokio::spawn(async move { while let Ok((_stream, _)) = listener.accept().await {} });
 
         let check = HealthCheck {
             check_type: HealthCheckType::Tcp { port },
@@ -189,5 +191,4 @@ mod tests {
         let result = run_probe(&check).await;
         assert!(result.is_ok(), "probe should succeed when port is open");
     }
-
 }
