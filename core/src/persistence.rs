@@ -484,11 +484,27 @@ mod tests {
             "timestamp should contain T separator: {t1}"
         );
 
-        // Sleep briefly so the second timestamp is guaranteed to differ.
-        std::thread::sleep(std::time::Duration::from_secs(1));
-        let t2 = current_timestamp();
-        assert!(!t2.is_empty());
-        assert!(t2.ends_with('Z'));
-        assert_ne!(t1, t2, "timestamps taken 1s apart should differ");
+        // Poll until the timestamp changes or a 1s timeout is reached.
+        let start = std::time::Instant::now();
+        let mut t2 = String::new();
+        loop {
+            t2 = current_timestamp();
+            if t2 != t1 {
+                break;
+            }
+            if start.elapsed() >= std::time::Duration::from_secs(1) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(!t2.is_empty(), "second timestamp should not be empty");
+        assert!(
+            t2.ends_with('Z'),
+            "second timestamp should end with Z: {t2}"
+        );
+        assert_ne!(
+            t1, t2,
+            "timestamps should differ within 1s timeout (t1={t1}, t2={t2})"
+        );
     }
 }

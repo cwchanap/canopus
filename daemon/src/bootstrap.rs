@@ -497,15 +497,18 @@ mod tests {
             .await
             .expect("bootstrap should succeed with custom IPC socket");
 
-        for _ in 0..20 {
-            if socket_path.exists() {
-                break;
+        let wait_result = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if socket_path.exists() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
             }
-            tokio::time::sleep(Duration::from_millis(25)).await;
-        }
+        })
+        .await;
         assert!(
-            socket_path.exists(),
-            "expected IPC server to bind custom socket path"
+            wait_result.is_ok() && socket_path.exists(),
+            "expected IPC server to bind custom socket path within timeout"
         );
 
         handle.shutdown();
