@@ -486,7 +486,7 @@ mod tests {
 
         // Poll until the timestamp changes or a 1s timeout is reached.
         let start = std::time::Instant::now();
-        let mut t2 = String::new();
+        let mut t2;
         loop {
             t2 = current_timestamp();
             if t2 != t1 {
