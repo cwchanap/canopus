@@ -2090,7 +2090,7 @@ mod tests {
             windows_pipe_name: None,
         };
         let cloned = cfg.clone();
-        assert_eq!(cloned.version, "1.2.3");
-        assert_eq!(cloned.auth_token.as_deref(), Some("secret"));
+        assert_eq!(cfg.version, cloned.version);
+        assert_eq!(cfg.auth_token, cloned.auth_token);
     }
 }
