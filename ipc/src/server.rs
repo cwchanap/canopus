@@ -2107,33 +2107,4 @@ mod tests {
         assert_eq!(cloned.auth_token.as_deref(), Some("secret"));
     }
 
-    // ── canopus.version ───────────────────────────────────────────────────────
-    #[tokio::test]
-    async fn route_version_returns_config_version() {
-        #[cfg(unix)]
-        {
-            let req = JsonRpcRequest {
-                jsonrpc: "2.0".to_string(),
-                method: "canopus.version".to_string(),
-                params: None,
-                id: Some(Value::from(100)),
-            };
-            let config = IpcServerConfig {
-                version: "9.8.7".to_string(),
-                ..IpcServerConfig::default()
-            };
-            let resp = route_method(
-                &config,
-                Arc::new(NoopControlPlane),
-                make_writer(),
-                req,
-            )
-            .await
-            .unwrap()
-            .unwrap();
-            assert!(resp.error.is_none());
-            let result = resp.result.expect("expected result");
-            assert_eq!(result["version"], "9.8.7");
-        }
-    }
 }

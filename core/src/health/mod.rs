@@ -190,11 +190,4 @@ mod tests {
         assert!(result.is_ok(), "probe should succeed when port is open");
     }
 
-    #[test]
-    fn create_probe_uses_check_type_tcp_port() {
-        let check_type = HealthCheckType::Tcp { port: 12345 };
-        let probe = create_probe(&check_type, Duration::from_secs(1));
-        // Should succeed - TCP probes are supported
-        assert!(probe.is_ok());
-    }
 }

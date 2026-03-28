@@ -109,6 +109,7 @@ mod tests {
         };
         let err = utils::validate_config(&config).unwrap_err();
         assert!(err.to_string().contains("Port cannot be 0"));
+        assert_eq!(err.code(), "CORE001", "port-zero error should be CORE001");
 
         let config = DaemonConfig {
             host: String::new(),
@@ -116,6 +117,7 @@ mod tests {
         };
         let err = utils::validate_config(&config).unwrap_err();
         assert!(err.to_string().contains("Host cannot be empty"));
+        assert_eq!(err.code(), "CORE001", "empty-host error should be CORE001");
 
         let config = DaemonConfig {
             max_connections: 0,
@@ -123,6 +125,11 @@ mod tests {
         };
         let err = utils::validate_config(&config).unwrap_err();
         assert!(err.to_string().contains("Max connections"));
+        assert_eq!(
+            err.code(),
+            "CORE001",
+            "max-connections error should be CORE001"
+        );
     }
 
     #[test]
@@ -132,45 +139,5 @@ mod tests {
         assert_ne!(config.port, 0);
         assert!(!config.host.is_empty());
         assert_ne!(config.max_connections, 0);
-    }
-
-    #[test]
-    fn validate_config_port_zero_error_message() {
-        let config = DaemonConfig { port: 0, ..Default::default() };
-        let err = utils::validate_config(&config).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("Port cannot be 0"),
-            "expected port-zero message, got: {msg}"
-        );
-        assert_eq!(err.code(), "CORE001", "should be a ConfigurationError");
-    }
-
-    #[test]
-    fn validate_config_empty_host_error_message() {
-        let config = DaemonConfig {
-            host: String::new(),
-            ..Default::default()
-        };
-        let err = utils::validate_config(&config).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("Host cannot be empty"),
-            "expected empty-host message, got: {msg}"
-        );
-    }
-
-    #[test]
-    fn validate_config_max_connections_zero_error_message() {
-        let config = DaemonConfig {
-            max_connections: 0,
-            ..Default::default()
-        };
-        let err = utils::validate_config(&config).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("Max connections"),
-            "expected max-connections message, got: {msg}"
-        );
     }
 }

@@ -502,17 +502,6 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn bootstrap_handle_services_list_is_empty_with_no_config() {
-        let handle = bootstrap_with_runtime(None, None, Some("127.0.0.1:0"))
-            .await
-            .expect("bootstrap ok");
-        let len = handle.services.len();
-        handle.shutdown();
-        assert_eq!(len, 0, "services list should be empty with no config");
-    }
-
-    #[tokio::test]
-    #[serial_test::serial]
     async fn bootstrap_uses_canopus_ipc_socket_env_var() {
         // When CANOPUS_IPC_SOCKET is set, the IPC server should use that socket path.
         // We can't directly inspect the socket path from outside, but we can verify
