@@ -403,19 +403,35 @@ mod tests {
         assert_eq!(loaded.services[0].last_state, ServiceState::Ready);
     }
 
+    /// RAII guard that restores an env var on drop, preventing test pollution.
+    struct EnvVarGuard {
+        key: &'static str,
+        original: Option<String>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let original = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, original }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match &self.original {
+                Some(v) => std::env::set_var(self.key, v),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
     #[test]
+    #[serial_test::serial]
     fn default_snapshot_path_uses_canopus_state_file_env() {
         let custom_path = "/tmp/my_custom_state.json";
-        // SAFETY: test-only env mutation; run with serial_test if needed in a broader suite
-        let old = std::env::var("CANOPUS_STATE_FILE").ok();
-        std::env::set_var("CANOPUS_STATE_FILE", custom_path);
+        let _guard = EnvVarGuard::set("CANOPUS_STATE_FILE", custom_path);
         let path = default_snapshot_path();
-        // Restore
-        if let Some(v) = old {
-            std::env::set_var("CANOPUS_STATE_FILE", v);
-        } else {
-            std::env::remove_var("CANOPUS_STATE_FILE");
-        }
         assert_eq!(path.to_str().unwrap(), custom_path);
     }
 
@@ -429,12 +445,10 @@ mod tests {
     #[test]
     fn registry_snapshot_partial_eq() {
         let snap1 = make_snap();
-        let snap2 = make_snap();
-        // Two snapshots with the same data should be equal (timestamps may differ)
-        // but their services should match
-        assert_eq!(snap1.version, snap2.version);
-        assert_eq!(snap1.services[0].id, snap2.services[0].id);
-        assert_eq!(snap1.services[0].last_state, snap2.services[0].last_state);
+        // Produce a second snapshot with an identical timestamp so PartialEq holds fully.
+        let mut snap2 = make_snap();
+        snap2.timestamp = snap1.timestamp.clone();
+        assert_eq!(snap1, snap2);
     }
 
     #[test]
@@ -461,10 +475,17 @@ mod tests {
     }
 
     #[test]
-    fn current_timestamp_produces_different_values_over_time() {
+    fn current_timestamp_format_and_progression() {
         let t1 = current_timestamp();
-        // Should be non-empty valid strings
-        assert!(!t1.is_empty());
-        assert!(t1.ends_with('Z'));
+        assert!(!t1.is_empty(), "timestamp should not be empty");
+        assert!(t1.ends_with('Z'), "timestamp should end with Z: {t1}");
+        assert!(t1.contains('T'), "timestamp should contain T separator: {t1}");
+
+        // Sleep briefly so the second timestamp is guaranteed to differ.
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        let t2 = current_timestamp();
+        assert!(!t2.is_empty());
+        assert!(t2.ends_with('Z'));
+        assert_ne!(t1, t2, "timestamps taken 1s apart should differ");
     }
 }
