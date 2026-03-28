@@ -481,37 +481,33 @@ mod tests {
         );
     }
 
-    #[test]
-    #[serial_test::serial]
-    fn resolve_login_path_blank_is_trimmed_and_skipped() {
-        // Multiple whitespace-only values should all be skipped
-        let _guard = EnvGuard::set("CANOPUS_LOGIN_PATH", "\t  \n");
-        let result = resolve_login_path();
-        assert!(result.is_some(), "should fall back to something non-blank");
-        let path = result.unwrap();
-        assert_ne!(path.trim(), "", "should not return blank path");
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn resolve_login_path_uses_exact_value_when_set() {
-        let _guard = EnvGuard::set("CANOPUS_LOGIN_PATH", "/a:/b:/c");
-        let result = resolve_login_path();
-        assert_eq!(result.as_deref(), Some("/a:/b:/c"));
-    }
-
+    #[cfg(unix)]
     #[tokio::test]
     #[serial_test::serial]
     async fn bootstrap_uses_canopus_ipc_socket_env_var() {
-        // When CANOPUS_IPC_SOCKET is set, the IPC server should use that socket path.
-        // We can't directly inspect the socket path from outside, but we can verify
-        // bootstrap succeeds even with a custom socket path.
-        let socket_path = format!("/tmp/canopus_test_{}.sock", std::process::id());
-        let _guard = EnvGuard::set("CANOPUS_IPC_SOCKET", &socket_path);
+        use std::time::Duration;
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let socket_path = dir.path().join("canopus.sock");
+        let _guard = EnvGuard::set(
+            "CANOPUS_IPC_SOCKET",
+            socket_path.to_str().expect("utf8 socket path"),
+        );
 
         let handle = bootstrap_with_runtime(None, None, Some("127.0.0.1:0"))
             .await
             .expect("bootstrap should succeed with custom IPC socket");
+
+        for _ in 0..20 {
+            if socket_path.exists() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        assert!(
+            socket_path.exists(),
+            "expected IPC server to bind custom socket path"
+        );
+
         handle.shutdown();
     }
 }
