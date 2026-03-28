@@ -2052,10 +2052,7 @@ mod tests {
     // ── JsonRpcResponse constructors ──────────────────────────────────────────
     #[test]
     fn json_rpc_response_ok_sets_result_and_no_error() {
-        let resp = JsonRpcResponse::ok(
-            Some(Value::from(1)),
-            serde_json::json!({"key": "value"}),
-        );
+        let resp = JsonRpcResponse::ok(Some(Value::from(1)), serde_json::json!({"key": "value"}));
         assert_eq!(resp.jsonrpc, "2.0");
         assert!(resp.result.is_some());
         assert!(resp.error.is_none());
@@ -2064,12 +2061,7 @@ mod tests {
 
     #[test]
     fn json_rpc_response_err_sets_error_and_no_result() {
-        let resp = JsonRpcResponse::err(
-            Some(Value::from(2)),
-            -32600,
-            "Invalid Request",
-            None,
-        );
+        let resp = JsonRpcResponse::err(Some(Value::from(2)), -32600, "Invalid Request", None);
         assert_eq!(resp.jsonrpc, "2.0");
         assert!(resp.result.is_none());
         assert!(resp.error.is_some());
@@ -2082,12 +2074,7 @@ mod tests {
     #[test]
     fn json_rpc_response_err_with_data() {
         let data = serde_json::json!({"detail": "extra info"});
-        let resp = JsonRpcResponse::err(
-            None,
-            -32000,
-            "Server error",
-            Some(data.clone()),
-        );
+        let resp = JsonRpcResponse::err(None, -32000, "Server error", Some(data.clone()));
         assert!(resp.error.is_some());
         let err = resp.error.unwrap();
         assert_eq!(err.code, -32000);
@@ -2106,5 +2093,4 @@ mod tests {
         assert_eq!(cloned.version, "1.2.3");
         assert_eq!(cloned.auth_token.as_deref(), Some("secret"));
     }
-
 }

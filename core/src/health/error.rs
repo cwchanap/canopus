@@ -87,7 +87,10 @@ mod tests {
 
         let err_micros = HealthError::Timeout(Duration::from_micros(250));
         let msg_micros = err_micros.to_string();
-        assert!(!msg_micros.is_empty(), "timeout display should not be empty");
+        assert!(
+            !msg_micros.is_empty(),
+            "timeout display should not be empty"
+        );
     }
 
     #[test]
@@ -105,7 +108,10 @@ mod tests {
         let err = HealthError::UnsupportedProbeType("TestProbe".to_string());
         let debug = format!("{err:?}");
         assert!(!debug.is_empty(), "Debug format should not be empty");
-        assert!(debug.contains("TestProbe"), "Debug should contain type name");
+        assert!(
+            debug.contains("TestProbe"),
+            "Debug should contain type name"
+        );
     }
 
     #[test]
@@ -113,6 +119,9 @@ mod tests {
         let err = HealthError::Timeout(Duration::from_secs(0));
         let msg = err.to_string();
         // Zero duration should still display without panic
-        assert!(!msg.is_empty(), "zero-duration timeout should display non-empty");
+        assert!(
+            !msg.is_empty(),
+            "zero-duration timeout should display non-empty"
+        );
     }
 }
