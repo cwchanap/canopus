@@ -28,15 +28,15 @@ vi.mock("./lib/components/InboxView.svelte", async () => {
   return { default: stub.default };
 });
 
-beforeEach(() => {
-  vi.clearAllMocks();
-  activeView.set("projects");
-  inboxUnreadCount.set(0);
-  onLogUpdate.mockResolvedValue(vi.fn());
-  listInbox.mockResolvedValue([]);
-});
-
 describe("App", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    activeView.set("projects");
+    inboxUnreadCount.set(0);
+    onLogUpdate.mockResolvedValue(vi.fn());
+    listInbox.mockResolvedValue([]);
+  });
+
   it("renders ProjectsView by default", async () => {
     render(App);
     expect(await screen.findByTestId("projects-view-stub")).toBeInTheDocument();
