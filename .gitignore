@@ -21,6 +21,7 @@
 
 # AI tools
 .claude/settings.local.json
+.worktrees/
 
 # OS generated files
 Thumbs.db
