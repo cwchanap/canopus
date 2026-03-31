@@ -69,11 +69,12 @@ describe("App", () => {
 
     const { unmount } = render(App);
 
-    await waitFor(() => {
-      expect(listInbox).toHaveBeenCalledWith({ status: "unread" });
-    });
-
-    unmount();
-    expect(unlisten).toHaveBeenCalledTimes(1);
+  await waitFor(() => {
+    expect(listInbox).toHaveBeenCalledWith({ status: "unread" });
   });
+
+  unmount();
+  expect(unlisten).toHaveBeenCalledTimes(1);
+  expect(get(inboxUnreadCount)).toBe(0);
+});
 });
