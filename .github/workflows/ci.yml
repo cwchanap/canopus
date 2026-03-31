@@ -221,6 +221,10 @@ jobs:
         working-directory: desktop
         run: npm run build
 
+      - name: Test frontend
+        working-directory: desktop
+        run: npm run test -- --run
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
