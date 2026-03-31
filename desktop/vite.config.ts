@@ -1,11 +1,14 @@
 import { sveltekit } from "@sveltejs/kit/vite";
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
   plugins: [sveltekit()],
   clearScreen: false,
+  resolve: {
+    conditions: process.env.VITEST ? ["browser"] : [],
+  },
   server: {
     port: 5173,
     strictPort: true,
@@ -31,5 +34,17 @@ export default defineConfig({
           : "safari13",
     minify: process.env.TAURI_ENV_DEBUG === "true" ? false : "esbuild",
     sourcemap: process.env.TAURI_ENV_DEBUG === "true",
+  },
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["./src/vitest.setup.ts"],
+    include: ["src/**/*.test.ts"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html"],
+      all: true,
+      include: ["src/App.svelte"],
+    },
   },
 });
