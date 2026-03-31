@@ -66,15 +66,17 @@ describe("App", () => {
   it("calls the unlisten function on normal unmount", async () => {
     const unlisten = vi.fn();
     onLogUpdate.mockResolvedValue(unlisten);
+    listInbox.mockResolvedValue([{ id: "1" }, { id: "2" }]);
 
     const { unmount } = render(App);
 
-  await waitFor(() => {
-    expect(listInbox).toHaveBeenCalledWith({ status: "unread" });
-  });
+    await waitFor(() => {
+      expect(listInbox).toHaveBeenCalledWith({ status: "unread" });
+      expect(get(inboxUnreadCount)).toBe(2);
+    });
 
-  unmount();
-  expect(unlisten).toHaveBeenCalledTimes(1);
-  expect(get(inboxUnreadCount)).toBe(0);
-});
+    unmount();
+    expect(unlisten).toHaveBeenCalledTimes(1);
+    expect(get(inboxUnreadCount)).toBe(2);
+  });
 });
