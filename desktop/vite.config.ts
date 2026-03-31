@@ -1,14 +1,12 @@
 import { sveltekit } from "@sveltejs/kit/vite";
+import { svelteTesting } from "@testing-library/svelte/vite";
 import { defineConfig } from "vitest/config";
 
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
-  plugins: [sveltekit()],
+  plugins: [sveltekit(), svelteTesting({ autoCleanup: false, noExternal: false })],
   clearScreen: false,
-  resolve: {
-    conditions: process.env.VITEST ? ["browser"] : [],
-  },
   server: {
     port: 5173,
     strictPort: true,
