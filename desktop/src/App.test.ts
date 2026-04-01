@@ -94,16 +94,23 @@ describe("App", () => {
     const gate = deferred<() => void>();
     onLogUpdate.mockReturnValue(gate.promise);
     listInbox.mockResolvedValue([]);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const { unmount } = render(App);
-    unmount();
+    try {
+      const { unmount } = render(App);
+      unmount();
 
-    const lateUnlisten = vi.fn();
-    gate.resolve(lateUnlisten);
+      const lateUnlisten = vi.fn();
+      gate.resolve(lateUnlisten);
 
-    await waitFor(() => {
-      expect(lateUnlisten).toHaveBeenCalledTimes(1);
-    });
+      await waitFor(() => {
+        expect(lateUnlisten).toHaveBeenCalledTimes(1);
+      });
+
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+    }
   });
 
   it("logs listener registration failures without crashing", async () => {
