@@ -29,6 +29,16 @@ vi.mock("./lib/components/InboxView.svelte", async () => {
   return { default: stub.default };
 });
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("App", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -78,5 +88,59 @@ describe("App", () => {
     unmount();
     expect(unlisten).toHaveBeenCalledTimes(1);
     expect(get(inboxUnreadCount)).toBe(2);
+  });
+
+  it("calls a late unlisten function if the component unmounts before onLogUpdate resolves", async () => {
+    const gate = deferred<() => void>();
+    onLogUpdate.mockReturnValue(gate.promise);
+    listInbox.mockResolvedValue([]);
+
+    const { unmount } = render(App);
+    unmount();
+
+    const lateUnlisten = vi.fn();
+    gate.resolve(lateUnlisten);
+
+    await waitFor(() => {
+      expect(lateUnlisten).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("logs listener registration failures without crashing", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    onLogUpdate.mockRejectedValue(new Error("listener failed"));
+    listInbox.mockResolvedValue([]);
+
+    try {
+      render(App);
+
+      await waitFor(() => {
+        expect(error).toHaveBeenCalledWith(
+          "Failed to register log-update listener:",
+          expect.any(Error),
+        );
+      });
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("logs unread-count fetch failures without crashing", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    onLogUpdate.mockResolvedValue(vi.fn());
+    listInbox.mockRejectedValue(new Error("fetch failed"));
+
+    try {
+      render(App);
+
+      await waitFor(() => {
+        expect(error).toHaveBeenCalledWith(
+          "Failed to fetch initial unread count:",
+          expect.any(Error),
+        );
+      });
+    } finally {
+      error.mockRestore();
+    }
   });
 });
