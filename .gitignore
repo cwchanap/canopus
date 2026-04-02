@@ -113,7 +113,7 @@ perf.data*
 # Desktop app generated files
 desktop/dist/
 desktop/node_modules/
+desktop/src-tauri/gen/
 
 # Benchmarking
 /benches/target/
-schemas/
