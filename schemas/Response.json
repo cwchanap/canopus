@@ -1,0 +1,101 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Response",
+  "description": "Response types from the daemon",
+  "oneOf": [
+    {
+      "description": "Successful operation with message",
+      "type": "object",
+      "required": [
+        "ok"
+      ],
+      "properties": {
+        "ok": {
+          "type": "object",
+          "required": [
+            "message"
+          ],
+          "properties": {
+            "message": {
+              "description": "Success message",
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Error response with details",
+      "type": "object",
+      "required": [
+        "error"
+      ],
+      "properties": {
+        "error": {
+          "type": "object",
+          "required": [
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "description": "Optional error code",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "message": {
+              "description": "Error message",
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Status information",
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "type": "object",
+          "required": [
+            "pid",
+            "running",
+            "uptime_seconds"
+          ],
+          "properties": {
+            "pid": {
+              "description": "Process ID of the daemon",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "running": {
+              "description": "Whether the daemon is running",
+              "type": "boolean"
+            },
+            "uptime_seconds": {
+              "description": "Uptime in seconds",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "version": {
+              "description": "Optional version string",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

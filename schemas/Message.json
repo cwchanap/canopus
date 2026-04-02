@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Message",
+  "description": "Message types for communication between daemon and CLI",
+  "oneOf": [
+    {
+      "description": "Request daemon status",
+      "type": "string",
+      "enum": [
+        "status"
+      ]
+    },
+    {
+      "description": "Start daemon operations",
+      "type": "string",
+      "enum": [
+        "start"
+      ]
+    },
+    {
+      "description": "Stop daemon operations",
+      "type": "string",
+      "enum": [
+        "stop"
+      ]
+    },
+    {
+      "description": "Restart daemon",
+      "type": "string",
+      "enum": [
+        "restart"
+      ]
+    },
+    {
+      "description": "Send custom command with payload",
+      "type": "object",
+      "required": [
+        "custom"
+      ],
+      "properties": {
+        "custom": {
+          "type": "object",
+          "required": [
+            "command"
+          ],
+          "properties": {
+            "command": {
+              "description": "The custom command to execute",
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}
