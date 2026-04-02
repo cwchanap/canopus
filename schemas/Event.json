@@ -1,0 +1,141 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Event",
+  "description": "Event types that can be emitted by the system",
+  "oneOf": [
+    {
+      "description": "Daemon started",
+      "type": "object",
+      "required": [
+        "daemonStarted"
+      ],
+      "properties": {
+        "daemonStarted": {
+          "type": "object",
+          "required": [
+            "timestamp",
+            "version"
+          ],
+          "properties": {
+            "timestamp": {
+              "description": "Event timestamp",
+              "type": "string"
+            },
+            "version": {
+              "description": "Daemon version",
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Daemon stopped",
+      "type": "object",
+      "required": [
+        "daemonStopped"
+      ],
+      "properties": {
+        "daemonStopped": {
+          "type": "object",
+          "required": [
+            "timestamp"
+          ],
+          "properties": {
+            "timestamp": {
+              "description": "Event timestamp",
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Client connected",
+      "type": "object",
+      "required": [
+        "clientConnected"
+      ],
+      "properties": {
+        "clientConnected": {
+          "type": "object",
+          "required": [
+            "client_id",
+            "timestamp"
+          ],
+          "properties": {
+            "client_id": {
+              "description": "Client identifier",
+              "type": "string"
+            },
+            "timestamp": {
+              "description": "Event timestamp",
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Client disconnected",
+      "type": "object",
+      "required": [
+        "clientDisconnected"
+      ],
+      "properties": {
+        "clientDisconnected": {
+          "type": "object",
+          "required": [
+            "client_id",
+            "timestamp"
+          ],
+          "properties": {
+            "client_id": {
+              "description": "Client identifier",
+              "type": "string"
+            },
+            "timestamp": {
+              "description": "Event timestamp",
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Custom event",
+      "type": "object",
+      "required": [
+        "custom"
+      ],
+      "properties": {
+        "custom": {
+          "type": "object",
+          "required": [
+            "data",
+            "event_type",
+            "timestamp"
+          ],
+          "properties": {
+            "data": {
+              "description": "Event data payload"
+            },
+            "event_type": {
+              "description": "Event type identifier",
+              "type": "string"
+            },
+            "timestamp": {
+              "description": "Event timestamp",
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}
